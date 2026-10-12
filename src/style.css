@@ -1,0 +1,500 @@
+:root {
+  --sand: #e9d9b8;
+  --ink: #120e0a;
+  --blood: #b3261e;
+  --rare: #3d8bff;
+  --epic: #b04dff;
+  --legendary: #ffb020;
+  --hud: rgba(20, 16, 12, 0.55);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: var(--sand);
+  font-family: 'Rajdhani', system-ui, sans-serif;
+  user-select: none;
+}
+
+#game,
+#game canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------- HUD */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+}
+
+#crosshair,
+#hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+#crosshair i,
+#hitmarker i {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 2px #000;
+}
+#crosshair i:nth-child(1),
+#crosshair i:nth-child(2) {
+  width: 2px;
+  height: 8px;
+  left: -1px;
+}
+#crosshair i:nth-child(3),
+#crosshair i:nth-child(4) {
+  height: 2px;
+  width: 8px;
+  top: -1px;
+}
+#crosshair i:nth-child(1) { top: calc(-12px - var(--spread, 0px)); }
+#crosshair i:nth-child(2) { top: calc(4px + var(--spread, 0px)); }
+#crosshair i:nth-child(3) { left: calc(-12px - var(--spread, 0px)); }
+#crosshair i:nth-child(4) { left: calc(4px + var(--spread, 0px)); }
+
+#hitmarker {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+#hitmarker.show {
+  opacity: 1;
+  transition: none;
+}
+#hitmarker i {
+  width: 2px;
+  height: 9px;
+}
+#hitmarker i:nth-child(1) { transform: translate(-9px, -13px) rotate(-45deg); }
+#hitmarker i:nth-child(2) { transform: translate(7px, -13px) rotate(45deg); }
+#hitmarker i:nth-child(3) { transform: translate(-9px, 4px) rotate(45deg); }
+#hitmarker i:nth-child(4) { transform: translate(7px, 4px) rotate(-45deg); }
+#hitmarker.kill i { background: #ff3b30; }
+#hitmarker.head i { background: #ffd34d; }
+
+#vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(150, 0, 0, 0.85) 100%);
+  opacity: 0;
+}
+
+#top-left {
+  position: absolute;
+  top: 18px;
+  left: 22px;
+}
+#wave-label {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 34px;
+  letter-spacing: 2px;
+  color: #f0e2c2;
+}
+#zombies-left {
+  font-size: 18px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+#top-right {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  text-align: right;
+}
+#score {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 30px;
+}
+#kills {
+  font-size: 18px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+#boss-bar {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, 60vw);
+  text-align: center;
+}
+#boss-bar .name {
+  font-family: 'Black Ops One', sans-serif;
+  letter-spacing: 3px;
+  color: #d9a6ff;
+}
+#boss-bar .bar {
+  height: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+#boss-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #6a1fa8, #c86bff);
+}
+
+#banner,
+#subbanner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+#banner {
+  top: 26%;
+  font-family: 'Black Ops One', sans-serif;
+  font-size: clamp(36px, 7vw, 84px);
+  letter-spacing: 4px;
+  color: #f3e3c0;
+}
+#subbanner {
+  top: calc(26% + clamp(48px, 8vw, 100px));
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+#banner.show,
+#subbanner.show {
+  opacity: 1;
+}
+#banner.red {
+  color: #ff5747;
+}
+#banner.gold {
+  color: var(--legendary);
+}
+
+#bottom-left {
+  position: absolute;
+  left: 22px;
+  bottom: 22px;
+}
+#health-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#health-row .plus {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 30px;
+  color: #ff5747;
+}
+#health-row .bar {
+  width: 240px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+#health-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #a51d14, #e8453a);
+  transition: width 0.15s;
+}
+#health-text {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 24px;
+  min-width: 70px;
+}
+
+#powerup-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  max-width: 380px;
+}
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px 2px 5px;
+  border-radius: 4px;
+  background: var(--hud);
+  border: 1px solid var(--c);
+  font-size: 14px;
+  font-weight: 700;
+}
+.chip .n {
+  color: var(--c);
+}
+
+#bottom-right {
+  position: absolute;
+  right: 26px;
+  bottom: 20px;
+  text-align: right;
+}
+#ammo {
+  font-family: 'Black Ops One', sans-serif;
+}
+#ammo-mag {
+  font-size: 52px;
+}
+#ammo .sep,
+#ammo-max {
+  font-size: 26px;
+  opacity: 0.7;
+}
+#ammo.low #ammo-mag {
+  color: #ff5747;
+}
+#reload-hint {
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #ffd34d;
+  visibility: hidden;
+}
+#reload-hint.show {
+  visibility: visible;
+}
+
+/* ---------------------------------------------------------------- overlays */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(25, 18, 12, 0.55), rgba(8, 5, 3, 0.88));
+  padding: 16px;
+  overflow-y: auto;
+}
+#menu {
+  background: radial-gradient(ellipse at center, rgba(25, 18, 12, 0.35), rgba(8, 5, 3, 0.8));
+}
+.panel {
+  text-align: center;
+  max-width: 640px;
+}
+h1 {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: clamp(48px, 10vw, 104px);
+  margin: 0;
+  letter-spacing: 6px;
+  color: #efdfbd;
+  text-shadow: 0 4px 0 #5a1712, 0 10px 30px rgba(0, 0, 0, 0.8);
+}
+h1.dead {
+  color: #ff5747;
+}
+h2 {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: clamp(30px, 5vw, 52px);
+  margin: 0 0 6px;
+  letter-spacing: 3px;
+}
+.tag {
+  font-size: 22px;
+  margin: 4px 0 28px;
+  opacity: 0.85;
+}
+.btn {
+  display: block;
+  margin: 10px auto;
+  min-width: 240px;
+  padding: 14px 30px;
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 26px;
+  letter-spacing: 3px;
+  color: #1a120c;
+  background: linear-gradient(#f0d9a8, #c9a46a);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #6b4d26, 0 10px 24px rgba(0, 0, 0, 0.5);
+  transition: transform 0.08s, filter 0.15s;
+}
+.btn:hover {
+  filter: brightness(1.1);
+}
+.btn:active {
+  transform: translateY(3px);
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--sand);
+  border: 2px solid rgba(233, 217, 184, 0.5);
+  box-shadow: none;
+  font-size: 18px;
+  padding: 10px 24px;
+}
+.controls {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 6px 22px;
+  justify-content: center;
+  margin: 28px 0 18px;
+  font-size: 17px;
+}
+.controls b {
+  color: #ffd38a;
+}
+.odds-line {
+  font-size: 17px;
+  opacity: 0.9;
+}
+.r-rare { color: var(--rare); font-weight: 700; }
+.r-epic { color: var(--epic); font-weight: 700; }
+.r-legendary { color: var(--legendary); font-weight: 700; }
+#best {
+  margin-top: 14px;
+  font-size: 18px;
+  opacity: 0.8;
+}
+#mobile-note {
+  display: none;
+  margin-top: 12px;
+  color: #ff8a7a;
+}
+@media (pointer: coarse) {
+  #mobile-note {
+    display: block;
+  }
+}
+#pause p {
+  font-size: 22px;
+}
+#pause .panel {
+  cursor: pointer;
+}
+
+#final-stats {
+  font-size: 22px;
+  margin: 16px 0 26px;
+  line-height: 1.6;
+}
+#final-stats b {
+  color: #ffd38a;
+}
+
+/* ---------------------------------------------------------------- power-up cards */
+.choose-wrap {
+  text-align: center;
+  width: 100%;
+  max-width: 1000px;
+}
+.choose-sub {
+  font-size: 20px;
+  margin: 0 0 26px;
+  opacity: 0.85;
+}
+#cards {
+  display: flex;
+  gap: 22px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.card {
+  --c: var(--rare);
+  position: relative;
+  width: 250px;
+  min-height: 330px;
+  padding: 22px 18px;
+  border-radius: 10px;
+  background: linear-gradient(170deg, rgba(40, 32, 26, 0.95), rgba(16, 12, 10, 0.95));
+  border: 2px solid var(--c);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 30px color-mix(in srgb, var(--c) 18%, transparent);
+  cursor: pointer;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(30px) rotateX(30deg);
+  animation: deal 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.card:nth-child(2) { animation-delay: 0.12s; }
+.card:nth-child(3) { animation-delay: 0.24s; }
+@keyframes deal {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.card:hover {
+  transform: translateY(-8px) scale(1.03);
+  box-shadow: 0 0 34px color-mix(in srgb, var(--c) 70%, transparent), inset 0 0 40px color-mix(in srgb, var(--c) 25%, transparent);
+}
+.card.epic { --c: var(--epic); }
+.card.legendary {
+  --c: var(--legendary);
+  background: linear-gradient(170deg, rgba(70, 48, 14, 0.95), rgba(22, 14, 6, 0.95));
+}
+.card.legendary::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 220, 140, 0.35) 50%, transparent 60%);
+  animation: shine 2.4s linear infinite;
+  pointer-events: none;
+}
+@keyframes shine {
+  from { transform: translateX(-60%); }
+  to { transform: translateX(60%); }
+}
+.card .rarity {
+  font-family: 'Black Ops One', sans-serif;
+  letter-spacing: 3px;
+  font-size: 16px;
+  color: var(--c);
+}
+.card .icon {
+  font-size: 64px;
+  margin: 22px 0 14px;
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--c) 70%, transparent));
+}
+.card .name {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 24px;
+  margin-bottom: 10px;
+  color: #f3e6cc;
+}
+.card .desc {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.card .owned {
+  margin-top: 12px;
+  font-size: 14px;
+  opacity: 0.6;
+}
+.card .key {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 14px;
+  opacity: 0.6;
+}
+#odds {
+  margin-top: 26px;
+  font-size: 16px;
+  opacity: 0.85;
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dead Plains</title>
+    <meta name="description" content="Survive endless zombie waves in an abandoned wasteland. Pick a power-up after every wave." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧟</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="game"></div>
+
+    <div id="hud" class="hidden">
+      <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+      <div id="vignette"></div>
+      <div id="top-left">
+        <div id="wave-label">WAVE 1</div>
+        <div id="zombies-left">0 zombies left</div>
+      </div>
+      <div id="top-right">
+        <div id="score">0</div>
+        <div id="kills">0 kills</div>
+      </div>
+      <div id="boss-bar" class="hidden">
+        <div class="name">ABOMINATION</div>
+        <div class="bar"><div id="boss-fill"></div></div>
+      </div>
+      <div id="banner"></div>
+      <div id="subbanner"></div>
+      <div id="bottom-left">
+        <div id="health-row">
+          <span class="plus">+</span>
+          <div class="bar"><div id="health-fill"></div></div>
+          <span id="health-text">100</span>
+        </div>
+        <div id="powerup-list"></div>
+      </div>
+      <div id="bottom-right">
+        <div id="ammo"><span id="ammo-mag">30</span><span class="sep">/</span><span id="ammo-max">30</span></div>
+        <div id="reload-hint">RELOADING</div>
+      </div>
+    </div>
+
+    <div id="menu" class="overlay">
+      <div class="panel">
+        <h1>DEAD PLAINS</h1>
+        <p class="tag">The town is gone. The dead are not.</p>
+        <button id="play-btn" class="btn">PLAY</button>
+        <div class="controls">
+          <div><b>WASD</b> move</div>
+          <div><b>Mouse</b> aim</div>
+          <div><b>Click</b> shoot</div>
+          <div><b>R</b> reload</div>
+          <div><b>Shift</b> sprint</div>
+          <div><b>Space</b> jump</div>
+          <div><b>M</b> mute</div>
+          <div><b>Esc</b> pause</div>
+        </div>
+        <div class="odds-line">
+          After each wave pick 1 of 3 power-ups:
+          <span class="r-rare">Rare</span> · <span class="r-epic">Epic</span> · <span class="r-legendary">Legendary</span>
+        </div>
+        <div id="best"></div>
+        <div id="mobile-note">Needs a keyboard and mouse.</div>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="panel">
+        <h2 id="pause-title">PAUSED</h2>
+        <p>Click to continue</p>
+        <button id="quit-btn" class="btn ghost">QUIT TO MENU</button>
+      </div>
+    </div>
+
+    <div id="choose" class="overlay hidden">
+      <div class="choose-wrap">
+        <h2 id="choose-title">WAVE 1 SURVIVED</h2>
+        <p class="choose-sub">Choose one power-up to take into the next wave</p>
+        <div id="cards"></div>
+        <div id="odds"></div>
+      </div>
+    </div>
+
+    <div id="gameover" class="overlay hidden">
+      <div class="panel">
+        <h1 class="dead">YOU DIED</h1>
+        <div id="final-stats"></div>
+        <button id="again-btn" class="btn">PLAY AGAIN</button>
+        <button id="menu-btn" class="btn ghost">MAIN MENU</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
