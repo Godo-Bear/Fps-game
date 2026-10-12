@@ -1,7 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "dead-plains",
+  // Must match the Worker's name in the Cloudflare dashboard.
+  "name": "fps-game",
   "compatibility_date": "2026-06-01",
+  // Builds the game before every `wrangler deploy`, so no separate build command is needed.
+  "build": {
+    "command": "npm run build"
+  },
   // Static site: Vite builds the game into ./dist and Cloudflare serves it as assets.
   "assets": {
     "directory": "./dist",

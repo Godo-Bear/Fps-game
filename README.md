@@ -55,7 +55,7 @@ npm run build      # production build in dist/
 The game is a static site. `npm run build` writes it to `dist/`, and `wrangler.jsonc` tells Cloudflare to serve that folder.
 
 **Workers (Git integration / Workers Builds)**
-- Build command: `npm run build`
+- Build command: none needed (`wrangler.jsonc` runs `npm run build` before deploying)
 - Deploy command: `npx wrangler deploy`
 
 **Pages (Git integration)**
@@ -69,7 +69,7 @@ npx wrangler login
 npm run deploy
 ```
 
-If you named your Cloudflare project something other than `dead-plains`, change `name` in `wrangler.jsonc` to match.
+If your Cloudflare Worker is named something other than `fps-game`, change `name` in `wrangler.jsonc` to match.
 
 ## Project layout
 

@@ -8,8 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && wrangler deploy",
-    "cf:dev": "vite build && wrangler dev"
+    "deploy": "wrangler deploy",
+    "cf:dev": "wrangler dev"
   },
   "dependencies": {
     "three": "^0.186.1"
