@@ -21,7 +21,7 @@ import { heightAt } from './terrain.js';
 import { Weapon } from './weapon.js';
 import { WEATHER, Weather } from './weather.js';
 import { buildWorld } from './world.js';
-import { ZOMBIE_TYPES, ZombieManager } from './zombies.js';
+import { BOSSES, BOSS_IDS, ZOMBIE_TYPES, ZombieManager, bossForWave } from './zombies.js';
 
 // ---------------------------------------------------------------- setup
 const $ = (id) => document.getElementById(id);
@@ -177,7 +177,8 @@ function beginWave() {
   game.bossToSpawn = game.cfg.boss;
   game.spawnT = 0.5;
   game.phase = 'active';
-  let sub = game.cfg.boss ? 'An Abomination approaches…' : 'Survive';
+  game.bossVariant = game.cfg.boss ? bossForWave(game.wave) : null;
+  let sub = game.cfg.boss ? `The ${BOSSES[game.bossVariant].name} approaches…` : 'Survive';
   if (game.wave > 1 && Math.random() < 0.35) {
     const next = weather.random(weather.id);
     if (world.theme.weathers.includes(next)) {
@@ -221,9 +222,11 @@ function updateWave(dt) {
       game.spawnT = cfg.interval * (0.5 + Math.random());
     }
     if (game.bossToSpawn > 0 && cfg.total - game.toSpawn >= cfg.total * 0.3) {
-      zombies.spawn('boss', game.wave, spawnAnchor(), game.wave >= 10);
+      // a second boss in the same wave is a different one
+      const variant = game.bossToSpawn < game.cfg.boss ? BOSS_IDS[Math.floor(Math.random() * BOSS_IDS.length)] : game.bossVariant || 'abomination';
+      zombies.spawn('boss', game.wave, spawnAnchor(), game.wave >= 10, variant);
       game.bossToSpawn--;
-      banner('ABOMINATION', 'Aim for the head', 'red', 2.2);
+      bossBanner(variant);
     }
     if (game.toSpawn === 0 && game.bossToSpawn === 0 && zombies.aliveCount === 0) {
       game.phase = 'cleared';
@@ -978,6 +981,10 @@ function onPickGun(id, mut) {
 function worldKill(z, mut) {
   const center = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
   effects.blood(center, null, 2.5);
+  if (z.variant === 'broodmother' && simHost()) {
+    summonAround(z, 'crawler', 5);
+    bossEvent('hatch');
+  }
   if (z.type.bloated) bloaterBurst(z);
   if (mut === 'inferno') {
     // burning spreads to whoever is close
@@ -1061,7 +1068,37 @@ function coopDown() {
   el.innerHTML = "You're <b>down</b>!<br/><span>You'll be back when the next wave starts. Your squad has to survive.</span>";
 }
 
+function bossBanner(variant) {
+  const B = BOSSES[variant] || BOSSES.abomination;
+  banner(B.name.toUpperCase(), B.desc, 'red', 2.4);
+  if (isCoop() && mp.isHost()) mp.relay('all', { k: 'bossfx', what: 'arrive', v: variant });
+}
+
+// Bosses calling in help: summoned zombies crawl out of the ground around them.
+function summonAround(z, type, n) {
+  if (zombies.aliveCount > 60) return;
+  for (let i = 0; i < n; i++) {
+    const s = zombies.spawn(type, game.wave, z.root.position, false);
+    const a = Math.random() * Math.PI * 2;
+    const d = 2 + Math.random() * 3;
+    const x = z.root.position.x + Math.cos(a) * d;
+    const zz = z.root.position.z + Math.sin(a) * d;
+    s.root.position.set(x, heightAt(x, zz) - 2 * s.scale, zz);
+  }
+}
+
+const BOSS_EVENTS = { scream: ['The Screamer calls the horde!', 2], charge: ['The Juggernaut is charging!', 1.4], hatch: ['Crawlers are hatching!', 1.4] };
+function bossEvent(kind) {
+  const e = BOSS_EVENTS[kind];
+  if (e) subBanner(e[0], e[1]);
+}
+
 const zombieHooks = {
+  summon: (z, type, n) => summonAround(z, type, n),
+  bossEvent: (z, kind) => {
+    bossEvent(kind);
+    if (isCoop() && mp.isHost()) mp.relay('all', { k: 'bossfx', what: kind });
+  },
   hitPlayer: (z, dmg, kind, target) => {
     if (target?.point) defend.hit(target.point, dmg);
     else if (!target || target.id === 'me') onPlayerHit(z, dmg, kind);
@@ -1482,7 +1519,10 @@ function updateHud(dt) {
 
   const boss = zombieGame() ? zombies.boss : null;
   $('boss-bar').classList.toggle('hidden', !boss);
-  if (boss) $('boss-fill').style.width = `${(boss.hp / boss.maxHp) * 100}%`;
+  if (boss) {
+    $('boss-fill').style.width = `${(boss.hp / boss.maxHp) * 100}%`;
+    setText('boss-name', (BOSSES[boss.variant] || BOSSES.abomination).name.toUpperCase());
+  }
 
   hitT -= dt;
   if (hitT <= 0) $('hitmarker').className = '';
@@ -2221,6 +2261,7 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------- loop
 const _fwd = new THREE.Vector3();
 // ---------------------------------------------------------------- admin (solo only; the account must be verified by the server)
+let adminBossN = 0;
 const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false };
 const cheatsOn = () => account.admin && game.mode === 'solo';
 function flyUpdate(dt) {
@@ -2573,7 +2614,11 @@ accountUI.adminActions = {
         player.vel.set(0, 0, 0);
         return 'All cheats turned off.';
       case 'boss':
-        zombies.spawn('boss', Math.max(5, game.wave), player.pos, true);
+        {
+          const v = BOSS_IDS[(adminBossN++) % BOSS_IDS.length];
+          zombies.spawn('boss', Math.max(5, game.wave), player.pos, true, v);
+          bossBanner(v);
+        }
         if (game.phase !== 'active') game.phase = 'active';
         return 'Boss spawned.';
       case 'killall':
@@ -2753,6 +2798,11 @@ function onCoopRelay(from, d) {
       break;
     case 'ready':
       if (mp.isHost()) coop.ready.add(from);
+      break;
+    case 'bossfx':
+      if (mp.isHost()) return;
+      if (d.what === 'arrive' && BOSSES[d.v]) banner(BOSSES[d.v].name.toUpperCase(), BOSSES[d.v].desc, 'red', 2.4);
+      else bossEvent(d.what);
       break;
   }
 }

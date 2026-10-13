@@ -105,6 +105,11 @@ you log in). Dying ends that game and deletes its save.
   zombie (or enemy player) in range. It works in every mode; online everyone sees the same builds, and in PvP you
   can shoot or blow up the other side's.
 
+### Bosses
+Every 5th wave brings a boss: the **Abomination** (wave 5), the **Screamer** (wave 10, calls in runners and sends
+nearby zombies into a frenzy), the **Juggernaut** (wave 15, armoured, winds up and charges) and the **Broodmother**
+(wave 20, hatches crawlers and bursts into more when it dies). After that it's any of them.
+
 ### Daily quests
 Three new quests every day (the same for everyone). Finish one, then claim its coins in **📜 Quests** on the menu.
 

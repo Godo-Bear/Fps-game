@@ -1,6 +1,20 @@
 import * as THREE from 'three';
 import { ARENA_RADIUS, heightAt } from './terrain.js';
 
+// Boss waves (every 5th) bring one of these. Each has its own trick.
+export const BOSSES = {
+  abomination: { name: 'Abomination', hpMul: 1, speedMul: 1, skin: 0x5b5e48, eyes: 0xc86bff, desc: 'Aim for the head' },
+  screamer: { name: 'Screamer', hpMul: 0.75, speedMul: 1.1, skin: 0x8a6f86, eyes: 0xff4af0, desc: 'It calls the horde and drives it into a frenzy. Kill it fast' },
+  juggernaut: { name: 'Juggernaut', hpMul: 1.4, speedMul: 0.85, skin: 0x5e4c3e, eyes: 0xff6a1a, desc: 'Armoured and angry. Dodge when it charges' },
+  broodmother: { name: 'Broodmother', hpMul: 1.1, speedMul: 0.9, skin: 0x6a8a3a, eyes: 0x8dff4a, desc: 'It hatches crawlers, and bursts into more when it dies' },
+};
+export const BOSS_IDS = Object.keys(BOSSES);
+// wave 5 Abomination, 10 Screamer, 15 Juggernaut, 20 Broodmother, then any of them
+export function bossForWave(wave) {
+  const n = Math.max(0, Math.floor(wave / 5) - 1);
+  return n < BOSS_IDS.length ? BOSS_IDS[n] : BOSS_IDS[Math.floor(Math.random() * BOSS_IDS.length)];
+}
+
 export const ZOMBIE_TYPES = {
   walker: {
     name: 'Walker', hp: 60, speed: 2.2, damage: 10, scale: 1, radius: 0.4, range: 1.5, cooldown: 1.1, score: 10,
@@ -66,8 +80,10 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const rand = (a, b) => a + Math.random() * (b - a);
 
 class Zombie {
-  constructor(typeId, wave, mutated) {
+  constructor(typeId, wave, mutated, variant = null) {
     const T = ZOMBIE_TYPES[typeId];
+    this.variant = typeId === 'boss' ? (BOSSES[variant] ? variant : 'abomination') : null;
+    const BV = this.variant ? BOSSES[this.variant] : null;
     this.typeId = typeId;
     this.type = T;
     this.mutated = mutated;
@@ -77,6 +93,14 @@ class Zombie {
     this.damage = T.damage * (1 + 0.05 * (wave - 1)) * (mutated ? 1.3 : 1);
     this.scale = T.scale * (mutated ? 1.1 : 1);
     this.radius = T.radius * (mutated ? 1.1 : 1);
+    if (BV) {
+      this.maxHp = this.hp = this.hp * BV.hpMul;
+      this.speed *= BV.speedMul;
+      this.abilityT = rand(4, 6);
+    }
+    this.hasteT = 0;
+    this.castT = 0;
+    this.chargeT = 0;
     this.state = 'rising';
     this.riseT = 0;
     this.deadT = 0;
@@ -101,7 +125,8 @@ class Zombie {
     this.pantsMat = new THREE.MeshStandardMaterial({ color: pick(T.pants), roughness: 1, flatShading: true });
     this.baseEmissive = mutated ? 0x1c4a06 : 0x000000;
     this.mats = [this.skinMat, this.shirtMat, this.pantsMat];
-    const eyeMat = new THREE.MeshBasicMaterial({ color: mutated ? 0x6dff2a : T.eyes });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: mutated && !BV ? 0x6dff2a : BV ? BV.eyes : T.eyes });
+    if (BV) this.skinMat.color.setHex(BV.skin);
     const goreMat = new THREE.MeshStandardMaterial({ color: 0x4a0d0a, roughness: 0.6 });
     const glowMat = new THREE.MeshStandardMaterial({ color: 0x9dff4a, emissive: 0x4a9a10, roughness: 0.4 });
     this.mats.push(eyeMat, goreMat, glowMat);
@@ -188,6 +213,34 @@ class Zombie {
       sac.position.set(0, -0.2, 0.18);
       head.add(sac);
     }
+    if (this.variant === 'juggernaut') {
+      // armour plates on the shoulders and chest
+      const plate = new THREE.MeshStandardMaterial({ color: 0x55585e, roughness: 0.5, metalness: 0.6 });
+      this.mats.push(plate);
+      for (const sx of [-1, 1]) {
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.34), plate);
+        p.position.set(sx * 0.32, 0.72, 0);
+        p.rotation.z = sx * -0.3;
+        upper.add(p);
+      }
+      const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.06), plate);
+      chest.position.set(0, 0.4, 0.18);
+      upper.add(chest);
+    }
+    if (this.variant === 'broodmother') {
+      // egg sacs on the back
+      for (let i = 0; i < 5; i++) {
+        const sac = new THREE.Mesh(new THREE.SphereGeometry(0.1 + Math.random() * 0.06, 8, 6), glowMat);
+        sac.position.set((Math.random() - 0.5) * 0.4, 0.2 + Math.random() * 0.5, -0.2);
+        upper.add(sac);
+      }
+    }
+    if (this.variant === 'screamer') {
+      // a gaping jaw
+      const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.16, 0.08), goreMat);
+      jaw.position.set(0, -0.14, 0.15);
+      head.add(jaw);
+    }
     if (typeId === 'boss') {
       for (let i = 0; i < 4; i++) {
         const spike = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.35, 5), goreMat);
@@ -260,8 +313,8 @@ export class ZombieManager {
     for (const z of this.list) if (z.alive) for (const p of z.parts) this.parts.push(p);
   }
 
-  spawn(typeId, wave, playerPos, mutated = false) {
-    const z = new Zombie(typeId, wave, mutated);
+  spawn(typeId, wave, playerPos, mutated = false, variant = null) {
+    const z = new Zombie(typeId, wave, mutated, variant);
     let x = 0;
     let zz = 0;
     for (let tries = 0; tries < 25; tries++) {
@@ -407,7 +460,7 @@ export class ZombieManager {
   // targets: the local Player, or (co-op host) [{ id, pos }] for every living player.
   // hooks: hitPlayer(z, dmg, kind, target), explode(z), dotKill(z)
   update(dt, targets, hooks) {
-    const tg = (Array.isArray(targets) ? targets : [{ id: 0, pos: targets.pos }]).filter((t) => t && t.pos);
+    const tg = (Array.isArray(targets) ? targets : [{ id: 'me', pos: targets.pos }]).filter((t) => t && t.pos);
     let pp = tg[0]?.pos;
     this.groanBudget = Math.max(0, this.groanBudget - dt);
     let removed = false;
@@ -501,7 +554,8 @@ export class ZombieManager {
 
       // ---- alive
       const colliders = this.world.colliders;
-      const speedMul = frosted ? 1 - z.slowAmt : 1;
+      if (z.hasteT > 0) z.hasteT -= dt;
+      const speedMul = (frosted ? 1 - z.slowAmt : 1) * (z.hasteT > 0 ? 1.5 : 1);
 
       // pulling itself up onto a car, wall, wreck or ladder
       if (z.climb) {
@@ -542,6 +596,9 @@ export class ZombieManager {
       const pdz = pp.z - rp.z;
       const pdist = Math.hypot(pdx, pdz);
       const above = pp.y - rp.y;
+
+      // boss tricks (screaming, charging, hatching) can take over the whole frame
+      if (z.variant && z.variant !== 'abomination' && !ladder && this._bossUpdate(z, dt, pp, pdx, pdz, pdist, hooks)) continue;
 
       if (ladder && dist < 0.8 && Math.abs(rp.y - ladder.bottom) < 1) {
         z.climb = {
@@ -805,6 +862,87 @@ export class ZombieManager {
 
   // ---------------------------------------------------------------- co-op: the host sends, everyone else mirrors
   // One row per zombie: [id, type, mutated, x, y, z, yaw, state(0 rising,1 alive,2 dead), headless, hp 0..1, moving]
+  // Returns true when the boss is busy (winding up or charging) and shouldn't do anything else this frame.
+  _bossUpdate(z, dt, pp, pdx, pdz, pdist, hooks) {
+    const rp = z.root.position;
+    const settle = () => {
+      rp.y = Math.max(heightAt(rp.x, rp.z), this.world.colliders.floorAt(rp.x, rp.z, z.radius * 0.6, rp.y));
+    };
+    // charging: a straight line, fast; hits whatever is in the way
+    if (z.chargeT > 0) {
+      z.chargeT -= dt;
+      const step = z.speed * 4.2 * dt;
+      rp.x += z.chargeDir.x * step;
+      rp.z += z.chargeDir.z * step;
+      const bumped = this.world.colliders.resolve(rp, z.radius, rp.y, 1.8 * z.scale);
+      settle();
+      z.root.rotation.y = Math.atan2(z.chargeDir.x, z.chargeDir.z);
+      z.phase += dt * 14;
+      z.legL.rotation.x = Math.sin(z.phase) * 0.9;
+      z.legR.rotation.x = -Math.sin(z.phase) * 0.9;
+      z.armL.rotation.x = z.armR.rotation.x = -1.2;
+      if (Math.random() < dt * 20) this.effects.dust(new THREE.Vector3(rp.x, rp.y + 0.1, rp.z));
+      if (!z.chargeHit && pdist < z.type.range + 1 && Math.abs(pp.y - rp.y) < 2.5) {
+        z.chargeHit = true;
+        hooks.hitPlayer(z, z.damage * 1.6, 'blast', z.target);
+      }
+      if (bumped && this.structures) {
+        const st = this.structures.blocking(rp.x, rp.z, z.radius + 1.2, z.chargeDir.x, z.chargeDir.z, 99);
+        if (st && hooks.hitStructure) hooks.hitStructure(z, st, 300);
+      }
+      if (bumped || z.chargeT <= 0) {
+        z.chargeT = 0;
+        z.attackCd = 1.2;
+        if (bumped) this.audio.explosion(rp);
+      }
+      return true;
+    }
+    // winding up a scream or a charge: stand still, arms up
+    if (z.castT > 0) {
+      z.castT -= dt;
+      settle();
+      z.armL.rotation.x = z.armR.rotation.x = -2.6 + Math.sin(z.castT * 30) * 0.15;
+      z.root.rotation.y = Math.atan2(pdx, pdz);
+      if (z.castT <= 0) {
+        if (z.cast === 'scream') {
+          this.effects.burst(new THREE.Vector3(rp.x, z.centerY + 1, rp.z), { count: 40, color: [0xff4af0, 0xffffff], speed: 9, size: 0.14, life: 0.6, grav: 0, up: 0.3 });
+          if (hooks.summon) hooks.summon(z, 'runner', 3);
+          for (const o of this.list) if (o.alive && o !== z && o.root.position.distanceTo(rp) < 18) o.hasteT = 7;
+          if (hooks.bossEvent) hooks.bossEvent(z, 'scream');
+        } else if (z.cast === 'charge') {
+          const l = Math.hypot(pdx, pdz) || 1;
+          z.chargeDir = { x: pdx / l, z: pdz / l };
+          z.chargeT = Math.min(2, pdist / (z.speed * 4.2) + 0.4);
+          z.chargeHit = false;
+        }
+      }
+      return true;
+    }
+    z.abilityT -= dt;
+    if (z.abilityT > 0 || z.state !== 'alive') return false;
+    if (z.variant === 'screamer' && pdist < 45) {
+      z.cast = 'scream';
+      z.castT = 1.1;
+      z.abilityT = rand(9, 12);
+      this.audio.groan(rp, 1.6, true);
+      return true;
+    }
+    if (z.variant === 'juggernaut' && pdist > 6 && pdist < 32) {
+      z.cast = 'charge';
+      z.castT = 0.9;
+      z.abilityT = rand(6, 8);
+      this.audio.groan(rp, 0.5, true);
+      if (hooks.bossEvent) hooks.bossEvent(z, 'charge');
+      return true;
+    }
+    if (z.variant === 'broodmother') {
+      z.abilityT = rand(6, 8);
+      if (hooks.summon) hooks.summon(z, 'crawler', 2);
+      if (hooks.bossEvent) hooks.bossEvent(z, 'hatch');
+    }
+    return false;
+  }
+
   snapshot() {
     const r = (v) => Math.round(v * 100) / 100;
     return this.list.map((z) => [
@@ -812,6 +950,7 @@ export class ZombieManager {
       r(z.root.position.x), r(z.root.position.y), r(z.root.position.z), r(z.root.rotation.y),
       z.state === 'rising' ? 0 : z.state === 'alive' ? 1 : 2, z.head.parent ? 0 : 1,
       Math.round(Math.max(0, z.hp / z.maxHp) * 100) / 100, z.climb ? 1 : 0,
+      z.variant ? BOSS_IDS.indexOf(z.variant) : -1,
     ]);
   }
 
@@ -827,7 +966,7 @@ export class ZombieManager {
       let z = byId.get(id);
       if (!z) {
         if (state === 2) continue; // died before we ever saw it
-        z = new Zombie(typeId, 1, !!mut);
+        z = new Zombie(typeId, 1, !!mut, BOSS_IDS[row[11]] || null);
         z.id = id;
         z.puppet = true;
         z.state = 'alive';
