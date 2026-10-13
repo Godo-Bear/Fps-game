@@ -107,6 +107,11 @@ you log in). Dying ends that game and deletes its save.
   zombie (or enemy player) in range. It works in every mode; online everyone sees the same builds, and in PvP you
   can shoot or blow up the other side's.
 
+### Night waves
+Every 4th wave (4, 8, 12...) happens at night: the sky goes dark, the moon comes out and a flashlight comes on.
+Night zombies have 40% more health, are 15% faster, hit 25% harder, are more often mutated and include more
+runners and spitters, but night kills are worth 1.5× score. Works in solo, Co-op and Defend the Points.
+
 ### Bosses
 Every 5th wave brings a boss: the **Abomination** (wave 5), the **Screamer** (wave 10, calls in runners and sends
 nearby zombies into a frenzy), the **Juggernaut** (wave 15, armoured, winds up and charges) and the **Broodmother**

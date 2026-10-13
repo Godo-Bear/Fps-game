@@ -13,6 +13,7 @@ export const QUEST_POOL = [
   { id: 'build6', key: 'built', goal: 6, text: 'Build 6 barricades or turrets', reward: 150 },
   { id: 'turret20', key: 'turretKills', goal: 20, text: 'Let your turrets kill 20 zombies', reward: 200 },
   { id: 'waves10', key: 'waves', goal: 10, text: 'Clear 10 zombie waves', reward: 200 },
+  { id: 'night3', key: 'nightWaves', goal: 3, text: 'Survive 3 night waves', reward: 250 },
   { id: 'coop5', key: 'coopWaves', goal: 5, text: 'Clear 5 waves in Co-op or Defend the Points', reward: 250 },
   { id: 'pvp15', key: 'pvpKills', goal: 15, text: 'Get 15 kills in multiplayer matches', reward: 200 },
   { id: 'win1', key: 'pvpWins', goal: 1, text: 'Win a multiplayer match', reward: 200 },

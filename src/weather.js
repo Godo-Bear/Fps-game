@@ -72,6 +72,11 @@ export const WEATHER = {
   },
 };
 
+const NIGHT_FOG = new THREE.Color(0x0e1424);
+const NIGHT_TOP = new THREE.Color(0x05070f);
+const NIGHT_HORIZON = new THREE.Color(0x1a2438);
+const MOONLIGHT = new THREE.Color(0x8aa0ff);
+
 let flake = null;
 function flakeTexture() {
   if (flake) return flake;
@@ -105,6 +110,11 @@ export class Weather {
     };
     this.flash = 0;
     this.nextBolt = 8;
+    // night: 0 = day, 1 = night (the game sets the target, the sky fades over a few seconds)
+    this.night = 0;
+    this.nightK = 0;
+    this.sunColor = atmosphere.sun.color.clone();
+
 
     // rain streaks
     const rg = new THREE.BufferGeometry();
@@ -208,6 +218,23 @@ export class Weather {
     this.atm.skyHorizon.copy(c.horizon).lerp(new THREE.Color(0xdde6ff), f * 0.5);
     this.atm.sun.intensity = c.sun;
     this.atm.hemi.intensity = c.hemi + f * 4;
+
+    // night: dark blue sky, thick dark fog, the sun becomes a dim blue moonlight
+    this.nightK += (this.night - this.nightK) * Math.min(1, dt * 0.5);
+    const n = this.nightK;
+    if (n > 0.001) {
+      // (colours blend in linear space, so these go all the way to the night colours)
+      fog.color.lerp(NIGHT_FOG, n);
+      fog.near *= 1 - n * 0.5;
+      fog.far *= 1 - n * 0.45;
+      this.atm.skyTop.lerp(NIGHT_TOP, n);
+      this.atm.skyHorizon.lerp(NIGHT_HORIZON, n);
+      this.atm.sun.intensity *= 1 - n * 0.85;
+      this.atm.hemi.intensity *= 1 - n * 0.78;
+      if (this.atm.fill) this.atm.fill.intensity = 0.7 * (1 - n * 0.6);
+    }
+    this.atm.sun.color.copy(this.sunColor).lerp(MOONLIGHT, n);
+
 
     // rain
     this.rain.material.opacity = c.rain * 0.55;

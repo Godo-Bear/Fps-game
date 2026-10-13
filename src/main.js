@@ -77,6 +77,7 @@ const game = {
   runId: '',
   runName: '',
   scrap: 0, // for barricades and turrets
+  night: false, // night waves are harder
   grenades: 2,
   timer: 0,
   toSpawn: 0,
@@ -172,6 +173,45 @@ function pickType(n) {
 }
 const mutatedChance = (n) => (n >= 6 ? Math.min(0.25, 0.08 + (n - 6) * 0.012) : n >= 3 ? 0.03 : 0);
 
+// ---------------------------------------------------------------- night waves
+// Every 4th wave starts at night: dark sky, a flashlight, and tougher zombies worth more.
+const NIGHT = { hp: 1.4, speed: 1.15, damage: 1.25, mutated: 0.15, score: 1.5 };
+let adminNight = 'auto'; // admin: auto | night | day
+const isNightWave = (w) => (adminNight === 'night' ? true : adminNight === 'day' ? false : w > 0 && w % 4 === 0);
+// night zombies: more fast and nasty types
+function nightType(n) {
+  if (Math.random() < 0.35) return n >= 5 ? ['runner', 'spitter', 'crawler', 'brute'][Math.floor(Math.random() * 4)] : 'runner';
+  return pickType(n);
+}
+function nightBuff(z) {
+  z.maxHp *= NIGHT.hp;
+  z.hp = z.maxHp;
+  z.speed *= NIGHT.speed;
+  z.damage *= NIGHT.damage;
+  z.night = true;
+}
+// the sky follows the wave that's coming (or going on)
+function setNight(on, announce = false) {
+  if (game.night === on) return;
+  game.night = on;
+  if (announce) subBanner(on ? '🌙 Night is falling… the next wave will be harder' : '☀️ Dawn breaks', 2.6);
+}
+
+// a flashlight on your gun at night
+const flashlight = new THREE.SpotLight(0xfff2d8, 0, 48, 0.42, 0.55, 1.4);
+scene.add(flashlight, flashlight.target);
+const _fl = new THREE.Vector3();
+function updateFlashlight() {
+  const k = weather ? weather.nightK : 0;
+  flashlight.intensity = k * 60;
+  flashlight.visible = k > 0.02 && !player.dead && !inMenu();
+  if (!flashlight.visible) return;
+  camera.getWorldDirection(_fl);
+  flashlight.position.copy(camera.position).addScaledVector(_fl, 0.3);
+  flashlight.position.y -= 0.15;
+  flashlight.target.position.copy(camera.position).addScaledVector(_fl, 10);
+}
+
 function beginWave() {
   game.wave++;
   game.cfg = waveConfig(game.wave);
@@ -180,7 +220,9 @@ function beginWave() {
   game.spawnT = 0.5;
   game.phase = 'active';
   game.bossVariant = game.cfg.boss ? bossForWave(game.wave) : null;
+  setNight(isNightWave(game.wave));
   let sub = game.cfg.boss ? `The ${BOSSES[game.bossVariant].name} approaches…` : 'Survive';
+  if (game.night) sub = `🌙 Night: the dead are stronger · ${sub}`;
   if (game.wave > 1 && Math.random() < 0.35) {
     const next = weather.random(weather.id);
     if (world.theme.weathers.includes(next)) {
@@ -194,7 +236,7 @@ function beginWave() {
   if (isCoop()) {
     // squad mates who went down come back for the new wave
     mp.send({ t: 'coopwave', wave: game.wave });
-    mp.relay('all', { k: 'wave', wave: game.wave, sub, boss: game.cfg.boss ? 1 : 0, weather: weather.id });
+    mp.relay('all', { k: 'wave', wave: game.wave, sub, boss: game.cfg.boss ? 1 : 0, weather: weather.id, night: game.night ? 1 : 0 });
     if (player.dead) coopRevive();
   }
 }
@@ -220,14 +262,16 @@ function updateWave(dt) {
     game.spawnT -= dt;
     const alive = zombies.aliveCount;
     if (game.spawnT <= 0 && game.toSpawn > 0 && alive < cfg.maxAlive) {
-      zombies.spawn(pickType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave));
+      const z = zombies.spawn(game.night ? nightType(game.wave) : pickType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave) + (game.night ? NIGHT.mutated : 0));
+      if (game.night) nightBuff(z);
       game.toSpawn--;
       game.spawnT = cfg.interval * (0.5 + Math.random());
     }
     if (game.bossToSpawn > 0 && cfg.total - game.toSpawn >= cfg.total * 0.3) {
       // a second boss in the same wave is a different one
       const variant = game.bossToSpawn < game.cfg.boss ? BOSS_IDS[Math.floor(Math.random() * BOSS_IDS.length)] : game.bossVariant || 'abomination';
-      zombies.spawn('boss', game.wave, spawnAnchor(), game.wave >= 10, variant);
+      const b = zombies.spawn('boss', game.wave, spawnAnchor(), game.wave >= 10, variant);
+      if (game.night) nightBuff(b);
       game.bossToSpawn--;
       bossBanner(variant);
     }
@@ -240,7 +284,9 @@ function updateWave(dt) {
       game.scrap = Math.min(999, game.scrap + 10);
       questAdd('waves');
       if (isCoop()) questAdd('coopWaves');
+      if (game.night) questAdd('nightWaves');
       flushQuests();
+      setNight(isNightWave(game.wave + 1), true);
       player.heal(20, overhealCap());
       if (isCoop()) {
         mp.relay('all', { k: 'cleared', wave: game.wave });
@@ -1034,7 +1080,7 @@ function rewardKill({ type, mut, head, src = null, x, y, z }) {
     game.headshots++;
     headshotPop();
   }
-  game.score += Math.round(T.score * (head ? 1.5 : 1) * (mut ? 2 : 1) * (1 + game.wave * 0.1));
+  game.score += Math.round(T.score * (head ? 1.5 : 1) * (mut ? 2 : 1) * (1 + game.wave * 0.1) * (game.night ? NIGHT.score : 1));
   if (stats.healOnKill) player.heal(stats.healOnKill, overhealCap());
   audio.kill();
   showHit('kill');
@@ -1502,7 +1548,7 @@ function setText(id, v) {
 
 function updateHud(dt) {
   if (zombieGame()) {
-    setText('wave-label', game.wave > 0 ? `WAVE ${game.wave}` : 'GET READY');
+    setText('wave-label', game.wave > 0 ? `WAVE ${game.wave}${game.night ? ' 🌙' : ''}` : 'GET READY');
     const remaining = game.phase !== 'active' ? 0 : simHost() ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : coop.remaining;
     setText('zombies-left', game.phase === 'tutorial' ? 'Tutorial' : game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : 'Wave cleared');
     setText('score', String(game.score));
@@ -1877,8 +1923,11 @@ function startGame(save = null, name = null) {
   setBuild(false);
   Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
   game.runName = cleanSaveName(name || nextGameName());
-  if (save) restoreRun(save);
-  else {
+  game.night = false;
+  if (save) {
+    restoreRun(save);
+    game.night = isNightWave(game.wave + 1); // continuing into a night wave
+  } else {
     applyShop();
     persistRun(); // it shows up in Saved Games straight away
   }
@@ -2008,7 +2057,7 @@ const mp = new Multiplayer({
     clearProjectiles();
     clearMedkits();
     player.reset(100);
-    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0 });
+    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0, night: false });
     structures.clear();
     setBuild(false);
     $('banner').className = '';
@@ -2972,6 +3021,14 @@ accountUI.adminActions = {
   },
   zombieTypes: () => Object.keys(ZOMBIE_TYPES),
   bosses: () => BOSS_IDS.map((id) => [id, BOSSES[id].name]),
+  get nightMode() {
+    return adminNight;
+  },
+  setNightMode(m) {
+    adminNight = ['auto', 'night', 'day'].includes(m) ? m : 'auto';
+    if (zombieGame() && !inMenu() && simHost()) setNight(isNightWave(game.phase === 'active' ? game.wave : game.wave + 1), true);
+    return { auto: 'Night every 4th wave (normal).', night: 'Every wave is a night wave.', day: 'No more night waves.' }[adminNight];
+  },
   maps: () => Object.entries(MAPS).map(([id, m]) => [id, m.name]),
   get soloMap() {
     return adminSoloMap;
@@ -3062,7 +3119,7 @@ function worldTick(dt) {
     if (mp.isHost() && coop.snapT <= 0) {
       coop.snapT = 0.1;
       const remaining = game.phase === 'active' ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : 0;
-      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.timer), z: zombies.snapshot(), pt: isDefend() ? defend.rows() : undefined });
+      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.timer), z: zombies.snapshot(), pt: isDefend() ? defend.rows() : undefined, n: game.night ? 1 : 0 });
     }
     coop.scoreT -= dt;
     if (coop.scoreT <= 0) {
@@ -3078,6 +3135,7 @@ function onCoopRelay(from, d) {
     case 'zs': // zombie snapshot from the host
       if (mp.isHost()) return;
       zombies.applySnapshot(d.z || []);
+      setNight(!!d.n, true);
       if (isDefend()) defend.apply(d.pt);
       game.wave = d.w | 0;
       coop.remaining = d.r | 0;
@@ -3115,6 +3173,7 @@ function onCoopRelay(from, d) {
     case 'wave':
       if (mp.isHost()) return;
       game.wave = d.wave;
+      game.night = !!d.night;
       banner(`WAVE ${d.wave}`, d.sub, d.boss ? 'red' : '', 2.6);
       audio.waveStart();
       if (d.weather && WEATHER[d.weather] && weather.id !== d.weather) weather.set(d.weather);
@@ -3127,6 +3186,7 @@ function onCoopRelay(from, d) {
       game.scrap = Math.min(999, game.scrap + 10);
       questAdd('waves');
       questAdd('coopWaves');
+      if (game.night) questAdd('nightWaves');
       flushQuests();
       banner(`WAVE ${d.wave} CLEARED`, `+20 HP${isDefend() ? ` · ${defend.heldCount}/3 points held` : ''} · pick a power-up`, 'gold', 2.3);
       audio.waveCleared();
@@ -3179,7 +3239,9 @@ function frame(now) {
   if (!menuish) updateHud(dt);
   const viewPos = menuish ? camera.position : player.pos;
   world.update(dt, time, viewPos);
+  weather.night = zombieGame() && game.night && !inMenu() ? 1 : 0;
   weather.update(dt, camera.position);
+  updateFlashlight();
   effects.update(dt);
   updateDamageNumbers(dt);
   updateZombieMarkers();
@@ -3232,6 +3294,6 @@ if (import.meta.env.DEV) {
     get savedGames() {
       return savedGames;
     },
-    game, player, weapon, mp, account, defend, structures, spectate, controls, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
+    game, player, weapon, mp, account, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

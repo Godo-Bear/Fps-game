@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.2', date: '13 Oct 2026', title: 'Night waves',
+    items: [
+      'Every 4th wave happens at night: the sky goes dark, the moon comes up and you get a flashlight.',
+      'Night zombies are tougher, faster and hit harder, more of them are mutated, and there are more runners and spitters.',
+      'Night kills are worth 1.5× score. New quest: survive 3 night waves.',
+      'Admin: always night, never night, or normal.',
+    ],
+  },
+  {
     v: '4.1', date: '13 Oct 2026', title: 'Two new multiplayer maps',
     items: [
       'Rustwater Docks: an island harbour with stacked containers, cranes to climb, warehouses, beached boats and a lighthouse.',

@@ -813,6 +813,10 @@ export class AccountUI {
         <button class="btn small" data-run="skiptut" ${solo ? '' : 'disabled'}>SKIP TUTORIAL</button>
       </div>
       <div class="auth inline admin-row">
+        <span>🌙 Night waves:</span>
+        <select id="admin-night">${[['auto', 'Every 4th wave (normal)'], ['night', 'Always night'], ['day', 'Never night']].map(([id, n]) => `<option value="${id}" ${act?.nightMode === id ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      </div>
+      <div class="auth inline admin-row">
         <select id="admin-boss" ${solo ? '' : 'disabled'}>${(act?.bosses() || []).map(([id, n]) => `<option value="${id}">${n}</option>`).join('')}</select>
         <button class="btn small" id="admin-boss-btn" ${solo ? '' : 'disabled'}>SPAWN THIS BOSS</button>
       </div>
@@ -850,6 +854,7 @@ export class AccountUI {
       msg(act.announce(input.value));
       input.value = '';
     });
+    document.getElementById('admin-night').onchange = (e) => msg(act.setNightMode(e.target.value));
     document.getElementById('admin-map').onchange = (e) => msg(act.setSoloMap(e.target.value));
     document.getElementById('admin-quick-reset').onclick = () => a.setQuickChat([]).then(() => msg('Quick chat back to the defaults.'), (e) => msg(e.message));
     const bbtn = document.getElementById('admin-boss-btn');
