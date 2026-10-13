@@ -221,6 +221,9 @@ export class ZombieManager {
     this.puddles = [];
     this.heads = [];
     this.groanBudget = 0;
+    this.nav = null; // NavGrid for the current map
+    this.navT = 0;
+    this._dir = { x: 0, z: 0 };
   }
 
   get aliveCount() {
@@ -268,6 +271,7 @@ export class ZombieManager {
         zz *= (ARENA_RADIUS - 3) / r;
       }
       if (Math.hypot(x - playerPos.x, zz - playerPos.z) < 25) continue;
+      if (this.nav && !this.nav.reachable(x, zz)) continue; // never inside a closed-off spot
       if (!this.world.colliders.blocked(x, zz, z.radius * 2)) break;
     }
     z.root.position.set(x, heightAt(x, zz) - 2 * z.scale, zz);
@@ -395,6 +399,12 @@ export class ZombieManager {
     this.groanBudget = Math.max(0, this.groanBudget - dt);
     let removed = false;
     let partsDirty = false;
+    // refresh the route map towards the player a few times a second
+    this.navT -= dt;
+    if (this.nav && this.navT <= 0) {
+      this.navT = 0.25;
+      this.nav.update(pp.x, pp.z);
+    }
 
     for (const z of this.list) {
       const T = z.type;
@@ -532,6 +542,14 @@ export class ZombieManager {
       if (wantMove && z.windup <= 0) {
         let mx = dx / (dist || 1);
         let mz = dz / (dist || 1);
+        // follow the route map around walls and through doorways
+        if (this.nav && !keepAway && (ladder ? dist > 6 : pdist > 2.5)) {
+          const d = this.nav.direction(rp.x, rp.z, this._dir);
+          if (d) {
+            mx = d.x;
+            mz = d.z;
+          }
+        }
         if (keepAway) {
           mx = -mx;
           mz = -mz;

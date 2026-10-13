@@ -7,6 +7,7 @@ import { Effects } from './effects.js';
 import { GUNS, MUTATIONS, TIER_CSS, randomMutation, rollGun } from './guns.js';
 import { Minimap } from './minimap.js';
 import { Multiplayer } from './multiplayer.js';
+import { NavGrid } from './navgrid.js';
 import { GunPickups } from './pickups.js';
 import { Player } from './player.js';
 import { POWERUPS, RARITY_ODDS, RARITY_RANK, baseStats, rollOffer } from './powerups.js';
@@ -109,6 +110,8 @@ function loadMap(id) {
   world.setEffects(effects);
   if (!zombies) zombies = new ZombieManager(scene, world, effects, audio);
   zombies.world = world;
+  zombies.nav = new NavGrid(world.colliders);
+  zombies.navT = 0;
   zombies.clear();
   if (!pickups) pickups = new GunPickups(scene, world);
   pickups.clear();
