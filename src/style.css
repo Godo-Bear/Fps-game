@@ -1807,3 +1807,58 @@ body.touch-mode #build-hud {
   bottom: auto;
   top: 60px;
 }
+
+/* ---- settings */
+#settings {
+  z-index: 30;
+}
+.settings-modal h2 {
+  margin-top: 0;
+  text-align: center;
+}
+.s-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 4px;
+  border-bottom: 1px solid rgba(233, 217, 184, 0.12);
+  font-weight: 700;
+}
+.s-in {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.s-in input[type='range'] {
+  width: min(220px, 40vw);
+  accent-color: #ffb020;
+}
+.s-in input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  accent-color: #ffb020;
+}
+.s-in select {
+  font: 700 16px 'Rajdhani', sans-serif;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #f3e6cc;
+  border: 1px solid rgba(233, 217, 184, 0.35);
+  border-radius: 4px;
+}
+.s-val {
+  min-width: 48px;
+  text-align: right;
+  opacity: 0.8;
+}
+#fps {
+  position: fixed;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  font: 700 12px 'Rajdhani', sans-serif;
+  color: #5dff6a;
+  z-index: 40;
+  pointer-events: none;
+}

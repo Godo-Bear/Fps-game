@@ -24,7 +24,7 @@ export class GameAudio {
     if (!AC) return;
     const ctx = (this.ctx = new AC());
     this.master = ctx.createGain();
-    this.master.gain.value = 0.55;
+    this.master.gain.value = this.muted ? 0 : 0.55 * (this.volume ?? 1);
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 6;
@@ -37,9 +37,14 @@ export class GameAudio {
     this._wind();
   }
 
+  setVolume(v) {
+    this.volume = v;
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.55 * v;
+  }
+
   setMuted(m) {
     this.muted = m;
-    if (this.master) this.master.gain.value = m ? 0 : 0.55;
+    if (this.master) this.master.gain.value = m ? 0 : 0.55 * (this.volume ?? 1);
   }
 
   get ok() {

@@ -14,6 +14,7 @@
   <body>
     <div id="game"></div>
 
+    <div id="fps" class="hidden"></div>
     <div id="hud" class="hidden">
       <div id="crosshair"><i></i><i></i><i></i><i></i></div>
       <div id="reticle"></div>
@@ -83,6 +84,7 @@
           <button id="saves-btn" class="btn">SAVED GAMES</button>
           <button id="mp-btn" class="btn alt">MULTIPLAYER</button>
           <button id="shop-btn" class="btn gold">🪙 SHOP</button>
+          <button id="settings-btn" class="btn ghost">⚙ SETTINGS</button>
         </div>
         <div class="controls">
           <div><b>WASD</b> move</div>
@@ -189,6 +191,7 @@
         <h2 id="pause-title">PAUSED</h2>
         <p>Click to continue</p>
         <button id="resume-btn" class="btn">RESUME</button>
+        <button id="pause-settings" class="btn ghost">⚙ SETTINGS</button>
         <button id="quit-btn" class="btn ghost">EXIT TO MENU</button>
       </div>
     </div>
@@ -208,6 +211,17 @@
         <div id="final-stats"></div>
         <button id="again-btn" class="btn">PLAY AGAIN</button>
         <button id="menu-btn" class="btn ghost">MAIN MENU</button>
+      </div>
+    </div>
+
+    <div id="settings" class="overlay hidden">
+      <div class="modal settings-modal">
+        <h2>SETTINGS</h2>
+        <div id="settings-body"></div>
+        <div class="menu-buttons">
+          <button id="settings-close" class="btn">DONE</button>
+          <button id="settings-reset" class="btn ghost">RESET</button>
+        </div>
       </div>
     </div>
 

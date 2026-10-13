@@ -75,7 +75,7 @@ export class Player {
 
   look(dx, dy, scale = 1) {
     this.yaw -= dx * this.sensitivity * scale;
-    this.pitch -= dy * this.sensitivity * scale;
+    this.pitch -= dy * this.sensitivity * scale * (this.invertY ? -1 : 1);
     this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch));
   }
 

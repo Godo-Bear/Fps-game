@@ -1324,6 +1324,7 @@ function headshotPop() {
 // floating damage numbers
 const dmgNums = [];
 function damageNumber(point, dmg, kind) {
+  if (!settings.dmgNumbers) return;
   let el = dmgNums.find((d) => d.t <= 0);
   if (!el) {
     if (dmgNums.length > 30) return;
@@ -2238,6 +2239,96 @@ account.onChange(() => {
   if ((account.quests || []).length) questsDone = done;
 });
 
+// ---------------------------------------------------------------- settings (saved in this browser)
+const SETTINGS_KEY = 'deadplains.settings';
+const DEFAULT_SETTINGS = { sens: 1, padSens: 1, invertY: false, fov: 75, volume: 0.8, quality: 'high', dmgNumbers: true, fps: false, tutorial: true };
+const settings = { ...DEFAULT_SETTINGS };
+try {
+  Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
+} catch {
+  /* defaults */
+}
+const QUALITY = { low: { ratio: 0.75, shadows: false }, medium: { ratio: 1, shadows: true }, high: { ratio: 1.75, shadows: true } };
+function applySettings() {
+  player.sensitivity = 0.0022 * settings.sens;
+  player.invertY = settings.invertY;
+  controls.sens = settings.padSens;
+  audio.setVolume(settings.volume);
+  const q = QUALITY[settings.quality] || QUALITY.high;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.ratio));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  if (renderer.shadowMap.enabled !== q.shadows) {
+    renderer.shadowMap.enabled = q.shadows;
+    scene.traverse((o) => {
+      if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true;
+    });
+  }
+  $('fps').classList.toggle('hidden', !settings.fps);
+  savePref(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+const SETTING_ROWS = [
+  ['sens', 'Mouse sensitivity', 'range', 0.2, 3, 0.05],
+  ['padSens', 'Touch / controller look speed', 'range', 0.2, 3, 0.05],
+  ['invertY', 'Invert look up/down', 'check'],
+  ['fov', 'Field of view', 'range', 60, 100, 1],
+  ['volume', 'Volume', 'range', 0, 1, 0.05],
+  ['quality', 'Graphics', 'select', ['low', 'medium', 'high']],
+  ['dmgNumbers', 'Damage numbers', 'check'],
+  ['fps', 'Show FPS', 'check'],
+  ['tutorial', 'Tutorial wave for new games', 'check'],
+];
+function openSettings() {
+  const fmt = (k, v) => (k === 'volume' ? `${Math.round(v * 100)}%` : k === 'fov' ? `${v}°` : `${Number(v).toFixed(2)}x`);
+  $('settings-body').innerHTML = SETTING_ROWS.map(([k, label, type, a, b, step]) => {
+    const v = settings[k];
+    let input = '';
+    if (type === 'range') input = `<input type="range" data-k="${k}" min="${a}" max="${b}" step="${step}" value="${v}" /><span class="s-val">${fmt(k, v)}</span>`;
+    if (type === 'check') input = `<input type="checkbox" data-k="${k}" ${v ? 'checked' : ''} />`;
+    if (type === 'select') input = `<select data-k="${k}">${a.map((o) => `<option ${o === v ? 'selected' : ''} value="${o}">${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}</select>`;
+    return `<label class="s-row"><span>${label}</span><span class="s-in">${input}</span></label>`;
+  }).join('');
+  $('settings').classList.remove('hidden');
+}
+$('settings-body').addEventListener('input', (e) => {
+  const el = e.target;
+  const k = el.dataset.k;
+  if (!k) return;
+  const row = SETTING_ROWS.find((r) => r[0] === k);
+  settings[k] = row[2] === 'check' ? el.checked : row[2] === 'select' ? el.value : Number(el.value);
+  const val = el.parentElement.querySelector('.s-val');
+  if (val) val.textContent = k === 'volume' ? `${Math.round(settings[k] * 100)}%` : k === 'fov' ? `${settings[k]}°` : `${settings[k].toFixed(2)}x`;
+  applySettings();
+});
+$('settings-reset').addEventListener('click', () => {
+  Object.assign(settings, DEFAULT_SETTINGS);
+  applySettings();
+  openSettings();
+});
+$('settings-close').addEventListener('click', () => $('settings').classList.add('hidden'));
+$('settings').addEventListener('click', (e) => {
+  if (e.target === $('settings')) $('settings').classList.add('hidden');
+});
+for (const id of ['settings-btn', 'pause-settings']) {
+  $(id).addEventListener('click', (e) => {
+    e.stopPropagation();
+    openSettings();
+  });
+}
+// frames per second, when switched on
+let fpsN = 0;
+let fpsT = 0;
+function updateFps(dt) {
+  if (!settings.fps) return;
+  fpsN++;
+  fpsT += dt;
+  if (fpsT >= 0.5) {
+    $('fps').textContent = `${Math.round(fpsN / fpsT)} FPS`;
+    fpsN = 0;
+    fpsT = 0;
+  }
+}
+
 // ---------------------------------------------------------------- touch screens and controllers
 const controls = new Controls({
   player,
@@ -2260,6 +2351,8 @@ const controls = new Controls({
     if (game.state === 'paused') lock();
   },
 });
+applySettings();
+
 // playing with a controller and then grabbing the keyboard: Esc still pauses
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Escape' && game.state === 'playing' && !document.pointerLockElement) controls.ctx.pause();
@@ -2568,6 +2661,7 @@ function frame(now) {
   time += dt;
   controls.update(dt);
   controls.updateTouchUi(game.state === 'playing' && !player.dead);
+  updateFps(dt);
 
   if (game.state === 'playing') update(dt);
   else if (game.mode === 'mp' && game.state === 'paused' && mp.inMatch) {
@@ -2576,7 +2670,7 @@ function frame(now) {
   }
   if (isCoop() && ['playing', 'paused', 'choosing'].includes(game.state)) worldTick(dt);
   if (game.mode === 'mp') mp.update(dt, time);
-  const fov = inMenu() ? 75 : 75 + (weapon.def.zoomFov - 75) * weapon.ads;
+  const fov = inMenu() ? 75 : settings.fov + (weapon.def.zoomFov - 75) * weapon.ads;
   if (Math.abs(camera.fov - fov) > 0.01) {
     camera.fov = fov;
     camera.updateProjectionMatrix();
