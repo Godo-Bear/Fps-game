@@ -171,6 +171,11 @@ or any zombie type, kill all zombies, set weather, set score and jump to any wav
 (remove all guns, unmutate, reset power-ups, turn off all cheats) and setting your level and coins. Cheats only work in solo games;
 in multiplayer admins get an ADMIN badge and can kick players.
 
+Newer admin tools: max or reset all **gun mastery** (every skin unlocked), finish or reset **today's quests**,
+replay or skip the **tutorial**, spawn a **specific boss**, **infinite grenades**, **free building**, **unlimited builds**,
+**super turrets**, max / set **scrap**, refill / set **grenades**, remove all builds and zero scrap & grenades.
+Admin accounts also own every shop **emote**.
+
 To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:
 it lives in a Cloudflare secret called `ADMIN_CODE` (case and extra spaces don't matter). Set it in the Cloudflare dashboard
 (Worker → Settings → Variables and Secrets → Add → type *Secret*, name `ADMIN_CODE`), or with `npx wrangler secret put ADMIN_CODE`.

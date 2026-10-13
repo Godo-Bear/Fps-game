@@ -384,6 +384,16 @@ export class Account {
     this.guest.items = { ...this.guest.items, emotes: slots };
     this._saveGuest();
   }
+  async adminMastery(mode) {
+    const { user } = await this._api('/admin/mastery', { method: 'POST', body: { mode } });
+    this.user = user;
+    this._changed();
+  }
+  async adminQuests(mode) {
+    const { quests } = await this._api('/admin/quests', { method: 'POST', body: { mode } });
+    this.quests = quests;
+    this._changed();
+  }
   async adminSetCoins(coins) {
     const { user } = await this._api('/admin/coins', { method: 'POST', body: { coins } });
     this.user = user;
@@ -762,11 +772,19 @@ export class AccountUI {
       <h4>Account</h4>
       <form class="auth inline admin-row" data-act="level"><input name="v" type="number" min="1" max="200" placeholder="Set level (1-200)" /><button class="btn small">SET LEVEL</button></form>
       <form class="auth inline admin-row" data-act="coins"><input name="v" type="number" min="0" placeholder="Set coins" /><button class="btn small">SET COINS</button></form>
+      <div class="admin-grid">
+        <button class="btn small" data-acc="mastery-max">🏅 MAX ALL GUN MASTERY</button>
+        <button class="btn small ghost" data-acc="mastery-reset">RESET GUN MASTERY</button>
+        <button class="btn small" data-acc="quests-complete">📜 FINISH TODAY'S QUESTS</button>
+        <button class="btn small ghost" data-acc="quests-reset">RESET TODAY'S QUESTS</button>
+        <button class="btn small ghost" data-run="tutorial">REPLAY THE TUTORIAL</button>
+      </div>
       <h4>Solo cheats ${mp ? '<span class="muted">(off in multiplayer)</span>' : ''}</h4>
       <div class="admin-grid">
         ${[
           ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
           ['speed', '2× move speed'], ['freeze', 'Freeze zombies'], ['slowmo', 'Slow motion'], ['nohud', 'Hide HUD (screenshots)'],
+          ['grenades', 'Infinite grenades'], ['build', 'Free building (no scrap)'], ['turrets', 'Super turrets (5× damage)'], ['instabuild', 'Unlimited builds (no max)'],
         ]
           .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${mp ? 'disabled' : ''} /> ${label}</label>`)
           .join('')}
@@ -779,12 +797,21 @@ export class AccountUI {
         <button class="btn small" data-run="heal" ${solo ? '' : 'disabled'}>FULL HEAL + OVERHEAL</button>
         <button class="btn small" data-run="boss" ${solo ? '' : 'disabled'}>SPAWN BOSS</button>
         <button class="btn small" data-run="killall" ${solo ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
+        <button class="btn small" data-run="scrap" ${solo ? '' : 'disabled'}>🔩 MAX SCRAP</button>
+        <button class="btn small" data-run="nades" ${solo ? '' : 'disabled'}>💣 REFILL GRENADES</button>
+        <button class="btn small" data-run="skiptut" ${solo ? '' : 'disabled'}>SKIP TUTORIAL</button>
+      </div>
+      <div class="auth inline admin-row">
+        <select id="admin-boss" ${solo ? '' : 'disabled'}>${(act?.bosses() || []).map(([id, n]) => `<option value="${id}">${n}</option>`).join('')}</select>
+        <button class="btn small" id="admin-boss-btn" ${solo ? '' : 'disabled'}>SPAWN THIS BOSS</button>
       </div>
       <h4>Undo</h4>
       <div class="admin-grid">
         <button class="btn small ghost" data-run="removeguns" ${solo ? '' : 'disabled'}>REMOVE ALL GUNS</button>
         <button class="btn small ghost" data-run="unmutate" ${solo ? '' : 'disabled'}>UNMUTATE GUNS</button>
         <button class="btn small ghost" data-run="resetpowerups" ${solo ? '' : 'disabled'}>RESET POWER-UPS</button>
+        <button class="btn small ghost" data-run="clearbuilds" ${solo ? '' : 'disabled'}>REMOVE ALL BUILDS</button>
+        <button class="btn small ghost" data-run="noscrap" ${solo ? '' : 'disabled'}>ZERO SCRAP & GRENADES</button>
         <button class="btn small ghost" data-run="cheatsoff">TURN OFF ALL CHEATS</button>
       </div>
       <div class="auth inline admin-row">
@@ -794,12 +821,35 @@ export class AccountUI {
         <button class="btn small" id="admin-weather-btn" ${solo ? '' : 'disabled'}>SET WEATHER</button>
       </div>
       <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCORE</button></form>
+      <form class="auth inline admin-row" data-act="setscrap"><input name="v" type="number" min="0" max="999" placeholder="Set scrap" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCRAP</button></form>
+      <form class="auth inline admin-row" data-act="setnades"><input name="v" type="number" min="0" max="20" placeholder="Set grenades" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET GRENADES</button></form>
       <form class="auth inline admin-row" data-act="wave"><input name="v" type="number" min="1" max="200" placeholder="Jump to wave" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET WAVE</button></form>
       <div id="admin-msg" class="msg"></div>
       <p class="muted small">Press F2 in-game to open this panel. In multiplayer you get an ADMIN badge, and as host you can kick players.</p>`;
     const msg = (t) => (document.getElementById('admin-msg').textContent = t);
     const spawn = document.getElementById('admin-spawn');
     if (spawn) spawn.onclick = () => msg(act.run('spawn', document.getElementById('admin-zombie').value));
+    const bbtn = document.getElementById('admin-boss-btn');
+    if (bbtn) bbtn.onclick = () => msg(act.run('boss', document.getElementById('admin-boss').value));
+    this.body.querySelectorAll('[data-acc]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const [what, mode] = b.dataset.acc.split('-');
+        try {
+          if (what === 'mastery') await a.adminMastery(mode);
+          else await a.adminQuests(mode);
+          msg(
+            {
+              'mastery-max': 'Every gun is Diamond: all skins unlocked (🏅 Mastery).',
+              'mastery-reset': 'Gun mastery reset.',
+              'quests-complete': "Today's quests are done: claim them in 📜 Quests.",
+              'quests-reset': "Today's quests reset.",
+            }[b.dataset.acc],
+          );
+        } catch (err) {
+          msg(err.message);
+        }
+      }),
+    );
     const wbtn = document.getElementById('admin-weather-btn');
     if (wbtn) wbtn.onclick = () => msg(act.run('weather', document.getElementById('admin-weather').value));
     this.body.querySelectorAll('[data-toggle]').forEach((cb) =>

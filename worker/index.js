@@ -2,9 +2,9 @@ import { DurableObject } from 'cloudflare:workers';
 import { cleanProfile, levelFromXp, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
-import { addProgress, claimQuest, dayNumber, questView } from '../shared/quests.js';
+import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
-import { addMasteryKills, chooseSkin, cleanMastery } from '../shared/mastery.js';
+import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery } from '../shared/mastery.js';
 import { ALL_EMOTES, EMOTES, canUseEmote, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
@@ -408,6 +408,23 @@ export class GameDB extends DurableObject {
       else if (typeof body.gun === 'string' && items[`gun_${body.gun}`]) items.loadout = body.gun;
       else return err("You don't own that gun");
       return saveItems(items, me.coins);
+    }
+    // admin: gun mastery all unlocked (or wiped), today's quests finished (or reset)
+    if (path === '/admin/mastery' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const m = { k: {}, s: {} };
+      if (body.mode === 'max') for (const g of MASTERY_GUNS) m.k[g] = MASTERY_TIERS[MASTERY_TIERS.length - 1].kills;
+      this.sql.exec('UPDATE users SET mastery = ? WHERE id = ?', JSON.stringify(cleanMastery(m)), me.id);
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ user: this._publicUser(user, true) });
+    }
+    if (path === '/admin/quests' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const day = dayNumber();
+      const state = { day, p: {}, claimed: [] };
+      if (body.mode === 'complete') for (const q of dailyQuests(day)) state.p[q.key] = q.goal;
+      this.sql.exec('UPDATE users SET quests = ? WHERE id = ?', JSON.stringify(state), me.id);
+      return json({ quests: questView(state) });
     }
     if (path === '/admin/coins' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);

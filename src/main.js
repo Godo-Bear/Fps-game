@@ -655,7 +655,7 @@ function flushQuests() {
 const build = { on: false, kind: 'barricade', rot: 0, x: 0, z: 0, yaw: 0, valid: false, why: '' };
 let localStructureId = 1;
 const myOwner = () => (game.mode === 'mp' ? mp.myId : 'me');
-const freeBuild = () => (cheatsOn() && cheats.ammo) || tut.on;
+const freeBuild = () => (cheatsOn() && cheats.build) || tut.on;
 
 function setBuild(on) {
   build.on = on && !player.dead;
@@ -692,7 +692,7 @@ function updateBuildGhost() {
   Object.assign(_foot, { x: build.x, z: build.z, hx: def.hx, hz: def.hz, cos, sin });
   if (world.colliders._dist2(_foot, player.pos.x, player.pos.z) < 0.5 * 0.5) ok = false;
   if (!ok) build.why = "Can't build there";
-  else if (structures.count(build.kind, myOwner()) >= def.max) build.why = `You can only have ${def.max} ${def.name.toLowerCase()}s`;
+  else if (structures.count(build.kind, myOwner()) >= def.max && !(cheatsOn() && cheats.instabuild)) build.why = `You can only have ${def.max} ${def.name.toLowerCase()}s`;
   else if (game.scrap < def.cost && !freeBuild()) build.why = `Need ${def.cost} scrap`;
   build.valid = !build.why;
   structures.showGhost(build.kind, build.x, build.z, build.yaw, build.valid);
@@ -798,7 +798,7 @@ function updateTurrets(dt) {
         mp.relay('host', { k: 'zhit', id: t.z.id, dmg: def.damage, head: false, mut: null, slow: 0, src: 'turret' });
       } else {
         hitSoundPlayed = true; // no hit sound spam from turrets
-        applyZombieHit(t.z, def.damage, { point: _tt.clone(), shooter: 'me', src: 'turret' });
+        applyZombieHit(t.z, def.damage * (cheatsOn() && cheats.turrets ? 5 : 1), { point: _tt.clone(), shooter: 'me', src: 'turret' });
       }
     } else if (t.p !== undefined) {
       mp.reportHit(t.p, def.pvpDamage, false);
@@ -906,7 +906,7 @@ function giveGrenades(n) {
 
 function throwGrenade() {
   if (player.dead || throwCd > 0) return;
-  const free = cheatsOn() && cheats.ammo;
+  const free = cheatsOn() && cheats.grenades;
   if (game.grenades <= 0 && !free) {
     subBanner('No grenades', 0.8);
     audio.empty();
@@ -2310,7 +2310,7 @@ window.addEventListener('resize', () => {
 const _fwd = new THREE.Vector3();
 // ---------------------------------------------------------------- admin (solo only; the account must be verified by the server)
 let adminBossN = 0;
-const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false };
+const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false, grenades: false, build: false, turrets: false, instabuild: false };
 const cheatsOn = () => account.admin && game.mode === 'solo';
 function flyUpdate(dt) {
   // noclip flight: look direction + Space up / C down
@@ -2754,6 +2754,12 @@ accountUI.adminActions = {
       $('hud').style.visibility = '';
       return 'All cheats turned off.';
     }
+    if (action === 'tutorial') {
+      localStorage.removeItem(TUT_DONE_KEY);
+      settings.tutorial = true;
+      applySettings();
+      return 'The tutorial will play at the start of your next new game.';
+    }
     if (!cheatsOn() || inMenu()) return 'Start a solo game first.';
     switch (action) {
       case 'guns':
@@ -2787,7 +2793,31 @@ accountUI.adminActions = {
         return 'Healed (with full overheal).';
       case 'removeguns':
         weapon.reset(stats);
-        return 'Guns removed: back to just the rifle.';
+        return 'Guns removed: back to the rifle and knife.';
+      case 'scrap':
+        game.scrap = 999;
+        return 'Scrap: 999. Press B to build.';
+      case 'nades':
+        game.grenades = Math.max(game.grenades, maxGrenades());
+        return `Grenades: ${game.grenades}.`;
+      case 'setscrap':
+        game.scrap = Math.max(0, Math.min(999, Math.floor(value)));
+        return `Scrap set to ${game.scrap}.`;
+      case 'setnades':
+        game.grenades = Math.max(0, Math.min(20, Math.floor(value)));
+        return `Grenades set to ${game.grenades}.`;
+      case 'noscrap':
+        game.scrap = 0;
+        game.grenades = 0;
+        return 'Scrap and grenades set to 0.';
+      case 'clearbuilds':
+        structures.clear();
+        setBuild(false);
+        return 'Every barricade and turret removed.';
+      case 'skiptut':
+        if (!tut.on) return 'The tutorial is not running.';
+        endTutorial(true);
+        return 'Tutorial skipped.';
       case 'unmutate':
         for (const s of weapon.slots) s.mut = null;
         weapon.refreshModels();
@@ -2811,12 +2841,12 @@ accountUI.adminActions = {
         return 'All cheats turned off.';
       case 'boss':
         {
-          const v = BOSS_IDS[(adminBossN++) % BOSS_IDS.length];
+          const v = BOSSES[value] ? value : BOSS_IDS[(adminBossN++) % BOSS_IDS.length];
           zombies.spawn('boss', Math.max(5, game.wave), player.pos, true, v);
           bossBanner(v);
         }
         if (game.phase !== 'active') game.phase = 'active';
-        return 'Boss spawned.';
+        return `${(BOSSES[value] || BOSSES.abomination).name} spawned.`;
       case 'killall':
         for (const z of zombies.list) if (z.alive && zombies.damage(z, 1e9)) onKill(z, false);
         game.toSpawn = 0;
@@ -2845,6 +2875,7 @@ accountUI.adminActions = {
     return '';
   },
   zombieTypes: () => Object.keys(ZOMBIE_TYPES),
+  bosses: () => BOSS_IDS.map((id) => [id, BOSSES[id].name]),
   weathers: () => world.theme.weathers.filter((w, i, a) => a.indexOf(w) === i).map((w) => [w, WEATHER[w].name]),
 };
 // F2 opens the admin panel
