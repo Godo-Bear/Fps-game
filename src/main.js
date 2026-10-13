@@ -7,6 +7,7 @@ import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
+import { CHANGELOG, LATEST_VERSION } from './changelog.js';
 import { DefendPoints } from './defend.js';
 import { Structures } from './structures.js';
 import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
@@ -2161,6 +2162,26 @@ $('shop-btn').addEventListener('click', () => accountUI.open('shop'));
 $('quests-btn').addEventListener('click', () => accountUI.open('quests'));
 $('friends-btn').addEventListener('click', () => accountUI.open('friends'));
 $('help-btn').addEventListener('click', () => $('help').classList.remove('hidden'));
+// 📰 Updates: everything that's changed, newest first; NEW until you've looked
+const SEEN_KEY = 'deadplains.seenVersion';
+function renderUpdatesBadge() {
+  $('updates-btn').dataset.badge = loadPref(SEEN_KEY, '') === LATEST_VERSION ? '' : 'NEW';
+}
+$('updates-btn').addEventListener('click', () => {
+  $('updates-list').innerHTML = CHANGELOG.map(
+    (u, i) => `<div class="update ${i === 0 ? 'latest' : ''}">
+      <div class="u-head"><b>${esc(u.title)}</b><span class="muted small">v${u.v} · ${u.date}</span></div>
+      <ul>${u.items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+    </div>`,
+  ).join('');
+  $('updates').classList.remove('hidden');
+  savePref(SEEN_KEY, LATEST_VERSION);
+  renderUpdatesBadge();
+});
+$('updates').addEventListener('click', (e) => {
+  if (e.target === $('updates') || e.target.closest('[data-close-updates]')) $('updates').classList.add('hidden');
+});
+renderUpdatesBadge();
 $('help').addEventListener('click', (e) => {
   if (e.target === $('help') || e.target.closest('[data-close-help]')) $('help').classList.add('hidden');
 });

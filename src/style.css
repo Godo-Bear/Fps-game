@@ -2175,3 +2175,42 @@ body.can-revive .t-revive {
   border: 1px solid rgba(233, 217, 184, 0.35);
   border-radius: 4px;
 }
+
+/* ---- updates */
+#updates {
+  z-index: 30;
+}
+.updates-modal h2 {
+  margin-top: 0;
+  text-align: center;
+}
+.update {
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(233, 217, 184, 0.15);
+}
+.update.latest {
+  border-color: #ffd34d;
+  box-shadow: 0 0 12px rgba(255, 211, 77, 0.2);
+}
+.u-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.u-head b {
+  font-family: 'Black Ops One', sans-serif;
+  letter-spacing: 1px;
+  color: #ffd38a;
+}
+.update ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+.update li {
+  margin: 2px 0;
+}

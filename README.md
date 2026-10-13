@@ -128,6 +128,10 @@ that matches your controls. Skip it with **K** (tap it on touch, **Back** on a c
 - **Spectating:** while you're down in co-op you watch a squadmate (click for the next one).
 - **Kill cam:** in PvP, after you die the camera follows whoever got you until you respawn.
 
+### Updates page
+The **📰 Updates** tile on the home screen lists every update, newest first, with a **NEW** badge until you've
+looked. New updates go at the top of `src/changelog.js`.
+
 ### Daily quests
 Three new quests every day (the same for everyone). Finish one, then claim its coins in **📜 Quests** on the menu.
 
