@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
 import { MAPS, MODES, SOLO_MAP } from '../shared/modes.js';
+import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
@@ -59,13 +60,15 @@ const medkits = [];
 
 const game = {
   mode: 'solo', // solo | mp
-  state: 'menu', // menu | mpmenu | lobby | playing | paused | choosing | gameover | mpend
+  state: 'menu', // menu | mpmenu | lobby | newgame | saves | playing | paused | choosing | gameover | mpend
   phase: 'countdown', // countdown | active | cleared
   map: SOLO_MAP, // solo is always Dead Plains; the other maps are multiplayer-only
   wave: 0,
   kills: 0,
   headshots: 0,
   score: 0,
+  runId: '',
+  runName: '',
   timer: 0,
   toSpawn: 0,
   bossToSpawn: 0,
@@ -74,6 +77,7 @@ const game = {
   offer: [],
   best: Number(loadPref('deadplains.best', 0)),
 };
+const inMenu = () => ['menu', 'mpmenu', 'lobby', 'newgame', 'saves'].includes(game.state);
 
 let trigger = false;
 let pressed = false; // a fresh left click this frame (semi-auto guns)
@@ -884,7 +888,7 @@ $('chat-input').addEventListener('keydown', (e) => {
 function updateChat() {
   const now = performance.now();
   for (const l of chatLines) l.div.classList.toggle('old', now - l.t > 9000);
-  const show = (game.mode === 'mp' && !!mp.lobby) || (game.mode === 'solo' && !['menu', 'mpmenu'].includes(game.state));
+  const show = (game.mode === 'mp' && !!mp.lobby) || (game.mode === 'solo' && !inMenu());
   $('chat').classList.toggle('hidden', !show);
   $('chat-hint').textContent = game.mode === 'mp' && !chatOpen() ? 'T or Enter to chat' : '';
 }
@@ -977,7 +981,7 @@ function updateZombieMarkers() {
   }
   markers.forEach((m, i) => {
     const z = list[i];
-    m.visible = !!z && game.state !== 'menu';
+    m.visible = !!z && !inMenu();
     if (!m.visible) return;
     const color = z.typeId === 'boss' ? 0xc86bff : z.mutated ? 0x6dff2a : z.type.ranged ? 0xb6ff4a : 0xff4a3a;
     m.material.color.setHex(color);
@@ -1007,10 +1011,10 @@ function updateZombieMarkers() {
   if (arrows.innerHTML !== html) arrows.innerHTML = html;
 }
 
-const OVERLAYS = ['menu', 'pause', 'choose', 'gameover', 'mp-menu', 'lobby', 'mp-end', 'map-menu'];
+const OVERLAYS = ['menu', 'pause', 'choose', 'gameover', 'mp-menu', 'lobby', 'mp-end', 'newgame', 'saves-menu'];
 function showOnly(id) {
   for (const o of OVERLAYS) $(o).classList.toggle('hidden', o !== id);
-  $('hud').classList.toggle('hidden', ['menu', 'mp-menu', 'lobby', 'map-menu'].includes(id));
+  $('hud').classList.toggle('hidden', ['menu', 'mp-menu', 'lobby', 'newgame', 'saves-menu'].includes(id));
   $('crosshair').classList.toggle('hidden', id !== null);
   $('solo-hud').classList.toggle('hidden', !zombieGame());
   if (game.mode !== 'mp') $('mp-hud').classList.add('hidden');
@@ -1124,16 +1128,33 @@ function applyProfile() {
 }
 account.onChange(applyProfile);
 
-// ---------------------------------------------------------------- saved runs (solo)
-// The run is saved after every wave (once you pick a power-up). Continuing starts the next wave.
-// It's kept in this browser and, when logged in, on your account. Dying ends the run.
-const SAVE_KEY = 'deadplains.save';
-let pendingSave = null;
+// ---------------------------------------------------------------- saved games (solo)
+// You name a game when you start it. It's saved when it starts and after every wave (once you
+// pick a power-up); continuing starts the next wave. Saves are kept in this browser and, when
+// logged in, on your account. Up to MAX_SAVES games; dying ends (and deletes) that game.
+const SAVES_KEY = 'deadplains.saves';
+const OLD_SAVE_KEY = 'deadplains.save'; // the single unnamed save from before games had names
+let savedGames = []; // newest first
+
+const validSave = (s) => s && s.v === 1 && typeof s.id === 'string' && Number.isFinite(s.wave) && Array.isArray(s.guns);
+const trimSaves = (list) => list.filter(validSave).sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, MAX_SAVES);
+// guests share one list; each account gets its own copy in this browser
+const saveKey = () => (account.loggedIn ? `${SAVES_KEY}.${account.user.username.toLowerCase()}` : SAVES_KEY);
+function readSaves(key) {
+  try {
+    const list = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(list) ? list.filter(validSave) : [];
+  } catch {
+    return [];
+  }
+}
+const writeSaves = (key, list) => savePref(key, JSON.stringify(trimSaves(list)));
 
 function runSnapshot() {
   return {
     v: 1,
     id: game.runId,
+    name: game.runName,
     t: Date.now(),
     wave: game.wave,
     score: game.score,
@@ -1147,47 +1168,142 @@ function runSnapshot() {
   };
 }
 
-function persistRun() {
-  if (game.mode !== 'solo') return;
-  const data = runSnapshot();
-  savePref(SAVE_KEY, JSON.stringify(data));
-  if (account.loggedIn) account.putSave(data).catch(() => {});
-  pendingSave = data;
-  renderContinue();
+function storeSave(save) {
+  const key = saveKey();
+  writeSaves(key, [...readSaves(key).filter((s) => s.id !== save.id), save]);
+  if (account.loggedIn) account.putSave(save).catch(() => {});
+  savedGames = trimSaves([...savedGames.filter((s) => s.id !== save.id), save]);
+  renderSaves();
 }
 
-function clearRun() {
-  // only wipe the save if it belongs to the run that just ended
-  if (pendingSave && pendingSave.id !== game.runId) return;
+function deleteSave(id) {
+  const key = saveKey();
+  writeSaves(key, readSaves(key).filter((s) => s.id !== id));
+  if (account.loggedIn) account.deleteSave(id).catch(() => {});
+  savedGames = savedGames.filter((s) => s.id !== id);
+  renderSaves();
+}
+
+function persistRun() {
+  if (game.mode !== 'solo') return;
+  storeSave(runSnapshot());
+}
+
+// the run that just ended
+const clearRun = () => deleteSave(game.runId);
+
+async function refreshSave() {
+  // the old single save becomes a named one
   try {
-    localStorage.removeItem(SAVE_KEY);
+    const old = JSON.parse(localStorage.getItem(OLD_SAVE_KEY) || 'null');
+    localStorage.removeItem(OLD_SAVE_KEY);
+    if (validSave(old)) writeSaves(SAVES_KEY, [...readSaves(SAVES_KEY).filter((s) => s.id !== old.id), { ...old, name: cleanSaveName(old.name) }]);
   } catch {
     /* storage blocked */
   }
-  if (account.loggedIn) account.putSave(null).catch(() => {});
-  pendingSave = null;
-  renderContinue();
-}
-
-async function refreshSave() {
-  let local = null;
-  try {
-    local = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-  } catch {
-    local = null;
+  if (account.loggedIn) {
+    // games you played as a guest move into your account
+    const guest = readSaves(SAVES_KEY);
+    if (guest.length) {
+      writeSaves(SAVES_KEY, []);
+      await Promise.all(guest.map((g) => account.putSave(g).catch(() => {})));
+    }
+    const remote = await account.listSaves().catch(() => null);
+    const key = saveKey();
+    let list = readSaves(key);
+    if (remote) {
+      // the server is the record (a game deleted on another device stays deleted),
+      // but a newer copy here (a save that didn't reach it) wins and is sent again
+      const byId = new Map(remote.filter(validSave).map((r) => [r.id, r]));
+      for (const s of list) {
+        const r = byId.get(s.id);
+        if (r && (s.t || 0) > (r.t || 0)) {
+          byId.set(s.id, s);
+          account.putSave(s).catch(() => {});
+        }
+      }
+      list = [...byId.values()];
+      writeSaves(key, list);
+    }
+    savedGames = trimSaves(list);
+  } else {
+    savedGames = trimSaves(readSaves(SAVES_KEY));
   }
-  let remote = null;
-  if (account.loggedIn) remote = await account.getSave().catch(() => null);
-  const valid = (s) => s && s.v === 1 && Number.isFinite(s.wave) && Array.isArray(s.guns);
-  const all = [local, remote].filter(valid).sort((a, b) => b.t - a.t);
-  pendingSave = all[0] || null;
-  renderContinue();
+  renderSaves();
 }
 
-function renderContinue() {
+const saveName = (s) => cleanSaveName(s.name);
+function timeAgo(t) {
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
+function renderSaves() {
+  const latest = savedGames[0];
   const b = $('continue-btn');
-  b.classList.toggle('hidden', !pendingSave);
-  if (pendingSave) b.textContent = `CONTINUE · WAVE ${pendingSave.wave + 1}`;
+  b.classList.toggle('hidden', !latest);
+  if (latest) b.textContent = `CONTINUE · ${saveName(latest).toUpperCase()} · WAVE ${latest.wave + 1}`;
+  const sb = $('saves-btn');
+  sb.classList.toggle('hidden', !savedGames.length);
+  sb.textContent = `SAVED GAMES (${savedGames.length})`;
+  if (!$('saves-menu').classList.contains('hidden')) renderSavesList();
+}
+
+function renderSavesList() {
+  $('saves-count').textContent = `${savedGames.length}/${MAX_SAVES} slots used${account.loggedIn ? ' · saved on your account' : ' · saved in this browser (log in to keep them on any device)'}`;
+  $('saves-list').innerHTML = savedGames.length
+    ? savedGames
+        .map(
+          (s) => `<div class="save-row" data-id="${esc(s.id)}">
+        <div class="save-info">
+          <div class="save-name">${esc(saveName(s))}</div>
+          <div class="muted small">Next: wave ${s.wave + 1} · ${s.score | 0} pts · ${s.kills | 0} kills · ${s.guns.length} gun${s.guns.length === 1 ? '' : 's'} · ${timeAgo(s.t || 0)}</div>
+        </div>
+        <div class="save-actions">
+          <button class="btn small" data-act="play">PLAY</button>
+          <button class="btn small ghost" data-act="rename">RENAME</button>
+          <button class="btn small ghost danger" data-act="delete">DELETE</button>
+        </div>
+      </div>`,
+        )
+        .join('')
+    : '<p class="muted">No saved games. Start a new game and it saves after every wave.</p>';
+}
+
+function nextGameName() {
+  const used = new Set(savedGames.map((s) => saveName(s).toLowerCase()));
+  let n = 1;
+  while (used.has(`game ${n}`)) n++;
+  return `Game ${n}`;
+}
+
+function openNewGame() {
+  audio.init();
+  game.state = 'newgame';
+  const input = $('newgame-name');
+  input.value = '';
+  input.placeholder = nextGameName();
+  const oldest = savedGames.length >= MAX_SAVES ? savedGames[savedGames.length - 1] : null;
+  $('newgame-warn').textContent = oldest ? `You already have ${MAX_SAVES} saved games, so this one replaces the oldest: “${saveName(oldest)}”.` : '';
+  showOnly('newgame');
+  input.focus();
+}
+
+function openSaves() {
+  game.state = 'saves';
+  showOnly('saves-menu');
+  renderSavesList();
+  refreshSave();
+}
+
+function backToMenu() {
+  game.state = 'menu';
+  showOnly('menu');
 }
 
 function restoreRun(save) {
@@ -1208,7 +1324,7 @@ function restoreRun(save) {
   weapon.refreshModels();
   player.health = Math.max(1, Math.min(save.health || stats.maxHealth, stats.maxHealth + stats.overheal));
   if (WEATHER[save.weather] && world.theme.weathers.includes(save.weather)) weather.set(save.weather, true);
-  Object.assign(game, { wave: save.wave, score: save.score | 0, kills: save.kills | 0, headshots: save.headshots | 0, runId: save.id });
+  Object.assign(game, { wave: save.wave, score: save.score | 0, kills: save.kills | 0, headshots: save.headshots | 0, runId: save.id, runName: saveName(save) });
 }
 
 // Permanent shop upgrades, starting gun and revive tokens (new solo runs only).
@@ -1224,6 +1340,7 @@ function applyShop() {
     weapon.give(it.loadout, stats); // you start holding it
   }
   if (it.revive > 0) {
+    const runId = game.runId;
     account
       .useItem('revive')
       .then(() => {
@@ -1231,13 +1348,14 @@ function applyShop() {
         owned.set('secondwind', { def: POWERUPS.find((p) => p.id === 'secondwind'), count: 1, rarity: 'legendary' });
         renderOwned();
         subBanner('Revive token used: Second Wind ready', 2.5);
+        if (game.runId === runId) persistRun();
       })
       .catch(() => {});
   }
 }
 const scavengerLevel = () => (game.mode === 'solo' ? account.items.scavenger || 0 : 0);
 
-function startGame(save = null) {
+function startGame(save = null, name = null) {
   audio.init();
   game.mode = 'solo';
   $('chat-log').innerHTML = '';
@@ -1257,11 +1375,16 @@ function startGame(save = null) {
   pickups.topUp(5, player.pos, 0.06);
   weather.set(world.theme.weather, true);
   Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
+  game.runName = cleanSaveName(name || nextGameName());
   if (save) restoreRun(save);
-  else applyShop();
+  else {
+    applyShop();
+    persistRun(); // it shows up in Saved Games straight away
+  }
+  $('run-name').textContent = game.runName;
   $('banner').className = '';
   $('subbanner').className = '';
-  pauseFor('READY?', save ? `Continuing · wave ${game.wave + 1} starts in 5 seconds` : `${world.theme.name} · the first wave comes in 5 seconds`);
+  pauseFor(game.runName.toUpperCase(), save ? `Continuing · wave ${game.wave + 1} starts in 5 seconds` : `${world.theme.name} · the first wave comes in 5 seconds`);
   lock();
 }
 
@@ -1277,7 +1400,7 @@ async function gameOver() {
     savePref('deadplains.best', game.best);
   }
   $('final-stats').innerHTML = `
-    You survived until <b>wave ${game.wave}</b> on ${esc(world.theme.name)}${newBest ? ' — new best!' : ''}<br/>
+    <b>${esc(game.runName)}</b> is over. You survived until <b>wave ${game.wave}</b> on ${esc(world.theme.name)}${newBest ? ' — new best!' : ''}<br/>
     Score <b>${game.score}</b> · Kills <b>${game.kills}</b> · Headshots <b>${game.headshots}</b><br/>
     Power-ups collected <b>${[...owned.values()].reduce((a, o) => a + o.count, 0)}</b>
     <div id="xp-line" class="muted">Saving progress…</div>`;
@@ -1432,10 +1555,47 @@ const mp = new Multiplayer({
 
 // ---------------------------------------------------------------- menus
 
-$('play-btn').addEventListener('click', () => startGame());
+$('play-btn').addEventListener('click', openNewGame);
+$('saves-btn').addEventListener('click', openSaves);
+$('newgame-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  startGame(null, $('newgame-name').value || $('newgame-name').placeholder);
+});
+$('newgame-back').addEventListener('click', backToMenu);
+$('saves-back').addEventListener('click', backToMenu);
+$('saves-new').addEventListener('click', openNewGame);
+$('saves-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]');
+  const row = e.target.closest('.save-row');
+  if (!btn || !row) return;
+  const save = savedGames.find((s) => s.id === row.dataset.id);
+  if (!save) return;
+  const act = btn.dataset.act;
+  if (act === 'play') startGame(save);
+  else if (act === 'delete') {
+    // click twice to be sure
+    if (btn.dataset.sure) deleteSave(save.id);
+    else {
+      btn.dataset.sure = '1';
+      btn.textContent = 'SURE?';
+    }
+  } else if (act === 'rename') {
+    const info = row.querySelector('.save-name');
+    info.innerHTML = `<form class="auth inline rename-form"><input maxlength="${SAVE_NAME_MAX}" autocomplete="off" spellcheck="false" /><button class="btn small">SAVE</button></form>`;
+    const input = info.querySelector('input');
+    input.value = saveName(save);
+    input.focus();
+    input.select();
+    info.querySelector('form').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      storeSave({ ...save, name: cleanSaveName(input.value), t: save.t });
+    });
+    input.addEventListener('keydown', (ev) => ev.key === 'Escape' && renderSavesList());
+  }
+});
 $('shop-btn').addEventListener('click', () => accountUI.open('shop'));
-$('continue-btn').addEventListener('click', () => pendingSave && startGame(pendingSave));
-$('again-btn').addEventListener('click', () => startGame());
+$('continue-btn').addEventListener('click', () => savedGames[0] && startGame(savedGames[0]));
+$('again-btn').addEventListener('click', () => startGame(null, game.runName));
 account.onChange(() => refreshSave());
 $('menu-btn').addEventListener('click', toMenu);
 $('mp-btn').addEventListener('click', () => {
@@ -1581,7 +1741,7 @@ accountUI.adminActions = {
     return cheats.ammo;
   },
   cheats,
-  inSolo: () => game.mode === 'solo' && !['menu', 'mpmenu', 'lobby'].includes(game.state),
+  inSolo: () => game.mode === 'solo' && !inMenu(),
   inMP: () => game.mode === 'mp',
   toggle(name, on) {
     if (!account.admin) return 'Unlock admin first.';
@@ -1589,7 +1749,7 @@ accountUI.adminActions = {
     cheats[name] = on;
     if (name === 'nohud') $('hud').style.visibility = on ? 'hidden' : '';
     if (name === 'fly' && !on) player.vel.set(0, 0, 0);
-    const inGame = game.mode === 'solo' && !['menu', 'mpmenu', 'lobby'].includes(game.state);
+    const inGame = game.mode === 'solo' && !inMenu();
     return `${name} ${on ? 'ON' : 'OFF'}${inGame ? '' : ' (works when you start a solo game)'}`;
   },
   run(action, value) {
@@ -1598,7 +1758,7 @@ accountUI.adminActions = {
       $('hud').style.visibility = '';
       return 'All cheats turned off.';
     }
-    if (!cheatsOn() || ['menu', 'mpmenu', 'lobby'].includes(game.state)) return 'Start a solo game first.';
+    if (!cheatsOn() || inMenu()) return 'Start a solo game first.';
     switch (action) {
       case 'guns':
         for (const id of Object.keys(GUNS)) if (id !== 'rifle') weapon.give(id, stats);
@@ -1844,12 +2004,12 @@ function frame(now) {
   }
   if (isCoop() && ['playing', 'paused', 'choosing'].includes(game.state)) worldTick(dt);
   if (game.mode === 'mp') mp.update(dt, time);
-  const fov = game.state === 'menu' ? 75 : 75 + (weapon.def.zoomFov - 75) * weapon.ads;
+  const fov = inMenu() ? 75 : 75 + (weapon.def.zoomFov - 75) * weapon.ads;
   if (Math.abs(camera.fov - fov) > 0.01) {
     camera.fov = fov;
     camera.updateProjectionMatrix();
   }
-  const menuish = ['menu', 'mpmenu', 'lobby'].includes(game.state);
+  const menuish = inMenu();
   if (menuish) menuCamera();
   if (!menuish) updateHud(dt);
   const viewPos = menuish ? camera.position : player.pos;
@@ -1901,9 +2061,9 @@ if (import.meta.env.DEV) {
     get weather() {
       return weather;
     },
-    get pendingSave() {
-      return pendingSave;
+    get savedGames() {
+      return savedGames;
     },
-    game, player, weapon, mp, account, stats: () => stats, refreshSave, startGame, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
+    game, player, weapon, mp, account, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

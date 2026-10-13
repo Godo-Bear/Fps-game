@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanProfile, levelFromXp, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
+import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
@@ -76,7 +77,8 @@ export class GameDB extends DurableObject {
       /* column already exists */
     }
     // added later: the saved solo run (so you can continue on any device), coins and shop items
-    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'"]) {
+    // and later still: several named saved games (JSON object of id -> save)
+    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT']) {
       try {
         this.sql.exec(`ALTER TABLE users ADD COLUMN ${col}`);
       } catch {
@@ -86,6 +88,28 @@ export class GameDB extends DurableObject {
     this.adminTries = new Map(); // user id -> [count, windowStart]
     this.fails = new Map(); // username -> [count, windowStart]
     this.signups = new Map(); // ip -> [count, windowStart]
+  }
+
+  // The player's saved games; the old single save (from before named games) moves in as the first one.
+  _saves(me) {
+    let saves = {};
+    try {
+      saves = me.saves ? JSON.parse(me.saves) : {};
+    } catch {
+      saves = {};
+    }
+    if (me.save) {
+      try {
+        const old = JSON.parse(me.save);
+        if (old && typeof old.id === 'string' && !saves[old.id]) saves[old.id] = { ...old, name: cleanSaveName(old.name) };
+      } catch {
+        /* unreadable old save */
+      }
+      this.sql.exec('UPDATE users SET save = NULL, saves = ? WHERE id = ?', JSON.stringify(saves), me.id);
+      me.save = null;
+      me.saves = JSON.stringify(saves);
+    }
+    return saves;
   }
 
   _limit(map, key, max, windowMs) {
@@ -307,24 +331,27 @@ export class GameDB extends DurableObject {
       return saveItems(this._items(me), coins);
     }
 
-    if (path === '/save' && method === 'GET') {
-      let save = null;
-      try {
-        save = me.save ? JSON.parse(me.save) : null;
-      } catch {
-        save = null;
-      }
-      return json({ save });
-    }
-    if (path === '/save' && method === 'PUT') {
-      if (body.save === null) {
-        this.sql.exec('UPDATE users SET save = NULL WHERE id = ?', me.id);
-        return json({ ok: true });
-      }
-      if (typeof body.save !== 'object' || Array.isArray(body.save)) return err('Bad save');
-      const text = JSON.stringify(body.save);
+    // Saved solo games: up to MAX_SAVES named slots, keyed by run id.
+    if (path === '/saves' && method === 'GET') return json({ saves: Object.values(this._saves(me)) });
+    if (path === '/saves' && method === 'PUT') {
+      const save = body.save;
+      if (!save || typeof save !== 'object' || Array.isArray(save)) return err('Bad save');
+      if (typeof save.id !== 'string' || !/^[a-z0-9]{1,16}$/.test(save.id)) return err('Bad save id');
+      save.name = cleanSaveName(save.name);
+      const text = JSON.stringify(save);
       if (text.length > 6000) return err('Save too large', 413);
-      this.sql.exec('UPDATE users SET save = ? WHERE id = ?', text, me.id);
+      const saves = this._saves(me);
+      saves[save.id] = save;
+      // full: the oldest one makes room
+      const ids = Object.keys(saves).sort((a, b) => (saves[b].t || 0) - (saves[a].t || 0));
+      for (const id of ids.slice(MAX_SAVES)) delete saves[id];
+      this.sql.exec('UPDATE users SET saves = ? WHERE id = ?', JSON.stringify(saves), me.id);
+      return json({ ok: true });
+    }
+    if (path === '/saves/delete' && method === 'POST') {
+      const saves = this._saves(me);
+      delete saves[String(body.id)];
+      this.sql.exec('UPDATE users SET saves = ? WHERE id = ?', JSON.stringify(saves), me.id);
       return json({ ok: true });
     }
 

@@ -1421,3 +1421,62 @@ b.coin {
 .cos-item .big {
   font-size: 22px;
 }
+
+/* ---- saved games */
+#run-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.75;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#newgame-name {
+  width: min(320px, 60vw);
+}
+#saves-list {
+  margin: 16px auto;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(233, 217, 184, 0.2);
+}
+.save-info {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.save-name {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 22px;
+  letter-spacing: 1px;
+  overflow-wrap: anywhere;
+}
+.save-actions {
+  display: flex;
+  flex-wrap: wrap;
+}
+.save-actions .btn.small.ghost {
+  font-size: 15px;
+  padding: 8px 14px;
+}
+.btn.ghost.danger {
+  color: #ff8a7a;
+  border-color: rgba(255, 110, 90, 0.55);
+}
+.rename-form input {
+  width: min(260px, 50vw);
+}

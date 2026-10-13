@@ -148,15 +148,19 @@ export class Account {
     this._dropSession();
   }
 
-  // Saved solo run on the server (logged-in players only).
-  async getSave() {
-    if (!this.user) return null;
-    const { save } = await this._api('/save');
-    return save;
+  // Saved solo games on the server (logged-in players only).
+  async listSaves() {
+    if (!this.user) return [];
+    const { saves } = await this._api('/saves');
+    return saves || [];
   }
   async putSave(save) {
     if (!this.user) return;
-    await this._api('/save', { method: 'PUT', body: { save } });
+    await this._api('/saves', { method: 'PUT', body: { save } });
+  }
+  async deleteSave(id) {
+    if (!this.user) return;
+    await this._api('/saves/delete', { method: 'POST', body: { id } });
   }
 
   // ---- shop

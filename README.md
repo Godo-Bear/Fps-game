@@ -80,9 +80,11 @@ Spend them in the **Shop** (main menu, or the 🪙 Shop tab) on:
 Coins and purchases are saved on your account (or in the browser for guests).
 
 ### Saving your run
-Solo runs are saved after every wave (once you pick a power-up). The main menu shows **Continue · Wave N**
-to pick up where you left off; quitting mid-wave restarts that wave. Logged-in players' saves are also stored on
-their account, so they work on any device. Dying ends the run and deletes the save.
+Name each solo game when you start it (**New Game**). You can keep up to 5 games; **Saved Games** lists them so
+you can play, rename or delete each one, and **Continue** jumps back into the most recent. A game is saved when it
+starts and after every wave (once you pick a power-up); quitting mid-wave restarts that wave. Logged-in players'
+games are stored on their account, so they work on any device (games played as a guest move into your account when
+you log in). Dying ends that game and deletes its save.
 
 ### Chat
 A small chat sits in the top left. Online, press **T** or **Enter** to talk to everyone in the room (lobby and matches).
