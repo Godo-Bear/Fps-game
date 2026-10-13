@@ -2,6 +2,7 @@
 
 export const MODES = {
   coop: { id: 'coop', name: 'Co-op Survival', short: 'CO-OP', teams: false, coop: true, desc: "Everyone on one team against the zombie waves. If the whole squad goes down, it's over." },
+  defend: { id: 'defend', name: 'Defend the Points', short: 'DEF', teams: false, coop: true, desc: 'Your squad holds points A, B and C while zombie waves try to take them. Stand on a point to defend it; lose all three and it\'s over.' },
   ffa: { id: 'ffa', name: 'Free-for-all', short: 'FFA', teams: false, desc: 'Everyone for themselves. First to 20 kills wins.', killLimit: 20 },
   tdm: { id: 'tdm', name: 'Team Deathmatch', short: 'TDM', teams: true, desc: 'Red vs Blue. First team to 30 kills wins.', killLimit: 30 },
   koth: { id: 'koth', name: 'Capture Point', short: 'CP', teams: true, desc: 'Hold the point in the middle of the map. First to 150 points wins.', scoreLimit: 150 },
@@ -23,6 +24,13 @@ export const FFA_SPAWNS = [
 
 export const POINT = { x: 0, z: 0, radius: 9 };
 export const FLAG_BASES = { red: [-74, 0], blue: [72, -2] };
+
+// Defend the Points: three points the squad holds against the zombies (in the cleared spots every map keeps).
+export const DEFEND_POINTS = [
+  { id: 'A', x: FLAG_BASES.red[0], z: FLAG_BASES.red[1], radius: 6 },
+  { id: 'B', x: POINT.x, z: POINT.z, radius: 6 },
+  { id: 'C', x: FLAG_BASES.blue[0], z: FLAG_BASES.blue[1], radius: 6 },
+];
 
 export function makeRoomCode() {
   const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

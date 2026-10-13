@@ -598,7 +598,7 @@ export class Room extends DurableObject {
         break;
       case 'heal': {
         // health packs on the map: at most one every 8 seconds, up to 50 HP
-        if (this.phase !== 'playing' || !p.alive || this.mode === 'coop') return;
+        if (this.phase !== 'playing' || !p.alive || this._coop) return;
         if (now - (p.lastHeal || 0) < 8000) return;
         const amount = Math.max(0, Math.min(50, Number(m.amount) || 0));
         p.lastHeal = now;
@@ -617,7 +617,7 @@ export class Room extends DurableObject {
       }
       // ---- co-op: the server just passes messages between the host and the others
       case 'relay': {
-        if (this.phase !== 'playing' || this.mode !== 'coop' || !m.d || typeof m.d !== 'object') return;
+        if (this.phase !== 'playing' || !this._coop || !m.d || typeof m.d !== 'object') return;
         const msg = JSON.stringify({ t: 'relay', from: p.id, d: m.d });
         if (msg.length > 16384) return;
         if (m.to === 'host') {
@@ -632,7 +632,7 @@ export class Room extends DurableObject {
         break;
       }
       case 'down':
-        if (this.phase !== 'playing' || this.mode !== 'coop' || !p.alive) return;
+        if (this.phase !== 'playing' || !this._coop || !p.alive) return;
         p.alive = false;
         p.deaths++;
         this._broadcast({ t: 'msg', text: `${p.name} is down!` });
@@ -640,12 +640,18 @@ export class Room extends DurableObject {
         break;
       case 'coopwave':
         // the host started a new wave: bring everyone who went down back in
-        if (this.phase !== 'playing' || this.mode !== 'coop' || p.id !== this.hostId) return;
+        if (this.phase !== 'playing' || !this._coop || p.id !== this.hostId) return;
         this.match.wave = Math.max(0, Math.min(999, Number(m.wave) | 0));
         for (const o of this.players.values()) if (o.joined && !o.alive) this._spawn(o);
         break;
+      case 'overrun':
+        // defend the points: the host saw the zombies take every point
+        if (this.phase !== 'playing' || !this._coop || p.id !== this.hostId) return;
+        this._broadcast({ t: 'msg', text: 'The zombies took every point' });
+        this._endCoop('points');
+        break;
       case 'score':
-        if (this.mode === 'coop' && this.phase === 'playing') {
+        if (this._coop && this.phase === 'playing') {
           p.kills = Math.max(0, Math.min(99999, Number(m.kills) | 0));
           p.score = Math.max(0, Math.min(9999999, Number(m.score) | 0));
         }
@@ -673,14 +679,19 @@ export class Room extends DurableObject {
     }
     this._broadcast({ t: 'left', id: p.id });
     // co-op runs on the host's machine, so the run ends if the host leaves
-    if (this.mode === 'coop' && this.phase === 'playing' && p.id === this.hostId) {
+    if (this._coop && this.phase === 'playing' && p.id === this.hostId) {
       this._broadcast({ t: 'msg', text: 'The host left, the run is over' });
       this._endCoop();
-    } else if (this.mode === 'coop' && this.phase === 'playing' && ![...this.players.values()].some((o) => o.joined && o.alive)) {
+    } else if (this._coop && this.phase === 'playing' && ![...this.players.values()].some((o) => o.joined && o.alive)) {
       this._endCoop();
     }
     this._broadcast({ t: 'msg', text: `${p.name} left` });
     this._broadcast(this._lobby());
+  }
+
+  // co-op modes (everyone vs the zombies): the host runs the zombies, the server passes messages along
+  get _coop() {
+    return !!MODES[this.mode]?.coop;
   }
 
   _stopTimer() {
@@ -697,7 +708,7 @@ export class Room extends DurableObject {
     const weathers = MAPS[this.map].weathers;
     this.phase = 'playing';
     this.match = {
-      endsAt: Date.now() + (this.mode === 'coop' ? 24 * 3600 : MATCH_SECONDS) * 1000,
+      endsAt: Date.now() + (this._coop ? 24 * 3600 : MATCH_SECONDS) * 1000,
       wave: 0,
       weather: weathers[Math.floor(Math.random() * weathers.length)],
       scores: { red: 0, blue: 0 },
@@ -746,7 +757,7 @@ export class Room extends DurableObject {
   }
 
   _hit(p, m) {
-    if (this.phase !== 'playing' || !p.alive || this.mode === 'coop') return;
+    if (this.phase !== 'playing' || !p.alive || this._coop) return;
     const target = this.players.get(m.id);
     if (!target || !target.alive || target === p) return;
     const mode = MODES[this.mode];
@@ -795,7 +806,7 @@ export class Room extends DurableObject {
     for (const p of this.players.values()) {
       if (p.joined && !p.alive && p.respawnAt && now >= p.respawnAt) this._spawn(p);
       // health slowly comes back after 5 seconds without getting hit
-      if (this.mode !== 'coop' && p.alive && p.hp < MAX_HP && now - (p.lastHurt || 0) > 5000) p.hp = Math.min(MAX_HP, p.hp + 8 * dt);
+      if (!this._coop && p.alive && p.hp < MAX_HP && now - (p.lastHurt || 0) > 5000) p.hp = Math.min(MAX_HP, p.hp + 8 * dt);
     }
 
     if (this.mode === 'koth') this._tickPoint(dt);
@@ -900,14 +911,14 @@ export class Room extends DurableObject {
     f.droppedAt = Date.now();
   }
 
-  _endCoop() {
+  _endCoop(reason = 'down') {
     if (this.phase !== 'playing') return;
     this.phase = 'ended';
     this._stopTimer();
     const board = [...this.players.values()]
       .filter((p) => p.joined)
       .map((p) => ({ id: p.id, name: p.name, team: p.team, kills: p.kills, deaths: p.deaths, score: p.score }));
-    this._broadcast({ t: 'end', winner: 'coop', wave: this.match.wave || 0, scores: this.match.scores, board, mode: this.mode });
+    this._broadcast({ t: 'end', winner: 'coop', reason, wave: this.match.wave || 0, scores: this.match.scores, board, mode: this.mode });
     setTimeout(() => {
       if (this.phase !== 'ended') return;
       this.phase = 'lobby';
@@ -917,7 +928,7 @@ export class Room extends DurableObject {
   }
 
   _checkWin() {
-    if (this.phase !== 'playing' || this.mode === 'coop') return;
+    if (this.phase !== 'playing' || this._coop) return;
     const mode = MODES[this.mode];
     const s = this.match.scores;
     let winner = null;

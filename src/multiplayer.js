@@ -488,7 +488,7 @@ export class Multiplayer {
 
   // Can I damage this player?
   isEnemy(id) {
-    if (this.mode === 'coop') return false;
+    if (MODES[this.mode]?.coop) return false;
     if (!this.teams) return true;
     return this._team(id) !== this.myTeam;
   }
@@ -573,6 +573,7 @@ export class Multiplayer {
     $('mp-hud').classList.add('hidden');
     $('respawn').classList.add('hidden');
     $('scoreboard').classList.add('hidden');
+    this.ctx.defend?.stop();
   }
 
   // ---------------------------------------------------------------- per frame
@@ -637,8 +638,9 @@ export class Multiplayer {
       const enemy = this.isEnemy(a.id);
       // enemies only show briefly after they shoot
       if (enemy && now - a.lastShot > 2000) continue;
-      out.push({ x: a.pos.x, z: a.pos.z, color: enemy ? '#ff4040' : this.mode === 'coop' ? '#5ea2ff' : TEAM_CSS[a.info.team] || '#5ea2ff', r: 3 });
+      out.push({ x: a.pos.x, z: a.pos.z, color: enemy ? '#ff4040' : MODES[this.mode]?.coop ? '#5ea2ff' : TEAM_CSS[a.info.team] || '#5ea2ff', r: 3 });
     }
+    if (this.ctx.defend?.active) out.push(...this.ctx.defend.minimapMarkers());
     if (this.mode === 'koth') out.push({ x: POINT.x, z: POINT.z, color: this.snap?.pt?.owner ? TEAM_CSS[this.snap.pt.owner] : '#ffffff', r: POINT.radius, shape: 'ring' });
     if (this.mode === 'ctf' && this.snap?.fl) {
       for (const team of ['red', 'blue']) {
@@ -659,9 +661,9 @@ export class Multiplayer {
     const left = s.left ?? 0;
     const time = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     let html = '';
-    if (this.mode === 'coop') {
+    if (MODES[this.mode]?.coop) {
       const up = s.ps.filter((r) => r[9]).length;
-      html = `<div class="mp-obj">CO-OP SURVIVAL · ${up}/${s.ps.length} of the squad standing</div>`;
+      html = `<div class="mp-obj">${MODES[this.mode].name.toUpperCase()} · ${up}/${s.ps.length} of the squad standing</div>${this.ctx.defend?.active ? this.ctx.defend.hudHtml() : ''}`;
     } else if (this.teams) {
       html = `<div class="mp-score"><span class="red">${s.sc.red}</span><span class="time">${time}</span><span class="blue">${s.sc.blue}</span></div>`;
       const mode = MODES[this.mode];
@@ -710,7 +712,7 @@ export class Multiplayer {
     this.inMatch = false;
     let title;
     let won = false;
-    if (m.winner === 'coop') title = `RUN OVER · WAVE ${m.wave}`;
+    if (m.winner === 'coop') title = m.reason === 'points' ? `OVERRUN · WAVE ${m.wave}` : `RUN OVER · WAVE ${m.wave}`;
     else if (m.winner === 'draw') title = 'DRAW';
     else if (this.teams) {
       won = m.winner === this.myTeam;

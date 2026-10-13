@@ -5,6 +5,7 @@ import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
+import { DefendPoints } from './defend.js';
 import { Effects } from './effects.js';
 import { GUNS, MUTATIONS, TIER_CSS, randomMutation, rollGun } from './guns.js';
 import { Minimap } from './minimap.js';
@@ -219,7 +220,7 @@ function updateWave(dt) {
     if (game.toSpawn === 0 && game.bossToSpawn === 0 && zombies.aliveCount === 0) {
       game.phase = 'cleared';
       game.timer = 2.4;
-      const bonus = 50 * game.wave;
+      const bonus = 50 * game.wave + pointsBonus();
       game.score += bonus;
       player.heal(20, overhealCap());
       if (isCoop()) {
@@ -230,7 +231,8 @@ function updateWave(dt) {
       const before = pickups.items.length;
       pickups.topUp(Math.min(9, 4 + Math.floor(game.wave / 2)), player.pos, 0.08 + game.wave * 0.01);
       const dropped = pickups.items.length > before ? ' · new guns dropped' : '';
-      banner(`WAVE ${game.wave} CLEARED`, `+${bonus} score · +20 HP${dropped}`, 'gold', 2.3);
+      const held = isDefend() ? ` · ${defend.heldCount}/3 points held` : '';
+      banner(`WAVE ${game.wave} CLEARED`, `+${bonus} score · +20 HP${held}${dropped}`, 'gold', 2.3);
       audio.waveCleared();
     }
     return;
@@ -285,10 +287,13 @@ function terrainHit(origin, dir, far) {
 }
 
 // Co-op: everyone vs the zombies. The host's game runs the zombies and waves; the others mirror them.
-const isCoop = () => game.mode === 'mp' && mp.inMatch && mp.mode === 'coop';
+const isCoop = () => game.mode === 'mp' && mp.inMatch && !!MODES[mp.mode]?.coop;
+// Defend the Points: a co-op run where the squad also has to hold points A, B and C
+const isDefend = () => isCoop() && mp.mode === 'defend';
 const zombieGame = () => game.mode === 'solo' || isCoop();
 const simHost = () => game.mode === 'solo' || (isCoop() && mp.isHost());
 const coop = { remaining: 0, ready: new Set(), pickT: 0, snapT: 0, scoreT: 0 };
+const defend = new DefendPoints(scene);
 
 const targets = () => (zombieGame() ? zombies.parts : mp.parts).concat(world.solids);
 
@@ -669,7 +674,8 @@ function coopDown() {
 
 const zombieHooks = {
   hitPlayer: (z, dmg, kind, target) => {
-    if (!target || target.id === 'me') onPlayerHit(z, dmg, kind);
+    if (target?.point) defend.hit(target.point, dmg);
+    else if (!target || target.id === 'me') onPlayerHit(z, dmg, kind);
     else mp.relay(target.id, { k: 'ouch', dmg: Math.round(dmg), kind: kind || 'melee' });
   },
   explode: (z) => {
@@ -683,6 +689,7 @@ const zombieHooks = {
 function zombieTargets() {
   const list = player.dead ? [] : [{ id: 'me', pos: player.pos }];
   if (isCoop()) for (const a of mp.avatars.values()) if (a.alive) list.push({ id: a.id, pos: a.pos });
+  if (isDefend()) list.push(...defend.targets()); // and the points they're trying to take
   return list;
 }
 
@@ -1430,6 +1437,7 @@ function toMenu() {
   clearMedkits();
   clearProjectiles();
   pickups.clear();
+  defend.stop();
   player.dead = false;
   renderBest();
   showOnly('menu');
@@ -1440,8 +1448,27 @@ function renderBest() {
 }
 
 // ---------------------------------------------------------------- multiplayer glue
+defend.onChange = (p, held) => {
+  if (!isDefend()) return;
+  if (held) banner(`POINT ${p.id} RETAKEN`, 'Hold it!', 'gold', 2);
+  else banner(`POINT ${p.id} LOST`, defend.heldCount ? `${defend.heldCount} left · stand on it to take it back` : 'The zombies have every point', 'red', 2.4);
+  audio.waveStart();
+};
+
+// Host: who's standing on which point; if the zombies take all three, the run is over.
+function tickDefend(dt) {
+  const players = zombieTargets().filter((t) => !t.point).map((t) => t.pos);
+  defend.tick(dt, players, zombies.list);
+  if (defend.allLost && !defend.overrun) {
+    defend.overrun = true;
+    mp.send({ t: 'overrun' });
+  }
+}
+// bonus score for every point still held when a wave is cleared
+const pointsBonus = (wave = game.wave) => (isDefend() ? 25 * wave * defend.heldCount : 0);
+
 const mp = new Multiplayer({
-  scene, effects, audio, account, player, weapon, banner, subBanner,
+  scene, effects, audio, account, player, weapon, banner, subBanner, defend,
   onLobby() {
     game.mode = 'mp';
     if (['lobby', 'mpend', 'mp-menu', 'mpmenu'].includes(game.state) || game.state !== 'playing') {
@@ -1476,7 +1503,9 @@ const mp = new Multiplayer({
     player.reset(100);
     Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0 });
     coop.remaining = 0;
-    if (mode === 'coop') {
+    if (mode === 'defend') defend.start();
+    else defend.stop();
+    if (MODES[mode].coop) {
       applyShop(); // shop upgrades count in co-op (it's you vs the zombies)
       player.health = stats.maxHealth;
     } else {
@@ -1492,10 +1521,10 @@ const mp = new Multiplayer({
     player.pos.set(x, heightAt(x, z), z);
     player.yaw = yaw;
     player.dead = false;
-    if (mp.mode === 'coop') player.health = stats.maxHealth;
+    if (MODES[mp.mode]?.coop) player.health = stats.maxHealth;
     else player.health = hp;
     // deathmatch and co-op: keep the guns you found (fresh mags); objective modes start you over
-    if (['ffa', 'tdm', 'coop'].includes(mp.mode)) weapon.refillMags(stats);
+    if (['ffa', 'tdm', 'coop', 'defend'].includes(mp.mode)) weapon.refillMags(stats);
     else weapon.reset(stats);
     $('respawn').classList.add('hidden');
     player.update(0, world.colliders, stats, false, audio, 1, world.ladders);
@@ -1526,7 +1555,7 @@ const mp = new Multiplayer({
     if (d && typeof d === 'object') onCoopRelay(from, d);
   },
   onMyHp(hp) {
-    if (mp.mode !== 'coop' && !player.dead) player.health = hp;
+    if (!MODES[mp.mode]?.coop && !player.dead) player.health = hp;
   },
   onChat(name, text, color, admin) {
     addChat(name, text, color, admin);
@@ -1889,6 +1918,7 @@ function worldTick(dt) {
   if (zombieGame()) {
     if (simHost()) {
       if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, isCoop() ? zombieTargets() : player, zombieHooks);
+      if (isDefend()) tickDefend(dt);
       updateWave(dt);
     } else {
       zombies.updatePuppets(dt);
@@ -1913,7 +1943,7 @@ function worldTick(dt) {
     if (mp.isHost() && coop.snapT <= 0) {
       coop.snapT = 0.1;
       const remaining = game.phase === 'active' ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : 0;
-      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.timer), z: zombies.snapshot() });
+      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.timer), z: zombies.snapshot(), pt: isDefend() ? defend.rows() : undefined });
     }
     coop.scoreT -= dt;
     if (coop.scoreT <= 0) {
@@ -1929,6 +1959,7 @@ function onCoopRelay(from, d) {
     case 'zs': // zombie snapshot from the host
       if (mp.isHost()) return;
       zombies.applySnapshot(d.z || []);
+      if (isDefend()) defend.apply(d.pt);
       game.wave = d.w | 0;
       coop.remaining = d.r | 0;
       game.phase = d.p === 'picking' ? 'cleared' : d.p;
@@ -1971,7 +2002,8 @@ function onCoopRelay(from, d) {
     case 'cleared':
       if (mp.isHost()) return;
       player.heal(20, overhealCap());
-      banner(`WAVE ${d.wave} CLEARED`, '+20 HP · pick a power-up', 'gold', 2.3);
+      game.score += pointsBonus(d.wave);
+      banner(`WAVE ${d.wave} CLEARED`, `+20 HP${isDefend() ? ` · ${defend.heldCount}/3 points held` : ''} · pick a power-up`, 'gold', 2.3);
       audio.waveCleared();
       setTimeout(() => {
         if (isCoop() && !player.dead) openChoice();
@@ -2018,6 +2050,7 @@ function frame(now) {
   effects.update(dt);
   updateDamageNumbers(dt);
   updateZombieMarkers();
+  defend.update(dt, time);
   updateChat();
 
   camera.getWorldDirection(_fwd);
@@ -2064,6 +2097,6 @@ if (import.meta.env.DEV) {
     get savedGames() {
       return savedGames;
     },
-    game, player, weapon, mp, account, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
+    game, player, weapon, mp, account, defend, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

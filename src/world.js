@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FFA_SPAWNS, FLAG_BASES, POINT, TEAM_SPAWNS } from '../shared/modes.js';
+import { DEFEND_POINTS, FFA_SPAWNS, FLAG_BASES, POINT, TEAM_SPAWNS } from '../shared/modes.js';
 import { ARENA_RADIUS, Colliders, heightAt, mulberry32, setTerrain } from './terrain.js';
 import { GROUND_PALETTES, grimeTexture, groundTexture, planksTexture, roadTexture, softDotTexture, textTexture } from './textures.js';
 
@@ -135,6 +135,7 @@ export function buildWorld(scene, mapId = 'plains') {
   for (const [x, z] of FFA_SPAWNS) reserve(x, z, 2.5);
   for (const [x, z] of Object.values(FLAG_BASES)) reserve(x, z, 4);
   reserve(POINT.x, POINT.z, POINT.radius + 2);
+  for (const p of DEFEND_POINTS) reserve(p.x, p.z, p.radius + 1);
   const isFree = (x, z, r) => {
     if (Math.hypot(x, z) < 12) return false;
     if (theme.road && Math.abs(z - 24) < 6) return false; // keep the road clear-ish
