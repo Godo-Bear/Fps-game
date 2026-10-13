@@ -1803,6 +1803,7 @@ function restoreRun(save) {
   weapon.cur = 0;
   weapon.last = 0;
   weapon.ensureKnife();
+  unlimitedLoadout();
   weapon.refreshModels();
   game.grenades = Math.max(0, Math.min(maxGrenades(), save.grenades ?? 2));
   game.scrap = Math.max(0, Math.min(999, save.scrap | 0));
@@ -1812,6 +1813,13 @@ function restoreRun(save) {
   player.health = Math.max(1, Math.min(save.health || stats.maxHealth, stats.maxHealth + stats.overheal));
   if (WEATHER[save.weather] && world.theme.weathers.includes(save.weather)) weather.set(save.weather, true);
   Object.assign(game, { wave: save.wave, score: save.score | 0, kills: save.kills | 0, headshots: save.headshots | 0, runId: save.id, runName: saveName(save) });
+}
+
+// The gun you equipped in the shop never runs out of reserve ammo (you still reload).
+function unlimitedLoadout() {
+  const id = account.items.loadout;
+  if (!id || !account.items[`gun_${id}`]) return;
+  for (const s of weapon.slots) if (s.def.id === id) s.reserve = Infinity;
 }
 
 // Permanent shop upgrades, starting gun and revive tokens (new solo runs only).
@@ -1826,6 +1834,7 @@ function applyShop() {
   if (it.scavenger) pickups.topUp(5 + 2 * it.scavenger, player.pos, 0.06);
   if (it.loadout && it[`gun_${it.loadout}`] && GUNS[it.loadout]) {
     weapon.give(it.loadout, stats); // you start holding it
+    unlimitedLoadout();
   }
   if (it.revive > 0) {
     const runId = game.runId;
@@ -2872,6 +2881,9 @@ accountUI.adminActions = {
       case 'heal':
         player.health = overhealCap();
         return 'Healed (with full overheal).';
+      case 'infinitereserve':
+        for (const s of weapon.slots) s.reserve = Infinity;
+        return 'Every gun you carry has unlimited reserve ammo.';
       case 'removeguns':
         weapon.reset(stats);
         return 'Guns removed: back to the rifle and knife.';

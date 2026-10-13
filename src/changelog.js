@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.0', date: '13 Oct 2026', title: 'Unlimited ammo for your starting gun',
+    items: [
+      'The gun you equip in the Shop now has unlimited ammo (you still reload).',
+      'Admin: unlimited reserve ammo for every gun you carry.',
+    ],
+  },
+  {
     v: '3.9', date: '13 Oct 2026', title: 'Quick chat wheel',
     items: [
       'Emotes are gone: the wheel (Z) is now your quick chat, 8 phrases you can rewrite in Customise.',

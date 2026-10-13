@@ -73,7 +73,7 @@ Overheal slowly drains, and the **Overcharge** power-up raises the cap.
 You earn **coins** from every game: kills, headshots and waves reached in solo, kills and wins online.
 Spend them in the **Shop** (main menu, or the 🪙 Shop tab) on:
 - **Upgrades** for solo runs: Toughness (+max health), Firepower (+damage), Quick Hands (+reload speed), Scavenger (more guns and medkits)
-- a **starting gun** you begin every solo run with
+- a **starting gun** you begin every solo and co-op run with; the one you equip has **unlimited ammo** (you still reload)
 - **Revive Tokens**: your next solo run starts with Second Wind
 - any **locked cosmetic**, without waiting for the level
 
@@ -177,7 +177,7 @@ or any zombie type, kill all zombies, set weather, set score and jump to any wav
 in multiplayer admins get an ADMIN badge and can kick players.
 
 Newer admin tools: max or reset all **gun mastery** (every skin unlocked), finish or reset **today's quests**,
-replay or skip the **tutorial**, spawn a **specific boss**, **infinite grenades**, **free building**, **unlimited builds**,
+replay or skip the **tutorial**, spawn a **specific boss**, **unlimited reserve for all your guns**, **infinite grenades**, **free building**, **unlimited builds**,
 **super turrets**, max / set **scrap**, refill / set **grenades**, remove all builds and zero scrap & grenades.
 Admins can also reset their quick chat wheel to the defaults.
 

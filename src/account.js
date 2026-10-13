@@ -719,7 +719,7 @@ export class AccountUI {
       <div id="shop-msg" class="msg"></div>
       <h4>Upgrades <span class="muted small">(solo runs)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>
-      <h4>Starting gun <span class="muted small">(own it, equip it, start every solo run with it)</span></h4>
+      <h4>Starting gun <span class="muted small">(own it, equip it: you start every solo and co-op run with it, with unlimited ammo)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>
       <h4>Items</h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
@@ -804,6 +804,7 @@ export class AccountUI {
         <button class="btn small" data-run="killall" ${solo ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
         <button class="btn small" data-run="scrap" ${solo ? '' : 'disabled'}>🔩 MAX SCRAP</button>
         <button class="btn small" data-run="nades" ${solo ? '' : 'disabled'}>💣 REFILL GRENADES</button>
+        <button class="btn small" data-run="infinitereserve" ${solo ? '' : 'disabled'}>♾️ UNLIMITED RESERVE (ALL MY GUNS)</button>
         <button class="btn small" data-run="skiptut" ${solo ? '' : 'disabled'}>SKIP TUTORIAL</button>
       </div>
       <div class="auth inline admin-row">
