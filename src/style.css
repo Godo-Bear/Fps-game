@@ -1526,3 +1526,68 @@ b.coin {
     background: rgba(120, 30, 10, 0.6);
   }
 }
+
+/* ---- friend chat */
+.badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  margin-left: 3px;
+  border-radius: 9px;
+  background: #ff4a3a;
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+.friend button.hot {
+  background: #ffb020;
+  color: #1a120c;
+}
+.dm-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+}
+.dm-head .btn.small {
+  margin: 0;
+}
+.dm-log {
+  margin: 10px 0;
+  height: min(46vh, 380px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.dm {
+  align-self: flex-start;
+  max-width: 78%;
+  padding: 6px 10px;
+  border-radius: 10px 10px 10px 2px;
+  background: rgba(233, 217, 184, 0.12);
+  overflow-wrap: anywhere;
+}
+.dm.mine {
+  align-self: flex-end;
+  border-radius: 10px 10px 2px 10px;
+  background: rgba(79, 160, 255, 0.28);
+}
+.dm time {
+  display: block;
+  font-size: 11px;
+  opacity: 0.55;
+  margin-top: 2px;
+}
+.dm .btn.small {
+  margin: 6px 0 0;
+  display: block;
+}
+.dm-form input {
+  flex: 1;
+  min-width: 0;
+}

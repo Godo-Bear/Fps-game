@@ -90,6 +90,10 @@ you log in). Dying ends that game and deletes its save.
 A small chat sits in the top left. Online, press **T** or **Enter** to talk to everyone in the room (lobby and matches).
 In solo it shows game events.
 
+**Friend chat** works outside of games: open **Friends** from the menu and press **💬 Chat** next to a friend (logged-in
+players only, friends only). The Friends button shows a red badge for new messages, and a new message while you play
+shows up in the game chat. In a room lobby, **Invite friends** sends them a message with a **JOIN** button.
+
 In Free-for-all, Team Deathmatch, Co-op and Defend the Points you keep the guns you found when you respawn. In Capture Point and
 Capture the Flag you start again with the rifle. Online, your health comes back after 5 seconds without getting hit,
 and health packs around the map heal 40 HP (they come back 30 seconds later).

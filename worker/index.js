@@ -69,6 +69,16 @@ export class GameDB extends DurableObject {
       CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS friends (a INTEGER NOT NULL, b INTEGER NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (a, b));
       CREATE INDEX IF NOT EXISTS friends_b ON friends (b);
+      CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender INTEGER NOT NULL,
+        recipient INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        created INTEGER NOT NULL,
+        seen INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS messages_pair ON messages (sender, recipient, id);
+      CREATE INDEX IF NOT EXISTS messages_unseen ON messages (recipient, seen);
     `);
     // added later: admin accounts
     try {
@@ -88,6 +98,7 @@ export class GameDB extends DurableObject {
     this.adminTries = new Map(); // user id -> [count, windowStart]
     this.fails = new Map(); // username -> [count, windowStart]
     this.signups = new Map(); // ip -> [count, windowStart]
+    this.dms = new Map(); // user id -> [count, windowStart] (friend chat)
   }
 
   // The player's saved games; the old single save (from before named games) moves in as the first one.
@@ -110,6 +121,10 @@ export class GameDB extends DurableObject {
       me.saves = JSON.stringify(saves);
     }
     return saves;
+  }
+
+  _areFriends(a, b) {
+    return !!this.sql.exec("SELECT 1 FROM friends WHERE status = 'accepted' AND ((a = ? AND b = ?) OR (a = ? AND b = ?))", a, b, b, a).toArray()[0];
   }
 
   _limit(map, key, max, windowMs) {
@@ -376,6 +391,47 @@ export class GameDB extends DurableObject {
       return json({ friends, incoming, outgoing });
     }
 
+    // ---- chat with friends (outside of games too). The game polls for new messages.
+    if (path === '/messages/unread' && method === 'GET') {
+      const rows = this.sql
+        .exec('SELECT u.username, COUNT(*) AS n FROM messages m JOIN users u ON u.id = m.sender WHERE m.recipient = ? AND m.seen = 0 GROUP BY m.sender', me.id)
+        .toArray();
+      const unread = {};
+      for (const r of rows) unread[r.username] = r.n;
+      return json({ unread });
+    }
+    if (path === '/messages' && (method === 'GET' || method === 'POST')) {
+      const name = method === 'GET' ? url.searchParams.get('with') : body.to;
+      const other = typeof name === 'string' ? this._byName(name) : null;
+      if (!other) return err('No player with that name', 404);
+      if (!this._areFriends(me.id, other.id)) return err('You can only chat with friends', 403);
+      if (method === 'POST') {
+        const text = typeof body.text === 'string' ? body.text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300) : '';
+        if (!text) return err('Say something');
+        if (!this._limit(this.dms, me.id, 20, 30000)) return err('Slow down a bit', 429);
+        this.sql.exec('INSERT INTO messages (sender, recipient, text, created) VALUES (?, ?, ?, ?)', me.id, other.id, text, Date.now());
+        // keep the last 200 messages between two friends
+        const cut = this.sql
+          .exec(
+            'SELECT id FROM messages WHERE (sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?) ORDER BY id DESC LIMIT 1 OFFSET 200',
+            me.id, other.id, other.id, me.id
+          )
+          .toArray()[0];
+        if (cut) this.sql.exec('DELETE FROM messages WHERE ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)) AND id <= ?', me.id, other.id, other.id, me.id, cut.id);
+      }
+      const after = Math.max(0, Number(url.searchParams.get('after') ?? body.after) || 0);
+      const rows = this.sql
+        .exec(
+          `SELECT * FROM (SELECT id, sender, text, created FROM messages
+             WHERE ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)) AND id > ? ORDER BY id DESC LIMIT 60) ORDER BY id`,
+          me.id, other.id, other.id, me.id, after
+        )
+        .toArray();
+      this.sql.exec('UPDATE messages SET seen = 1 WHERE sender = ? AND recipient = ? AND seen = 0', other.id, me.id);
+      const messages = rows.map((r) => ({ id: r.id, from: r.sender === me.id ? me.username : other.username, mine: r.sender === me.id, text: r.text, t: r.created }));
+      return json({ messages, online: Date.now() - (other.last_seen || 0) < ONLINE_MS });
+    }
+
     if (path.startsWith('/friends/') && method === 'POST') {
       const action = path.slice('/friends/'.length);
       const other = typeof body.username === 'string' ? this._byName(body.username) : null;
@@ -402,6 +458,7 @@ export class GameDB extends DurableObject {
       }
       if (action === 'remove') {
         this.sql.exec('DELETE FROM friends WHERE (a = ? AND b = ?) OR (a = ? AND b = ?)', me.id, other.id, other.id, me.id);
+        this.sql.exec('DELETE FROM messages WHERE (sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)', me.id, other.id, other.id, me.id);
         return json({ ok: true });
       }
     }

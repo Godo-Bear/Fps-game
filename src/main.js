@@ -1762,6 +1762,30 @@ function flyUpdate(dt) {
   player._updateCamera(dt, 0, 0);
   return 0;
 }
+// ---------------------------------------------------------------- friend chat
+// Chat with friends from the menu (Friends → Chat). From a room lobby you can invite them; an invite has a JOIN button.
+accountUI.roomCode = () => (mp.lobby ? mp.lobby.code : null);
+accountUI.joinRoom = (code) => {
+  if (mp.lobby) return mp.lobby.code === code ? "You're already in that room." : 'Leave your room first.';
+  if (!['menu', 'mpmenu', 'newgame', 'saves'].includes(game.state)) return 'Go back to the main menu first.';
+  accountUI.close();
+  audio.init();
+  game.state = 'mpmenu';
+  showOnly('mp-menu');
+  $('mp-code').value = code;
+  $('mp-error').textContent = 'Joining…';
+  mp.join(code).then((err) => ($('mp-error').textContent = err || ''));
+  return '';
+};
+$('lobby-invite').addEventListener('click', () => accountUI.open('friends'));
+// a new message while you're playing shows up in the game chat
+account.onUnread((now, before) => {
+  const chatting = !$('account-modal').classList.contains('hidden') && accountUI.chatWith;
+  for (const [name, n] of Object.entries(now)) {
+    if (n > (before[name] || 0) && chatting !== name) addChat('💬', `${name} sent you a message (Friends → Chat in the menu)`, '#7fd4ff');
+  }
+});
+
 accountUI.adminActions = {
   get god() {
     return cheats.god;

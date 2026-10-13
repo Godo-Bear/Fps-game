@@ -33,6 +33,8 @@ export class Account {
     this.user = null;
     this.online = true;
     this.listeners = [];
+    this.unread = {}; // friend chat: username -> unread messages
+    this.unreadListeners = [];
     try {
       this.guest = { ...emptyGuest(), ...JSON.parse(store.get(GUEST_KEY) || '{}') };
     } catch {
@@ -45,6 +47,9 @@ export class Account {
   }
   _changed() {
     for (const fn of this.listeners) fn(this);
+  }
+  onUnread(fn) {
+    this.unreadListeners.push(fn);
   }
 
   get loggedIn() {
@@ -123,6 +128,11 @@ export class Account {
     setInterval(() => {
       if (this.user && document.visibilityState === 'visible') this._api('/me').then(({ user }) => (this.user = user)).catch(() => {});
     }, 60000);
+    // new messages from friends
+    this.pollUnread();
+    setInterval(() => {
+      if (document.visibilityState === 'visible') this.pollUnread();
+    }, 15000);
   }
 
   async register(username, password) {
@@ -161,6 +171,37 @@ export class Account {
   async deleteSave(id) {
     if (!this.user) return;
     await this._api('/saves/delete', { method: 'POST', body: { id } });
+  }
+
+  // ---- chat with friends
+  messages(name, after = 0) {
+    return this._api(`/messages?with=${encodeURIComponent(name)}&after=${after}`);
+  }
+  sendMessage(to, text, after = 0) {
+    return this._api('/messages', { method: 'POST', body: { to, text, after } });
+  }
+  get unreadTotal() {
+    return Object.values(this.unread).reduce((a, b) => a + b, 0);
+  }
+  _setUnread(unread) {
+    const before = this.unread;
+    this.unread = unread;
+    if (JSON.stringify(before) !== JSON.stringify(unread)) for (const fn of this.unreadListeners) fn(unread, before);
+  }
+  async pollUnread() {
+    if (!this.user) return this._setUnread({});
+    try {
+      const { unread } = await this._api('/messages/unread');
+      this._setUnread(unread || {});
+    } catch {
+      /* offline */
+    }
+  }
+  markRead(name) {
+    if (!this.unread[name]) return;
+    const next = { ...this.unread };
+    delete next[name];
+    this._setUnread(next);
   }
 
   // ---- shop
@@ -299,7 +340,18 @@ export class AccountUI {
     this.body = document.getElementById('account-body');
     this.tab = 'profile';
     this.adminActions = null; // set by the game: { god, ammo, toggle(name), run(action, value), inSolo }
+    // friend chat; the game sets roomCode() (your room, for invites) and joinRoom(code)
+    this.chatWith = null;
+    this.dm = { list: [], last: 0, timer: 0 };
+    this.roomCode = () => null;
+    this.joinRoom = null;
+    account.onUnread(() => {
+      this.renderCard();
+      if (!this.modal.classList.contains('hidden')) this._renderTabs();
+      if (!this.modal.classList.contains('hidden') && this.tab === 'friends' && !this.chatWith) this._loadFriends();
+    });
     account.onChange(() => {
+      if (!account.loggedIn) this.chatWith = null;
       this.renderCard();
       if (!this.modal.classList.contains('hidden')) this.render();
     });
@@ -308,6 +360,7 @@ export class AccountUI {
       const t = e.target.closest('[data-tab]');
       if (t) {
         this.tab = t.dataset.tab;
+        this.chatWith = null;
         this.render();
       }
     });
@@ -318,13 +371,20 @@ export class AccountUI {
     this.renderCard();
   }
 
-  open(tab = 'profile') {
+  open(tab = 'profile', keepChat = false) {
     this.tab = tab;
+    if (!keepChat) this.chatWith = null;
     this.modal.classList.remove('hidden');
     this.render();
   }
   close() {
     this.modal.classList.add('hidden');
+    this._stopDm();
+  }
+  // straight into a chat with one friend
+  openChat(name) {
+    this.chatWith = name;
+    this.open('friends', true);
   }
 
   renderCard() {
@@ -341,7 +401,7 @@ export class AccountUI {
         <div class="ac-buttons">
           <button data-open="shop" class="hot">🪙 Shop</button>
           <button data-open="profile">Customise</button>
-          <button data-open="friends">Friends</button>
+          <button data-open="friends">Friends${a.unreadTotal ? ` <span class="badge" title="New messages">${a.unreadTotal}</span>` : ''}</button>
           <button data-open="leaderboard">Leaderboard</button>
           ${a.loggedIn ? '' : '<button data-open="login" class="hot">Log in / Sign up</button>'}
         </div>
@@ -349,13 +409,17 @@ export class AccountUI {
   }
 
   render() {
-    const tabs = [['shop', '🪙 Shop'], ['profile', 'Customise'], ['friends', 'Friends'], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
+    this._renderTabs();
+    const fn = { shop: this._shop, profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
+    fn.call(this);
+  }
+
+  _renderTabs() {
+    const tabs = [['shop', '🪙 Shop'], ['profile', 'Customise'], ['friends', `Friends${this.account.unreadTotal ? ` (${this.account.unreadTotal})` : ''}`], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
     if (this.account.loggedIn) tabs.push(['admin', this.account.admin ? '⭐ Admin' : 'Admin code']);
     document.getElementById('account-tabs').innerHTML = tabs
       .map(([id, label]) => `<button data-tab="${id}" class="${this.tab === id ? 'active' : ''}">${label}</button>`)
       .join('');
-    const fn = { shop: this._shop, profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
-    fn.call(this);
   }
 
   _login() {
@@ -608,9 +672,11 @@ export class AccountUI {
   async _friends() {
     const a = this.account;
     if (!a.loggedIn) {
-      this.body.innerHTML = `<p class="muted">Log in to add friends and see when they're online.</p><button class="btn small" data-tab="login">LOG IN</button>`;
+      this.body.innerHTML = `<p class="muted">Log in to add friends, chat with them and see when they're online.</p><button class="btn small" data-tab="login">LOG IN</button>`;
       return;
     }
+    if (this.chatWith) return this._chatView();
+    this._stopDm();
     this.body.innerHTML = `
       <form id="friend-form" class="auth inline">
         <input name="username" placeholder="Friend's username" maxlength="16" required />
@@ -648,9 +714,19 @@ export class AccountUI {
       el.innerHTML = `
         ${incoming.length ? `<h4>Requests</h4>${incoming.map((u) => row(u, `<button data-f="accept" data-u="${esc(u.username)}">Accept</button><button data-f="remove" data-u="${esc(u.username)}">Decline</button>`)).join('')}` : ''}
         <h4>Friends (${friends.length})</h4>
-        ${friends.length ? friends.map((u) => row(u, `<button data-f="remove" data-u="${esc(u.username)}">Remove</button>`)).join('') : '<p class="muted">No friends yet. Add someone by their username.</p>'}
+        ${
+          friends.length
+            ? friends
+                .map((u) => {
+                  const n = this.account.unread[u.username] || 0;
+                  return row(u, `<button data-chat="${esc(u.username)}" class="${n ? 'hot' : ''}">💬 Chat${n ? ` (${n})` : ''}</button><button data-f="remove" data-u="${esc(u.username)}">Remove</button>`);
+                })
+                .join('')
+            : '<p class="muted">No friends yet. Add someone by their username.</p>'
+        }
         ${outgoing.length ? `<h4>Sent</h4>${outgoing.map((u) => row(u, `<button data-f="remove" data-u="${esc(u.username)}">Cancel</button>`)).join('')}` : ''}
         <p class="muted small">To play together: Multiplayer → Create room, then send your friends the room code.</p>`;
+      el.querySelectorAll('button[data-chat]').forEach((b) => b.addEventListener('click', () => this.openChat(b.dataset.chat)));
       el.querySelectorAll('button[data-f]').forEach((b) =>
         b.addEventListener('click', async () => {
           await this.account.friendAction(b.dataset.f, b.dataset.u).catch(() => {});
@@ -660,6 +736,108 @@ export class AccountUI {
     } catch (err) {
       el.textContent = err.message;
     }
+  }
+
+  // ---- chat with one friend (works from the menu, no game needed)
+  _stopDm() {
+    clearInterval(this.dm.timer);
+    this.dm.timer = 0;
+  }
+
+  _chatView() {
+    const name = this.chatWith;
+    const draft = document.getElementById('dm-input')?.value || '';
+    const fresh = this.dm.with !== name;
+    if (fresh) this.dm = { with: name, list: [], last: 0, timer: 0 };
+    this._stopDm();
+    const room = this.roomCode();
+    this.body.innerHTML = `
+      <div class="dm-head">
+        <button class="btn small ghost" id="dm-back">← FRIENDS</button>
+        <b>${esc(name)}</b><span id="dm-status" class="muted small"></span>
+      </div>
+      <div id="dm-log" class="dm-log"></div>
+      <form id="dm-form" class="auth inline dm-form">
+        <input id="dm-input" maxlength="300" autocomplete="off" placeholder="Message ${esc(name)}…" />
+        <button class="btn small">SEND</button>
+      </form>
+      ${room ? `<button class="btn small ghost" id="dm-invite">INVITE TO MY ROOM (${esc(room)})</button>` : ''}
+      <div id="dm-msg" class="msg"></div>`;
+    const input = document.getElementById('dm-input');
+    input.value = draft;
+    input.focus();
+    input.addEventListener('keydown', (e) => e.stopPropagation());
+    document.getElementById('dm-back').addEventListener('click', () => {
+      this.chatWith = null;
+      this.render();
+    });
+    const send = async (text) => {
+      const msg = document.getElementById('dm-msg');
+      try {
+        const r = await this.account.sendMessage(name, text, this.dm.last);
+        if (msg) msg.textContent = '';
+        this._dmAdd(r.messages, r.online);
+      } catch (err) {
+        if (msg) msg.textContent = err.message;
+      }
+    };
+    document.getElementById('dm-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      send(text);
+    });
+    document.getElementById('dm-invite')?.addEventListener('click', () => send(`🎮 Join my room: ${room}`));
+    document.getElementById('dm-log').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-join]');
+      if (!b) return;
+      if (!this.joinRoom) return;
+      const why = this.joinRoom(b.dataset.join);
+      if (why) document.getElementById('dm-msg').textContent = why;
+    });
+    this._dmRender();
+    this._dmLoad();
+    this.dm.timer = setInterval(() => this._dmLoad(), 3000);
+  }
+
+  async _dmLoad() {
+    const name = this.chatWith;
+    if (!name || this.modal.classList.contains('hidden') || this.tab !== 'friends') return this._stopDm();
+    try {
+      const r = await this.account.messages(name, this.dm.last);
+      if (this.chatWith === name) this._dmAdd(r.messages, r.online);
+    } catch (err) {
+      const msg = document.getElementById('dm-msg');
+      if (msg) msg.textContent = err.message;
+    }
+  }
+
+  _dmAdd(messages, online) {
+    const status = document.getElementById('dm-status');
+    if (status) status.textContent = online ? ' · online' : ' · offline (they will see it next time)';
+    const fresh = (messages || []).filter((m) => m.id > this.dm.last);
+    if (fresh.length) {
+      this.dm.list = this.dm.list.concat(fresh).slice(-200);
+      this.dm.last = fresh[fresh.length - 1].id;
+      this._dmRender();
+    }
+    this.account.markRead(this.chatWith);
+  }
+
+  _dmRender() {
+    const log = document.getElementById('dm-log');
+    if (!log) return;
+    const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    log.innerHTML = this.dm.list.length
+      ? this.dm.list
+          .map((m) => {
+            const code = !m.mine && /Join my room: ([A-Z0-9]{5})/.exec(m.text);
+            return `<div class="dm ${m.mine ? 'mine' : ''}"><span>${esc(m.text)}</span>${code ? `<button class="btn small" data-join="${code[1]}">JOIN</button>` : ''}<time>${time(m.t)}</time></div>`;
+          })
+          .join('')
+      : `<p class="muted">No messages yet. Say hi to ${esc(this.chatWith)}!</p>`;
+    log.scrollTop = log.scrollHeight;
   }
 
   async _leaderboard() {
