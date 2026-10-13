@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
-import { MAPS, MODES, SOLO_MAP } from '../shared/modes.js';
+import { EMOTES, MAPS, MODES, SOLO_MAP } from '../shared/modes.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { Account, AccountUI } from './account.js';
@@ -2227,6 +2227,12 @@ document.addEventListener('keydown', (e) => {
   if (game.state !== 'playing') return;
   if (e.code === 'Space' || e.code === 'KeyC') e.preventDefault();
   if (e.code === 'Space' && player.dead && spectate.on) nextSpectate();
+  if (e.code === 'KeyZ') return setEmotes(!emoteMenu.open);
+  if (emoteMenu.open) {
+    const n = /^Digit([1-8])$/.exec(e.code);
+    if (n) return sendEmote(Number(n[1]) - 1);
+    if (e.code === 'Escape') return setEmotes(false);
+  }
   player.keys.add(e.code);
   if (e.code === 'KeyB') return setBuild(!build.on);
   if (build.on) {
@@ -2294,6 +2300,30 @@ account.onChange(() => {
     }
   }
   if ((account.quests || []).length) questsDone = done;
+});
+
+// ---------------------------------------------------------------- emotes (Z, then 1-8)
+const emoteMenu = { open: false };
+function setEmotes(open) {
+  emoteMenu.open = open && game.state === 'playing';
+  $('emotes').classList.toggle('hidden', !emoteMenu.open);
+}
+function sendEmote(i) {
+  setEmotes(false);
+  if (!EMOTES[i]) return;
+  if (game.mode === 'mp' && mp.inMatch) mp.send({ t: 'emote', i });
+  else addChat(account.name, EMOTES[i], account.profile.color);
+}
+$('emotes').innerHTML = EMOTES.map((e, i) => `<button data-emote="${i}"><b>${i + 1}</b>${e}</button>`).join('');
+$('emotes').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-emote]');
+  if (b) sendEmote(Number(b.dataset.emote));
+});
+$('emotes').addEventListener('touchstart', (e) => {
+  const b = e.target.closest('[data-emote]');
+  if (!b) return;
+  e.preventDefault();
+  sendEmote(Number(b.dataset.emote));
 });
 
 // ---------------------------------------------------------------- co-op revives
@@ -2488,6 +2518,7 @@ const controls = new Controls({
   choosing: () => game.state === 'choosing',
   inMatch: () => game.mode === 'mp' && mp.inMatch,
   building: () => build.on,
+  emotesOpen: () => emoteMenu.open,
   look(dx, dy) {
     if (game.state !== 'playing' || player.dead) return;
     player.look(dx, dy, camera.fov / 75);

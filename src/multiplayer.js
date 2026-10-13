@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAPS, MODES, MP_MAPS, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
+import { EMOTES, MAPS, MODES, MP_MAPS, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 
@@ -115,6 +115,16 @@ class Avatar {
   }
 
   update(dt, flags) {
+    if (this.bubble) {
+      this.bubbleT -= dt;
+      this.bubble.material.opacity = Math.min(1, this.bubbleT * 2);
+      if (this.bubbleT <= 0) {
+        this.root.remove(this.bubble);
+        this.bubble.material.map.dispose();
+        this.bubble.material.dispose();
+        this.bubble = null;
+      }
+    }
     if (this.fresh) {
       this.pos.copy(this.target);
       this.yaw = this.targetYaw;
@@ -155,6 +165,20 @@ class Avatar {
       this.downSprite.visible = true;
       this.downSprite.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() / 150);
     } else if (this.downSprite) this.downSprite.visible = false;
+  }
+
+  // a speech bubble over their head for a few seconds
+  say(text) {
+    if (this.bubble) {
+      this.root.remove(this.bubble);
+      this.bubble.material.map.dispose();
+      this.bubble.material.dispose();
+    }
+    this.bubble = nameSprite(text, '#ffffff');
+    this.bubble.scale.set(2.2, 0.42, 1);
+    this.bubble.position.y = 2.65;
+    this.root.add(this.bubble);
+    this.bubbleT = 3;
   }
 
   dispose() {
@@ -365,6 +389,10 @@ export class Multiplayer {
         break;
       case 'sgone':
         this.ctx.onStructureGone?.(m.id, m.by);
+        break;
+      case 'emote':
+        this.avatars.get(m.id)?.say(EMOTES[m.i] || '');
+        this.ctx.onChat(m.name, EMOTES[m.i] || '', this.teams ? TEAM_CSS[this._team(m.id)] : '#ffd38a', false);
         break;
       case 'fx':
         if (this.ctx.onFx) this.ctx.onFx(m);

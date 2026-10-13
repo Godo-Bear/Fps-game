@@ -91,7 +91,7 @@ you log in). Dying ends that game and deletes its save.
   the fire button), and buttons for aim, jump, crouch/slide, reload, swap, knife, grenade, build and pause.
   In build mode fire places, R turns and swap changes what you're building.
 - **Controllers** (Xbox / PlayStation layout): left stick move (all the way forward sprints), right stick look,
-  RT fire, LT aim, A jump, B crouch/slide, X reload, Y swap gun, LB grenade, RB knife, L3 sprint, D-pad up build,
+  RT fire, LT aim, A jump, B crouch/slide, X reload (hold to revive), Y swap gun, LB grenade, RB knife, R3 emotes, L3 sprint, D-pad up build,
   D-pad down last gun (turns things in build mode), D-pad left/right pick what to build, Start pause, Back scores.
   In menus the D-pad moves between buttons, A presses and B goes back; pick power-ups with left/up/right.
 

@@ -2004,3 +2004,37 @@ body.touch-mode #build-hud {
 body.can-revive .t-revive {
   display: block;
 }
+
+/* ---- emotes */
+#emotes {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: min(560px, calc(100vw - 32px));
+  z-index: 8;
+}
+#emotes button {
+  font: 700 16px 'Rajdhani', sans-serif;
+  color: #fff;
+  padding: 10px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+#emotes button b {
+  display: block;
+  font-size: 12px;
+  opacity: 0.6;
+}
+.t-emote {
+  left: calc(12px + env(safe-area-inset-left));
+  top: 270px;
+  width: 42px;
+  height: 42px;
+  font-size: 18px;
+}

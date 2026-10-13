@@ -24,6 +24,7 @@ const BUTTONS = [
   ['chat', '💬', 'key:KeyT'],
   ['scores', '☰', 'hold:Tab'],
   ['revive', '✚', 'hold:KeyE'],
+  ['emote', '😀', 'key:KeyZ'],
 ];
 
 export class Controls {
@@ -238,7 +239,20 @@ export class Controls {
       if (released(2)) keyEvent('keyup', 'KeyE');
       if (pressed(3)) this.ctx.weapon.cycle(1);
       if (pressed(4)) tap('KeyG');
-      if (pressed(5) || pressed(11)) tap('KeyV');
+      if (this.ctx.emotesOpen()) {
+        // emote menu: A B X Y and the D-pad pick one, R3 closes it
+        const map = [[0, 1], [1, 2], [2, 3], [3, 4], [12, 5], [15, 6], [13, 7], [14, 8]];
+        for (const [i, n] of map) if (pressed(i)) tap(`Digit${n}`);
+        if (pressed(11)) tap('KeyZ');
+        this.padPrev = b;
+        return;
+      }
+      if (pressed(11)) {
+        tap('KeyZ');
+        this.padPrev = b;
+        return;
+      }
+      if (pressed(5)) tap('KeyV');
       if (pressed(6)) mouseEvent('mousedown', 2);
       if (released(6)) mouseEvent('mouseup', 2);
       if (pressed(7)) mouseEvent('mousedown', 0);

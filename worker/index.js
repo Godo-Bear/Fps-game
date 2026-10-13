@@ -4,7 +4,7 @@ import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
-import { FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
+import { EMOTES, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -736,6 +736,11 @@ export class Room extends DurableObject {
         } else this._broadcast({ t: 'shp', id: st.id, hp: Math.round(st.hp) });
         break;
       }
+      case 'emote':
+        if (!Number.isInteger(m.i) || m.i < 0 || m.i >= EMOTES.length || now - (p.lastEmote || 0) < 800) return;
+        p.lastEmote = now;
+        this._broadcast({ t: 'emote', id: p.id, name: p.name, i: m.i });
+        break;
       case 'chat': {
         // room chat: short messages, max ~1 per 0.7s each
         if (typeof m.text !== 'string') return;

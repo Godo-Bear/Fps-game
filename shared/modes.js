@@ -49,3 +49,6 @@ export const MAPS = {
   frost: { name: 'Frostbite Outpost', weathers: ['frostclear', 'snow', 'snow', 'blizzard', 'frostfog'] },
   forest: { name: 'Blackwood Hollow', weathers: ['dusk', 'dusk', 'mist', 'rain', 'storm'] },
 };
+
+// Quick callouts (Z): shown above your head and in the chat.
+export const EMOTES = ['👋 Hi!', '👍 Nice!', '🆘 Help!', '📍 Over here!', '🔄 Reloading!', '😂 LOL', '🧟 Zombies!', '🤝 GG'];
