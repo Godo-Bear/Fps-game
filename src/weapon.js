@@ -82,6 +82,15 @@ export class Weapon {
     if (this.slots.length) this._show(this.cur);
   }
 
+  // Mastery skins: { gunId: hex colour } on top of the profile finish.
+  setGunFinishes(map) {
+    const key = JSON.stringify(map);
+    if (key === this._gunFinishKey) return;
+    this._gunFinishKey = key;
+    this.gunFinish = map;
+    this.refreshModels();
+  }
+
   // Rebuilds the gun models (e.g. after mutations change).
   refreshModels() {
     for (const m of Object.values(this.models)) m.group.removeFromParent();
@@ -206,7 +215,7 @@ export class Weapon {
   _model(id, mut = null) {
     const key = `${id}|${mut || ''}`;
     if (!this.models[key]) {
-      const gun = buildGun(id, { finish: this.finish, mutation: mut });
+      const gun = buildGun(id, { finish: this.gunFinish?.[id] ?? this.finish, mutation: mut });
       const hands = buildHands(GUNS[id]);
       gun.group.add(hands.left, hands.right);
       gun.group.scale.setScalar(SCALE);

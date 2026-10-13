@@ -4,6 +4,7 @@ import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
+import { addMasteryKills, chooseSkin, cleanMastery } from '../shared/mastery.js';
 import { EMOTES, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
@@ -90,7 +91,7 @@ export class GameDB extends DurableObject {
     }
     // added later: the saved solo run (so you can continue on any device), coins and shop items
     // and later still: several named saved games (JSON object of id -> save)
-    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT', 'quests TEXT']) {
+    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT', 'quests TEXT', 'mastery TEXT']) {
       try {
         this.sql.exec(`ALTER TABLE users ADD COLUMN ${col}`);
       } catch {
@@ -102,6 +103,7 @@ export class GameDB extends DurableObject {
     this.signups = new Map(); // ip -> [count, windowStart]
     this.dms = new Map(); // user id -> [count, windowStart] (friend chat)
     this.questReports = new Map(); // user id -> [count, windowStart]
+    this.masteryReports = new Map();
   }
 
   // The player's saved games; the old single save (from before named games) moves in as the first one.
@@ -124,6 +126,14 @@ export class GameDB extends DurableObject {
       me.saves = JSON.stringify(saves);
     }
     return saves;
+  }
+
+  _mastery(u) {
+    try {
+      return cleanMastery(u.mastery ? JSON.parse(u.mastery) : null);
+    } catch {
+      return cleanMastery(null);
+    }
   }
 
   _quests(me) {
@@ -175,6 +185,7 @@ export class GameDB extends DurableObject {
       out.admin = !!u.admin;
       out.coins = u.coins || 0;
       out.items = items;
+      out.mastery = this._mastery(u);
     }
     return out;
   }
@@ -400,6 +411,20 @@ export class GameDB extends DurableObject {
       }
       friends.sort((x, y) => Number(y.online) - Number(x.online) || y.level - x.level);
       return json({ friends, incoming, outgoing });
+    }
+
+    // ---- gun mastery
+    if (path === '/mastery' && method === 'POST') {
+      if (!this._limit(this.masteryReports, me.id, 4, 10000)) return err('Slow down a bit', 429);
+      const m = addMasteryKills(this._mastery(me), body.kills);
+      this.sql.exec('UPDATE users SET mastery = ? WHERE id = ?', JSON.stringify(m), me.id);
+      return json({ mastery: m });
+    }
+    if (path === '/mastery/skin' && method === 'POST') {
+      const m = chooseSkin(this._mastery(me), String(body.gun), Math.floor(Number(body.tier) || 0));
+      if (!m) return err("You haven't unlocked that yet");
+      this.sql.exec('UPDATE users SET mastery = ? WHERE id = ?', JSON.stringify(m), me.id);
+      return json({ mastery: m });
     }
 
     // ---- daily quests

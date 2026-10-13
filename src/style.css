@@ -2038,3 +2038,45 @@ body.can-revive .t-revive {
   height: 42px;
   font-size: 18px;
 }
+
+/* ---- gun mastery */
+.mastery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0;
+}
+.m-gun {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(233, 217, 184, 0.15);
+}
+.m-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.m-skins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.skin {
+  font: 700 13px 'Rajdhani', sans-serif;
+  color: var(--c, #e9d9b8);
+  background: rgba(233, 217, 184, 0.08);
+  border: 1px solid rgba(233, 217, 184, 0.25);
+  border-radius: 4px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.skin.on {
+  border-color: var(--c, #ffd38a);
+  box-shadow: 0 0 8px var(--c, #ffd38a);
+}
+.skin[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}

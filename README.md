@@ -110,6 +110,10 @@ Every 5th wave brings a boss: the **Abomination** (wave 5), the **Screamer** (wa
 nearby zombies into a frenzy), the **Juggernaut** (wave 15, armoured, winds up and charges) and the **Broodmother**
 (wave 20, hatches crawlers and bursts into more when it dies). After that it's any of them.
 
+### Gun mastery
+Every gun (and the knife) counts your kills with it: 50 / 150 / 400 / 1000 kills unlock Bronze, Silver, Gold and
+Diamond skins for that gun. Pick what each gun wears in **🏅 Mastery** (Customise window).
+
 ### Daily quests
 Three new quests every day (the same for everyone). Finish one, then claim its coins in **📜 Quests** on the menu.
 

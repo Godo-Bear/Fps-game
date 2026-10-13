@@ -1,6 +1,8 @@
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, TITLES, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
+import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
+import { GUNS } from './guns.js';
 
 const TOKEN_KEY = 'deadplains.token';
 const GUEST_KEY = 'deadplains.guest';
@@ -176,6 +178,34 @@ export class Account {
   async deleteSave(id) {
     if (!this.user) return;
     await this._api('/saves/delete', { method: 'POST', body: { id } });
+  }
+
+  // ---- gun mastery
+  get mastery() {
+    return cleanMastery(this.user ? this.user.mastery : this.guest.mastery);
+  }
+  async addMastery(kills) {
+    if (!kills || !Object.keys(kills).length) return;
+    if (this.user) {
+      const { mastery } = await this._api('/mastery', { method: 'POST', body: { kills } });
+      this.user.mastery = mastery;
+    } else {
+      this.guest.mastery = addMasteryKills(this.guest.mastery, kills);
+      store.set(GUEST_KEY, JSON.stringify(this.guest));
+    }
+    this._changed();
+  }
+  async setGunSkin(gun, tier) {
+    if (this.user) {
+      const { mastery } = await this._api('/mastery/skin', { method: 'POST', body: { gun, tier } });
+      this.user.mastery = mastery;
+    } else {
+      const m = chooseSkin(this.guest.mastery, gun, tier);
+      if (!m) throw new Error("You haven't unlocked that yet");
+      this.guest.mastery = m;
+      store.set(GUEST_KEY, JSON.stringify(this.guest));
+    }
+    this._changed();
   }
 
   // ---- daily quests (guests keep theirs in this browser)
@@ -466,12 +496,12 @@ export class AccountUI {
 
   render() {
     this._renderTabs();
-    const fn = { shop: this._shop, quests: this._quests, profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
+    const fn = { shop: this._shop, quests: this._quests, mastery: this._mastery, profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
     fn.call(this);
   }
 
   _renderTabs() {
-    const tabs = [['shop', '🪙 Shop'], ['quests', `📜 Quests${this.account.questsReady ? ` (${this.account.questsReady})` : ''}`], ['profile', 'Customise'], ['friends', `Friends${this.account.unreadTotal ? ` (${this.account.unreadTotal})` : ''}`], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
+    const tabs = [['shop', '🪙 Shop'], ['quests', `📜 Quests${this.account.questsReady ? ` (${this.account.questsReady})` : ''}`], ['profile', 'Customise'], ['mastery', '🏅 Mastery'], ['friends', `Friends${this.account.unreadTotal ? ` (${this.account.unreadTotal})` : ''}`], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
     if (this.account.loggedIn) tabs.push(['admin', this.account.admin ? '⭐ Admin' : 'Admin code']);
     document.getElementById('account-tabs').innerHTML = tabs
       .map(([id, label]) => `<button data-tab="${id}" class="${this.tab === id ? 'active' : ''}">${label}</button>`)
@@ -792,6 +822,41 @@ export class AccountUI {
     } catch (err) {
       el.textContent = err.message;
     }
+  }
+
+  // ---- gun mastery
+  _mastery() {
+    const m = this.account.mastery;
+    this.body.innerHTML = `
+      <p class="muted">Kills with a gun unlock skins for it: ${MASTERY_TIERS.map((t) => `<b style="color:${t.css}">${t.name}</b> ${t.kills}`).join(' · ')}. Pick the skin each gun wears.</p>
+      <div class="mastery">${MASTERY_GUNS.map((g) => {
+        const def = GUNS[g];
+        const kills = m.k[g] || 0;
+        const tier = tierFor(kills);
+        const next = MASTERY_TIERS[tier];
+        const prev = tier ? MASTERY_TIERS[tier - 1].kills : 0;
+        const pct = next ? Math.round(((kills - prev) / (next.kills - prev)) * 100) : 100;
+        const chosen = m.s[g] || 0;
+        const skins = [`<button class="skin ${chosen === 0 ? 'on' : ''}" data-gun="${g}" data-tier="0">Normal</button>`]
+          .concat(MASTERY_TIERS.map((t, i) => `<button class="skin ${chosen === i + 1 ? 'on' : ''}" data-gun="${g}" data-tier="${i + 1}" ${i < tier ? '' : 'disabled'} style="--c:${t.css}">${i < tier ? '' : '🔒 '}${t.name}</button>`))
+          .join('');
+        return `<div class="m-gun">
+          <div class="m-head"><b>${def.icon} ${esc(def.name)}</b><span class="muted small">${kills} kills${next ? ` · ${next.kills - kills} to ${next.name}` : ' · mastered!'}</span></div>
+          <div class="q-bar"><i style="width:${pct}%;background:${next ? next.css : MASTERY_TIERS[3].css}"></i></div>
+          <div class="m-skins">${skins}</div>
+        </div>`;
+      }).join('')}</div>
+      <div id="mastery-msg" class="msg"></div>`;
+    this.body.querySelectorAll('button[data-gun]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          await this.account.setGunSkin(b.dataset.gun, Number(b.dataset.tier));
+        } catch (err) {
+          const msg = document.getElementById('mastery-msg');
+          if (msg) msg.textContent = err.message;
+        }
+      }),
+    );
   }
 
   // ---- daily quests

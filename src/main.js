@@ -3,6 +3,7 @@ import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
 import { EMOTES, MAPS, MODES, SOLO_MAP } from '../shared/modes.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
+import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
@@ -612,6 +613,17 @@ function clearProjectiles() {
 // Scrap for building barricades and turrets: what each zombie gives.
 const SCRAP_FOR = { walker: 1, runner: 1, crawler: 1, spitter: 2, bloater: 2, brute: 4, boss: 15 };
 
+// Gun mastery: kills per gun, sent along with quest progress.
+const masteryDelta = {};
+function masteryKill(gun) {
+  if (!gun) return;
+  masteryDelta[gun] = (masteryDelta[gun] || 0) + 1;
+  // a new tier right now? (counting kills not sent yet)
+  const before = (account.mastery.k[gun] || 0) + masteryDelta[gun] - 1;
+  const t = tierFor(before + 1);
+  if (t > tierFor(before) && GUNS[gun]) banner(`${MASTERY_TIERS[t - 1].name.toUpperCase()} ${GUNS[gun].name.toUpperCase()}`, 'Gun mastery: new skin unlocked in 🏅 Mastery', 'gold', 2.6);
+}
+
 // Quest progress made since it was last sent (see the quests section).
 const questDelta = {};
 function questAdd(key, n = 1) {
@@ -620,6 +632,13 @@ function questAdd(key, n = 1) {
 // Sends quest progress (after waves, matches, quitting and once a minute while playing).
 let questFlushT = 60;
 function flushQuests() {
+  const kills = { ...masteryDelta };
+  if (Object.keys(kills).length) {
+    for (const k of Object.keys(masteryDelta)) delete masteryDelta[k];
+    account.addMastery(kills).catch(() => {
+      for (const [g, n] of Object.entries(kills)) masteryDelta[g] = (masteryDelta[g] || 0) + n;
+    });
+  }
   const delta = { ...questDelta };
   if (!Object.keys(delta).length) return;
   for (const k of Object.keys(questDelta)) delete questDelta[k];
@@ -1004,6 +1023,9 @@ function rewardKill({ type, mut, head, src = null, x, y, z }) {
   if (mut) questAdd('mutated');
   if (type === 'boss') questAdd('bosses');
   if (src === 'melee' || src === 'grenade' || src === 'turret') questAdd(`${src}Kills`);
+  // mastery: the knife for stabs, otherwise the gun in your hands
+  if (src === 'melee') masteryKill('knife');
+  else if (!src && !weapon.def.melee) masteryKill(weapon.def.id);
   game.scrap = Math.min(999, game.scrap + (SCRAP_FOR[type] ?? 1));
   if (head) {
     game.headshots++;
@@ -1575,6 +1597,11 @@ function applyProfile() {
   document.documentElement.style.setProperty('--xh', p.crosshair);
   const fin = FINISHES.find((f) => f[0] === p.finish);
   weapon.setFinish(fin && fin[0] !== 'standard' ? fin[3] : null);
+  // gun mastery skins
+  const m = account.mastery;
+  const skins = {};
+  for (const [g, t] of Object.entries(m.s)) if (MASTERY_TIERS[t - 1]) skins[g] = MASTERY_TIERS[t - 1].color;
+  weapon.setGunFinishes(skins);
 }
 account.onChange(applyProfile);
 
@@ -2056,6 +2083,7 @@ const mp = new Multiplayer({
   },
   onKillConfirmed(victim, head) {
     questAdd('pvpKills');
+    masteryKill(weapon.def.id);
     game.scrap = Math.min(999, game.scrap + SCRAP_PER_PVP_KILL);
     audio.kill();
     showHit('kill');

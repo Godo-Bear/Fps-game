@@ -131,7 +131,7 @@ export function buildGun(id, { finish = null, mutation = null } = {}) {
     const mut = mutation ? MUTATIONS[mutation] : null;
     const swap = new Map();
     out.group.traverse((o) => {
-      if (!o.isMesh || (o.material !== M.metal && o.material !== M.dark)) return;
+      if (!o.isMesh || (o.material !== M.metal && o.material !== M.dark && !o.userData.finishable)) return;
       if (!swap.has(o.material)) {
         const m = o.material.clone();
         if (finish) m.color.set(finish).multiplyScalar(o.material === M.dark ? 0.7 : 1);
@@ -268,8 +268,8 @@ function buildGunBase(id) {
     case 'knife': {
       // blade forward, edge down, held low on the right
       const steel = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.25, metalness: 0.8 });
-      part(g, B(0.012, 0.045, 0.2), steel, 0, 0.01, -0.13);
-      part(g, B(0.01, 0.025, 0.05), steel, 0, 0.022, -0.25, 0.5);
+      part(g, B(0.012, 0.045, 0.2), steel, 0, 0.01, -0.13).userData.finishable = true;
+      part(g, B(0.01, 0.025, 0.05), steel, 0, 0.022, -0.25, 0.5).userData.finishable = true;
       part(g, B(0.05, 0.016, 0.02), M.dark, 0, 0, -0.025);
       part(g, B(0.03, 0.038, 0.11), M.dark, 0, -0.004, 0.035);
       part(g, B(0.032, 0.04, 0.012), M.metal, 0, -0.004, 0.095);
