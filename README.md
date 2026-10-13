@@ -119,6 +119,14 @@ Your first new game starts with a short tutorial (move, shoot, aim, reload, jump
 that matches your controls. Skip it with **K** (tap it on touch, **Back** on a controller); turn it back on in
 **Settings**.
 
+### Parties, emotes, revives, spectating, kill cam
+- **Parties:** invite friends from **Friends** (🎉 Invite). When the party leader creates or joins a room, everyone
+  in the party follows them in. The home screen shows your party.
+- **Emotes:** press **Z** (touch 😀, controller R3) for quick callouts shown above your head and in chat.
+- **Co-op revives:** hold **E** (controller X) next to a downed squadmate for 3 seconds.
+- **Spectating:** while you're down in co-op you watch a squadmate (click for the next one).
+- **Kill cam:** in PvP, after you die the camera follows whoever got you until you respawn.
+
 ### Daily quests
 Three new quests every day (the same for everyone). Finish one, then claim its coins in **📜 Quests** on the menu.
 

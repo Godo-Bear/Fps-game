@@ -44,6 +44,7 @@ function sameString(a, b) {
 const USERNAME = /^[A-Za-z0-9_]{3,16}$/;
 const DAY = 86400000;
 const ONLINE_MS = 3 * 60000;
+const PARTY_MAX = 8;
 
 // ---------------------------------------------------------------- accounts, friends, progress
 export class GameDB extends DurableObject {
@@ -82,6 +83,9 @@ export class GameDB extends DurableObject {
       );
       CREATE INDEX IF NOT EXISTS messages_pair ON messages (sender, recipient, id);
       CREATE INDEX IF NOT EXISTS messages_unseen ON messages (recipient, seen);
+      CREATE TABLE IF NOT EXISTS parties (id INTEGER PRIMARY KEY AUTOINCREMENT, leader INTEGER NOT NULL, room TEXT, updated INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS party_members (user INTEGER PRIMARY KEY, party INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS party_invites (party INTEGER NOT NULL, user INTEGER NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (party, user));
     `);
     // added later: admin accounts
     try {
@@ -142,6 +146,43 @@ export class GameDB extends DurableObject {
     } catch {
       return null;
     }
+  }
+
+  _partyOf(userId) {
+    return this.sql.exec('SELECT party FROM party_members WHERE user = ?', userId).toArray()[0]?.party ?? null;
+  }
+  _partyMembers(party) {
+    return this.sql.exec('SELECT u.* FROM party_members m JOIN users u ON u.id = m.user WHERE m.party = ? ORDER BY u.username', party).toArray();
+  }
+  _leaveParty(userId) {
+    const party = this._partyOf(userId);
+    if (!party) return;
+    this.sql.exec('DELETE FROM party_members WHERE user = ?', userId);
+    const left = this._partyMembers(party);
+    if (left.length <= 1) {
+      // a party of one is just you
+      this.sql.exec('DELETE FROM party_members WHERE party = ?', party);
+      this.sql.exec('DELETE FROM party_invites WHERE party = ?', party);
+      this.sql.exec('DELETE FROM parties WHERE id = ?', party);
+      return;
+    }
+    const p = this.sql.exec('SELECT leader FROM parties WHERE id = ?', party).one();
+    if (p.leader === userId) this.sql.exec('UPDATE parties SET leader = ? WHERE id = ?', left[0].id, party);
+  }
+  _partyView(me) {
+    const invites = this.sql
+      .exec(
+        `SELECT i.party, u.username FROM party_invites i JOIN parties p ON p.id = i.party JOIN users u ON u.id = p.leader
+         WHERE i.user = ? AND i.created > ?`,
+        me.id, Date.now() - DAY
+      )
+      .toArray()
+      .map((r) => ({ party: r.party, from: r.username }));
+    const id = this._partyOf(me.id);
+    if (!id) return { party: null, invites };
+    const p = this.sql.exec('SELECT * FROM parties WHERE id = ?', id).one();
+    const members = this._partyMembers(id).map((u) => ({ ...this._publicUser(u), leader: u.id === p.leader }));
+    return { party: { id, room: p.room, leader: members.find((m) => m.leader)?.username, members }, invites };
   }
 
   _areFriends(a, b) {
@@ -425,6 +466,60 @@ export class GameDB extends DurableObject {
       if (!m) return err("You haven't unlocked that yet");
       this.sql.exec('UPDATE users SET mastery = ? WHERE id = ?', JSON.stringify(m), me.id);
       return json({ mastery: m });
+    }
+
+    // ---- parties: play together; when the leader goes into a room the others follow
+    if (path === '/party' && method === 'GET') return json(this._partyView(me));
+    if (path.startsWith('/party/') && method === 'POST') {
+      const action = path.slice('/party/'.length);
+      const mine = this._partyOf(me.id);
+      if (action === 'invite') {
+        const other = typeof body.username === 'string' ? this._byName(body.username) : null;
+        if (!other || other.id === me.id) return err('No player with that name', 404);
+        if (!this._areFriends(me.id, other.id)) return err('You can only invite friends');
+        let party = mine;
+        if (!party) {
+          party = this.sql.exec('INSERT INTO parties (leader, updated) VALUES (?, ?) RETURNING id', me.id, Date.now()).one().id;
+          this.sql.exec('INSERT INTO party_members (user, party) VALUES (?, ?)', me.id, party);
+        }
+        if (this._partyMembers(party).length >= PARTY_MAX) return err(`A party can have ${PARTY_MAX} players`);
+        if (this._partyOf(other.id) === party) return err('Already in your party');
+        this.sql.exec('INSERT OR REPLACE INTO party_invites (party, user, created) VALUES (?, ?, ?)', party, other.id, Date.now());
+        return json(this._partyView(me));
+      }
+      if (action === 'accept') {
+        const party = Number(body.party);
+        const inv = this.sql.exec('SELECT * FROM party_invites WHERE party = ? AND user = ?', party, me.id).toArray()[0];
+        if (!inv || !this.sql.exec('SELECT id FROM parties WHERE id = ?', party).toArray()[0]) return err('That invite has expired');
+        if (this._partyMembers(party).length >= PARTY_MAX) return err('That party is full');
+        this._leaveParty(me.id);
+        this.sql.exec('DELETE FROM party_invites WHERE user = ? AND party = ?', me.id, party);
+        this.sql.exec('INSERT INTO party_members (user, party) VALUES (?, ?)', me.id, party);
+        return json(this._partyView(me));
+      }
+      if (action === 'decline') {
+        this.sql.exec('DELETE FROM party_invites WHERE user = ? AND party = ?', me.id, Number(body.party));
+        return json(this._partyView(me));
+      }
+      if (action === 'leave') {
+        this._leaveParty(me.id);
+        return json(this._partyView(me));
+      }
+      if (action === 'kick') {
+        const other = typeof body.username === 'string' ? this._byName(body.username) : null;
+        const leader = mine && this.sql.exec('SELECT leader FROM parties WHERE id = ?', mine).one().leader;
+        if (!other || leader !== me.id || this._partyOf(other.id) !== mine) return err("You can't do that");
+        this._leaveParty(other.id);
+        return json(this._partyView(me));
+      }
+      if (action === 'room') {
+        // the leader tells the party which room to be in (or none)
+        const leader = mine && this.sql.exec('SELECT leader FROM parties WHERE id = ?', mine).one().leader;
+        if (leader !== me.id) return json(this._partyView(me));
+        const code = typeof body.code === 'string' && /^[A-Z0-9]{5}$/.test(body.code) ? body.code : null;
+        this.sql.exec('UPDATE parties SET room = ?, updated = ? WHERE id = ?', code, Date.now(), mine);
+        return json(this._partyView(me));
+      }
     }
 
     // ---- daily quests

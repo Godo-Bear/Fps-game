@@ -1933,6 +1933,7 @@ function toMenu() {
   player.dead = false;
   renderBest();
   showOnly('menu');
+  setTimeout(partyFollow, 0);
 }
 
 function renderBest() {
@@ -1963,6 +1964,7 @@ const mp = new Multiplayer({
   scene, effects, audio, account, player, weapon, banner, subBanner, defend,
   onLobby() {
     game.mode = 'mp';
+    if (mp.lobby) account.setPartyRoom(mp.lobby.code); // party leader: bring everyone
     if (['lobby', 'mpend', 'mp-menu', 'mpmenu'].includes(game.state) || game.state !== 'playing') {
       game.state = 'lobby';
       if (document.pointerLockElement) document.exitPointerLock();
@@ -1970,6 +1972,7 @@ const mp = new Multiplayer({
     }
   },
   onLeave(msg) {
+    account.setPartyRoom(null);
     toMenu();
     if (msg) {
       showOnly('mp-menu');
@@ -2327,6 +2330,38 @@ function flyUpdate(dt) {
   player._updateCamera(dt, 0, 0);
   return 0;
 }
+// ---------------------------------------------------------------- parties
+// When the party leader goes into a room, everyone else follows (from the menus; mid-game they get told).
+let followedRoom = null;
+let toldRoom = null;
+function partyFollow() {
+  const p = account.party;
+  renderPartyBar();
+  if (!p || !p.room || account.partyLeader) {
+    followedRoom = null;
+    return;
+  }
+  if (mp.lobby?.code === p.room) {
+    followedRoom = p.room;
+    return;
+  }
+  if (followedRoom === p.room || mp.lobby) return;
+  if (['menu', 'mpmenu', 'newgame', 'saves'].includes(game.state)) {
+    followedRoom = p.room;
+    accountUI.joinRoom(p.room);
+  } else if (toldRoom !== p.room) {
+    toldRoom = p.room;
+    addChat('🎉', `Your party went into room ${p.room}. Open Multiplayer to join them.`, '#ffd34d');
+  }
+}
+function renderPartyBar() {
+  const p = account.party;
+  const el = $('party-bar');
+  el.classList.toggle('hidden', !p);
+  if (p) el.innerHTML = `🎉 Party: ${p.members.map((m) => `${m.leader ? '👑' : ''}<b style="color:${esc(m.profile.color)}">${esc(m.username)}</b>`).join(', ')}${p.room ? ` · room <b>${esc(p.room)}</b>` : ''}`;
+}
+account.onParty(partyFollow);
+
 // ---------------------------------------------------------------- quests
 // A quest finished while you play gets a message in the game chat; claim the coins in the menu.
 let questsDone = null;

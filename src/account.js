@@ -38,6 +38,9 @@ export class Account {
     this.listeners = [];
     this.unread = {}; // friend chat: username -> unread messages
     this.quests = [];
+    this.party = null; // { id, room, leader, members }
+    this.partyInvites = [];
+    this.partyListeners = [];
     this.unreadListeners = [];
     try {
       this.guest = { ...emptyGuest(), ...JSON.parse(store.get(GUEST_KEY) || '{}') };
@@ -52,6 +55,35 @@ export class Account {
   _changed() {
     for (const fn of this.listeners) fn(this);
   }
+  onParty(fn) {
+    this.partyListeners.push(fn);
+  }
+  get partyLeader() {
+    return !!this.party && this.party.leader === this.user?.username;
+  }
+  _setParty(r) {
+    const before = JSON.stringify([this.party, this.partyInvites]);
+    this.party = r?.party || null;
+    this.partyInvites = r?.invites || [];
+    if (JSON.stringify([this.party, this.partyInvites]) !== before) for (const fn of this.partyListeners) fn();
+  }
+  async loadParty() {
+    if (!this.user) return this._setParty(null);
+    try {
+      this._setParty(await this._api('/party'));
+    } catch {
+      /* offline */
+    }
+  }
+  async partyAction(action, body = {}) {
+    this._setParty(await this._api(`/party/${action}`, { method: 'POST', body }));
+  }
+  // the leader's room, so the party can follow
+  setPartyRoom(code) {
+    if (!this.partyLeader || this.party.room === code) return;
+    this.partyAction('room', { code }).catch(() => {});
+  }
+
   onUnread(fn) {
     this.unreadListeners.push(fn);
   }
@@ -117,6 +149,7 @@ export class Account {
     store.set(TOKEN_KEY, null);
     this._changed();
     this.loadQuests();
+    this._setParty(null);
   }
 
   async init() {
@@ -134,6 +167,13 @@ export class Account {
     setInterval(() => {
       if (this.user && document.visibilityState === 'visible') this._api('/me').then(({ user }) => (this.user = user)).catch(() => {});
     }, 60000);
+    // party: every few seconds while you're in one, otherwise now and then for invites
+    this.loadParty();
+    let partyTick = 0;
+    setInterval(() => {
+      partyTick++;
+      if (this.user && document.visibilityState === 'visible' && (this.party || partyTick % 3 === 0)) this.loadParty();
+    }, 4000);
     // new messages from friends
     this.pollUnread();
     setInterval(() => {
@@ -155,6 +195,7 @@ export class Account {
     store.set(TOKEN_KEY, token);
     this._changed();
     this.loadQuests();
+    this.loadParty();
   }
   async logout() {
     try {
@@ -426,6 +467,10 @@ export class AccountUI {
     this.dm = { list: [], last: 0, timer: 0 };
     this.roomCode = () => null;
     this.joinRoom = null;
+    account.onParty(() => {
+      this.renderCard();
+      if (!this.modal.classList.contains('hidden') && this.tab === 'friends' && !this.chatWith) this._loadFriends();
+    });
     account.onUnread(() => {
       this.renderCard();
       if (!this.modal.classList.contains('hidden')) this._renderTabs();
@@ -476,7 +521,7 @@ export class AccountUI {
       if (el) el.dataset.badge = n ? String(n) : '';
     };
     badge('quests-btn', a.questsReady);
-    badge('friends-btn', a.unreadTotal);
+    badge('friends-btn', a.unreadTotal + a.partyInvites.length);
     const p = a.profile;
     const lvl = a.level;
     const into = a.xp - xpForLevel(lvl);
@@ -797,7 +842,21 @@ export class AccountUI {
           <span class="muted">Lv ${u.level} · best wave ${u.stats.bestWave} · ${u.stats.pvpKills} PvP kills</span>
           <span class="actions">${buttons}</span>
         </div>`;
-      el.innerHTML = `
+      const a = this.account;
+      const party = a.party;
+      const partyHtml = `
+        <div class="party">
+          <h4>🎉 Party${party ? ` (${party.members.length}/8)` : ''}</h4>
+          ${a.partyInvites.map((i) => `<div class="friend"><b>${esc(i.from)}</b> invited you to their party<span class="actions"><button data-p="accept" data-party="${i.party}" class="hot">Join</button><button data-p="decline" data-party="${i.party}">No thanks</button></span></div>`).join('')}
+          ${
+            party
+              ? `${party.members.map((u) => `<div class="friend"><span class="dot ${u.online ? 'on' : ''}"></span>${u.leader ? '👑 ' : ''}${nameTag(u)}<span class="actions">${a.partyLeader && !u.leader ? `<button data-p="kick" data-u="${esc(u.username)}">Kick</button>` : ''}</span></div>`).join('')}
+                <p class="muted small">${a.partyLeader ? "You're the leader: when you create or join a room, your party follows you in." : `When ${esc(party.leader)} goes into a room, you follow them in.`}${party.room ? ` Room: <b>${esc(party.room)}</b>` : ''}</p>
+                <button class="btn small ghost" data-p="leave">LEAVE PARTY</button>`
+              : '<p class="muted small">Invite friends to a party to stick together: when the leader goes into a room, everyone follows.</p>'
+          }
+        </div>`;
+      el.innerHTML = `${partyHtml}
         ${incoming.length ? `<h4>Requests</h4>${incoming.map((u) => row(u, `<button data-f="accept" data-u="${esc(u.username)}">Accept</button><button data-f="remove" data-u="${esc(u.username)}">Decline</button>`)).join('')}` : ''}
         <h4>Friends (${friends.length})</h4>
         ${
@@ -805,7 +864,8 @@ export class AccountUI {
             ? friends
                 .map((u) => {
                   const n = this.account.unread[u.username] || 0;
-                  return row(u, `<button data-chat="${esc(u.username)}" class="${n ? 'hot' : ''}">💬 Chat${n ? ` (${n})` : ''}</button><button data-f="remove" data-u="${esc(u.username)}">Remove</button>`);
+                  const inParty = party && party.members.some((m) => m.username === u.username);
+                  return row(u, `<button data-chat="${esc(u.username)}" class="${n ? 'hot' : ''}">💬 Chat${n ? ` (${n})` : ''}</button>${inParty ? '' : `<button data-p="invite" data-u="${esc(u.username)}">🎉 Invite</button>`}<button data-f="remove" data-u="${esc(u.username)}">Remove</button>`);
                 })
                 .join('')
             : '<p class="muted">No friends yet. Add someone by their username.</p>'
@@ -813,6 +873,18 @@ export class AccountUI {
         ${outgoing.length ? `<h4>Sent</h4>${outgoing.map((u) => row(u, `<button data-f="remove" data-u="${esc(u.username)}">Cancel</button>`)).join('')}` : ''}
         <p class="muted small">To play together: Multiplayer → Create room, then send your friends the room code.</p>`;
       el.querySelectorAll('button[data-chat]').forEach((b) => b.addEventListener('click', () => this.openChat(b.dataset.chat)));
+      el.querySelectorAll('button[data-p]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          const msg = document.getElementById('friend-msg');
+          try {
+            await this.account.partyAction(b.dataset.p, { username: b.dataset.u, party: Number(b.dataset.party) });
+            if (msg) msg.textContent = b.dataset.p === 'invite' ? `Party invite sent to ${b.dataset.u}.` : '';
+          } catch (err) {
+            if (msg) msg.textContent = err.message;
+          }
+          this._loadFriends();
+        }),
+      );
       el.querySelectorAll('button[data-f]').forEach((b) =>
         b.addEventListener('click', async () => {
           await this.account.friendAction(b.dataset.f, b.dataset.u).catch(() => {});
