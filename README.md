@@ -86,6 +86,15 @@ starts and after every wave (once you pick a power-up); quitting mid-wave restar
 games are stored on their account, so they work on any device (games played as a guest move into your account when
 you log in). Dying ends that game and deletes its save.
 
+### Touch screens and controllers
+- **Phones and tablets:** a joystick appears where your left thumb lands, drag on the right side to look (or drag
+  the fire button), and buttons for aim, jump, crouch/slide, reload, swap, knife, grenade, build and pause.
+  In build mode fire places, R turns and swap changes what you're building.
+- **Controllers** (Xbox / PlayStation layout): left stick move (all the way forward sprints), right stick look,
+  RT fire, LT aim, A jump, B crouch/slide, X reload, Y swap gun, LB grenade, RB knife, L3 sprint, D-pad up build,
+  D-pad down last gun (turns things in build mode), D-pad left/right pick what to build, Start pause, Back scores.
+  In menus the D-pad moves between buttons, A presses and B goes back; pick power-ups with left/up/right.
+
 ### Knife, grenades and building
 - Everyone carries a **Combat Knife** (slot 2). Press **V** for a quick stab with whatever you're holding. Headshots and
   stabbing a zombie in the back hit much harder.

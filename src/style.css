@@ -399,7 +399,7 @@ h2 {
 #mobile-note {
   display: none;
   margin-top: 12px;
-  color: #ff8a7a;
+  opacity: 0.7;
 }
 @media (pointer: coarse) {
   #mobile-note {
@@ -1700,4 +1700,110 @@ b.coin {
 }
 #build-hud .bad {
   color: #ff6a5a;
+}
+
+/* ---- touch controls */
+#touch {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.t-stick {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+.t-stick i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  transform: translate(-50%, -50%);
+}
+.t-btn {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font: 700 19px 'Rajdhani', sans-serif;
+  touch-action: none;
+  padding: 0;
+}
+.t-btn.down {
+  background: rgba(255, 211, 77, 0.45);
+}
+.t-btn::after {
+  position: absolute;
+  bottom: -15px;
+  left: -10px;
+  right: -10px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  opacity: 0.8;
+}
+.t-fire { right: calc(22px + env(safe-area-inset-right)); bottom: 64px; width: 84px; height: 84px; font-size: 30px; background: rgba(200, 40, 30, 0.4); }
+.t-aim { right: calc(118px + env(safe-area-inset-right)); bottom: 30px; }
+.t-jump { right: calc(30px + env(safe-area-inset-right)); bottom: 162px; }
+.t-crouch { right: calc(104px + env(safe-area-inset-right)); bottom: 110px; }
+.t-reload { right: calc(178px + env(safe-area-inset-right)); bottom: 84px; }
+.t-swap { right: calc(190px + env(safe-area-inset-right)); bottom: 18px; }
+.t-knife,
+.t-nade,
+.t-build { bottom: 230px; width: 44px; height: 44px; font-size: 17px; }
+.t-knife { right: calc(18px + env(safe-area-inset-right)); }
+.t-nade { right: calc(70px + env(safe-area-inset-right)); }
+.t-build { right: calc(122px + env(safe-area-inset-right)); }
+.t-pause,
+.t-scores,
+.t-chat { left: calc(12px + env(safe-area-inset-left)); width: 42px; height: 42px; font-size: 16px; }
+.t-pause { top: 120px; }
+.t-scores { top: 170px; }
+.t-chat { top: 220px; }
+#touch.building .t-fire::after { content: 'PLACE'; }
+#touch.building .t-reload::after { content: 'TURN'; }
+#touch.building .t-swap::after { content: 'TYPE'; }
+/* on touch screens the HUD makes room for thumbs */
+body.touch-mode #bottom-right {
+  right: auto;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%) scale(0.7);
+  transform-origin: bottom center;
+  text-align: center;
+}
+body.touch-mode #slots,
+body.touch-mode #chat-hint,
+body.touch-mode .controls {
+  display: none;
+}
+body.touch-mode #map-corner {
+  transform: scale(0.55);
+  transform-origin: top right;
+}
+body.touch-mode #top-right-stats {
+  right: 116px;
+  transform: scale(0.62);
+  transform-origin: top right;
+}
+body.touch-mode #bottom-left {
+  transform: scale(0.8);
+  transform-origin: bottom left;
+}
+body.touch-mode #build-hud {
+  bottom: auto;
+  top: 60px;
 }

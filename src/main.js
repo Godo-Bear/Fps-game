@@ -5,6 +5,7 @@ import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
+import { Controls } from './controls.js';
 import { DefendPoints } from './defend.js';
 import { Structures } from './structures.js';
 import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
@@ -1512,6 +1513,14 @@ function updateHud(dt) {
 
 // ---------------------------------------------------------------- state
 function lock() {
+  // touch / controller: no mouse to capture, just carry on playing
+  if (controls.pointerFree) {
+    if (game.state === 'paused') {
+      game.state = 'playing';
+      showOnly(null);
+    }
+    return;
+  }
   try {
     const p = canvas.requestPointerLock();
     if (p && p.catch) p.catch(() => {});
@@ -2229,6 +2238,33 @@ account.onChange(() => {
   if ((account.quests || []).length) questsDone = done;
 });
 
+// ---------------------------------------------------------------- touch screens and controllers
+const controls = new Controls({
+  player,
+  weapon,
+  playing: () => game.state === 'playing',
+  choosing: () => game.state === 'choosing',
+  inMatch: () => game.mode === 'mp' && mp.inMatch,
+  building: () => build.on,
+  look(dx, dy) {
+    if (game.state !== 'playing' || player.dead) return;
+    player.look(dx, dy, camera.fov / 75);
+    weapon.sway(dx * (1 - weapon.ads * 0.8), dy * (1 - weapon.ads * 0.8));
+  },
+  pause() {
+    if (game.state !== 'playing') return;
+    controls.releaseAll();
+    pauseFor('PAUSED', game.mode === 'mp' ? 'The match keeps going! Tap to continue' : 'Tap or press A to continue');
+  },
+  resume() {
+    if (game.state === 'paused') lock();
+  },
+});
+// playing with a controller and then grabbing the keyboard: Esc still pauses
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && game.state === 'playing' && !document.pointerLockElement) controls.ctx.pause();
+});
+
 // ---------------------------------------------------------------- friend chat
 // Chat with friends from the menu (Friends → Chat). From a room lobby you can invite them; an invite has a JOIN button.
 accountUI.roomCode = () => (mp.lobby ? mp.lobby.code : null);
@@ -2530,6 +2566,8 @@ function frame(now) {
   const dt = Math.min(0.05, (now - prev) / 1000);
   prev = now;
   time += dt;
+  controls.update(dt);
+  controls.updateTouchUi(game.state === 'playing' && !player.dead);
 
   if (game.state === 'playing') update(dt);
   else if (game.mode === 'mp' && game.state === 'paused' && mp.inMatch) {

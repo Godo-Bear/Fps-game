@@ -25,6 +25,7 @@ export class Player {
     this.pos = new THREE.Vector3();
     this.vel = new THREE.Vector3();
     this.keys = new Set();
+    this.stick = { x: 0, y: 0 }; // touch joystick / gamepad: x strafe, y forward (-1..1)
     this.radius = 0.45;
     this.sensitivity = 0.0022;
     this.reset(100);
@@ -126,8 +127,16 @@ export class Player {
       this._updateCamera(dt, 0, 0);
       return 0;
     }
-    const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
-    const strafe = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    let fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+    let strafe = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    // analog stick: how far you push it is how fast you go; all the way forward sprints
+    let mag = 1;
+    const stickSprint = !fwd && !strafe && this.stick.y > 0.92;
+    if (!fwd && !strafe && Math.hypot(this.stick.x, this.stick.y) > 0.12) {
+      fwd = this.stick.y;
+      strafe = this.stick.x;
+      mag = Math.min(1, Math.hypot(fwd, strafe));
+    }
     const jump = k.has('Space');
     const jumpPressed = jump && !this.jumpHeld;
     this.jumpHeld = jump;
@@ -157,7 +166,7 @@ export class Player {
       this.pos.x = l.x + l.nx * 0.45;
       this.pos.z = l.z + l.nz * 0.45;
       this.vel.set(0, 0, 0);
-      const dir = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+      const dir = (k.has('KeyW') || k.has('ArrowUp') || this.stick.y > 0.3 ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') || this.stick.y < -0.3 ? 1 : 0);
       this.pos.y += dir * LADDER_SPEED * dt;
       if (dir !== 0) {
         this.bob += dt * 6;
@@ -222,7 +231,7 @@ export class Player {
     const blockedAbove = ceiling < this.pos.y + HEIGHT;
     this.crouching = this.slideT <= 0 && (crouchKey || blockedAbove);
 
-    this.sprinting = (k.has('ShiftLeft') || k.has('ShiftRight')) && fwd > 0 && !firing && !this.crouching && this.slideT <= 0;
+    this.sprinting = (k.has('ShiftLeft') || k.has('ShiftRight') || stickSprint) && fwd > 0 && !firing && !this.crouching && this.slideT <= 0;
     const speed = (this.sprinting ? SPRINT : WALK) * stats.speedMul * moveMul * (this.crouching ? 0.5 : 1);
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
@@ -230,8 +239,8 @@ export class Player {
     let wz = -cos * fwd - sin * strafe;
     const wl = Math.hypot(wx, wz);
     if (wl > 0) {
-      wx = (wx / wl) * speed;
-      wz = (wz / wl) * speed;
+      wx = (wx / wl) * speed * mag;
+      wz = (wz / wl) * speed * mag;
     }
     if (this.slideT > 0) {
       // sliding: momentum carries you, a little steering
