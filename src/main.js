@@ -205,6 +205,7 @@ function spawnAnchor() {
 }
 
 function updateWave(dt) {
+  if (game.phase === 'tutorial') return updateTutorial(dt);
   if (game.phase === 'countdown') {
     const before = Math.ceil(game.timer);
     game.timer -= dt;
@@ -654,7 +655,7 @@ function flushQuests() {
 const build = { on: false, kind: 'barricade', rot: 0, x: 0, z: 0, yaw: 0, valid: false, why: '' };
 let localStructureId = 1;
 const myOwner = () => (game.mode === 'mp' ? mp.myId : 'me');
-const freeBuild = () => cheatsOn() && cheats.ammo;
+const freeBuild = () => (cheatsOn() && cheats.ammo) || tut.on;
 
 function setBuild(on) {
   build.on = on && !player.dead;
@@ -929,6 +930,7 @@ function throwGrenade() {
   vel.x += player.vel.x * 0.5;
   vel.z += player.vel.z * 0.5;
   thrown.push({ mesh, vel, fuse: 2.1, bounced: 0 });
+  tut.threw = true;
   questAdd('grenades');
 }
 
@@ -1501,7 +1503,7 @@ function updateHud(dt) {
   if (zombieGame()) {
     setText('wave-label', game.wave > 0 ? `WAVE ${game.wave}` : 'GET READY');
     const remaining = game.phase !== 'active' ? 0 : simHost() ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : coop.remaining;
-    setText('zombies-left', game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : 'Wave cleared');
+    setText('zombies-left', game.phase === 'tutorial' ? 'Tutorial' : game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : 'Wave cleared');
     setText('score', String(game.score));
     setText('kills', `${game.kills} kills`);
     setText('run-coins', `🪙 +${coinsForRun({ mode: 'solo', wave: game.wave, kills: game.kills, headshots: game.headshots })}`);
@@ -1868,10 +1870,13 @@ function startGame(save = null, name = null) {
     applyShop();
     persistRun(); // it shows up in Saved Games straight away
   }
+  tut.on = false;
+  $('tutorial').classList.add('hidden');
+  if (!save && tutorialWanted()) startTutorial();
   $('run-name').textContent = game.runName;
   $('banner').className = '';
   $('subbanner').className = '';
-  pauseFor(game.runName.toUpperCase(), save ? `Continuing · wave ${game.wave + 1} starts in 5 seconds` : `${world.theme.name} · the first wave comes in 5 seconds`);
+  pauseFor(game.runName.toUpperCase(), save ? `Continuing · wave ${game.wave + 1} starts in 5 seconds` : tut.on ? `${world.theme.name} · a quick tutorial first (you can skip it)` : `${world.theme.name} · the first wave comes in 5 seconds`);
   lock();
 }
 
@@ -1923,6 +1928,8 @@ function toMenu() {
   defend.stop();
   structures.clear();
   setBuild(false);
+  tut.on = false;
+  $('tutorial').classList.add('hidden');
   player.dead = false;
   renderBest();
   showOnly('menu');
@@ -2255,6 +2262,10 @@ document.addEventListener('keydown', (e) => {
   if (game.state !== 'playing') return;
   if (e.code === 'Space' || e.code === 'KeyC') e.preventDefault();
   if (e.code === 'Space' && player.dead && spectate.on) nextSpectate();
+  if (tut.on && (e.code === 'KeyK' || e.code === 'Tab')) {
+    e.preventDefault();
+    return endTutorial(true);
+  }
   if (e.code === 'KeyZ') return setEmotes(!emoteMenu.open);
   if (emoteMenu.open) {
     const n = /^Digit([1-8])$/.exec(e.code);
@@ -2328,6 +2339,88 @@ account.onChange(() => {
     }
   }
   if ((account.quests || []).length) questsDone = done;
+});
+
+// ---------------------------------------------------------------- tutorial (first new game; skippable)
+// A short checklist before wave 1. Each step finishes on its own when you do the thing.
+const TUT_DONE_KEY = 'deadplains.tutorialDone';
+const TUT_STEPS = [
+  { text: ['Move around with <b>WASD</b>', 'Move with the <b>joystick</b> (left thumb)', 'Move with the <b>left stick</b>'], done: (t) => t.moved > 6 },
+  { text: ['Aim with the mouse and <b>click</b> to shoot the zombie', 'Drag to aim, hold <b>🔥</b> to shoot the zombie', 'Aim with the <b>right stick</b>, <b>RT</b> to shoot the zombie'], setup: 'dummy', done: (t) => t.dummy && !t.dummy.alive },
+  { text: ['Hold <b>right click</b> to aim down the sights', 'Hold <b>🎯</b> to aim down the sights', 'Hold <b>LT</b> to aim down the sights'], done: (t) => t.adsT > 0.5 },
+  { text: ['Press <b>R</b> to reload', 'Tap <b>R</b> to reload', 'Press <b>X</b> to reload'], done: () => weapon.reloading > 0 },
+  { text: ['Press <b>Space</b> to jump (and to climb onto things)', 'Tap <b>⤒</b> to jump (and climb onto things)', 'Press <b>A</b> to jump (and climb onto things)'], done: () => !player.onGround },
+  { text: ['Hold <b>Shift</b> to sprint, then press <b>C</b> to slide', 'Push the joystick all the way to sprint, then tap <b>⤓</b> to slide', 'Push the left stick all the way (or <b>L3</b>) to sprint, then <b>B</b> to slide'], done: () => player.sliding },
+  { text: ['Press <b>V</b> for a quick knife stab', 'Tap <b>🔪</b> for a quick knife stab', 'Press <b>RB</b> for a quick knife stab'], done: () => weapon.swingT > 0 },
+  { text: ['Press <b>G</b> to throw a grenade', 'Tap <b>💣</b> to throw a grenade', 'Press <b>LB</b> to throw a grenade'], setup: 'grenade', done: (t) => t.threw },
+  { text: ['Press <b>B</b>, then <b>click</b> to build a barricade (free this time)', 'Tap <b>🧱</b>, then <b>🔥</b> to build a barricade (free this time)', 'Press <b>D-pad up</b>, then <b>RT</b> to build a barricade (free this time)'], setup: 'build', done: () => structures.list.length > 0 },
+];
+const tut = { on: false, step: 0, moved: 0, adsT: 0, last: null, dummy: null, threw: false, doneT: 0 };
+const tutorialWanted = () => settings.tutorial && !loadPref(TUT_DONE_KEY, '');
+
+function startTutorial() {
+  Object.assign(tut, { on: true, step: 0, moved: 0, adsT: 0, last: player.pos.clone(), dummy: null, threw: false, doneT: 0 });
+  game.phase = 'tutorial';
+  $('tutorial').classList.remove('hidden');
+  renderTutorial();
+}
+
+function endTutorial(skipped) {
+  if (!tut.on) return;
+  tut.on = false;
+  savePref(TUT_DONE_KEY, '1');
+  $('tutorial').classList.add('hidden');
+  if (tut.dummy && tut.dummy.alive) zombies.damage(tut.dummy, 1e9);
+  setBuild(false);
+  game.phase = 'countdown';
+  game.timer = 5;
+  banner(skipped ? 'TUTORIAL SKIPPED' : "YOU'RE READY", 'The first wave is coming', 'gold', 2.2);
+}
+
+function renderTutorial() {
+  const s = TUT_STEPS[tut.step];
+  const mode = controls.mode === 'touch' ? 1 : controls.mode === 'pad' ? 2 : 0;
+  const skip = ['press <b>K</b> to skip', 'tap here to skip', 'press <b>Back</b> to skip'][mode];
+  const html = `<div class="tut-step">TUTORIAL · ${tut.step + 1}/${TUT_STEPS.length}</div><div class="tut-text">${s ? s.text[mode] : ''}</div>
+    <div class="tut-bar"><i style="width:${(tut.step / TUT_STEPS.length) * 100}%"></i></div><div class="tut-skip">${skip}</div>`;
+  if (last.tut !== html) {
+    last.tut = html;
+    $('tutorial').innerHTML = html;
+  }
+}
+
+function updateTutorial(dt) {
+  const s = TUT_STEPS[tut.step];
+  if (!s) return endTutorial(false);
+  if (!tut.setupDone) {
+    tut.setupDone = true;
+    if (s.setup === 'dummy') {
+      // a slow zombie right in front of you
+      const x = player.pos.x - Math.sin(player.yaw) * 9;
+      const z = player.pos.z - Math.cos(player.yaw) * 9;
+      tut.dummy = zombies.spawn('walker', 1, player.pos);
+      tut.dummy.root.position.set(x, heightAt(x, z) - 2, z);
+      tut.dummy.speed = 0.35;
+      tut.dummy.damage = 0;
+    }
+    if (s.setup === 'grenade') game.grenades = Math.max(game.grenades, 1);
+    if (s.setup === 'build') game.scrap = Math.max(game.scrap, STRUCTURES.barricade.cost);
+  }
+  tut.moved += Math.hypot(player.pos.x - tut.last.x, player.pos.z - tut.last.z);
+  tut.last.copy(player.pos);
+  tut.adsT = weapon.ads > 0.8 ? tut.adsT + dt : 0;
+  if (s.done(tut)) {
+    tut.step++;
+    tut.setupDone = false;
+    audio.click(1.4, 0.3);
+    if (tut.step >= TUT_STEPS.length) return endTutorial(false);
+  }
+  renderTutorial();
+}
+$('tutorial').addEventListener('click', () => endTutorial(true));
+$('tutorial').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  endTutorial(true);
 });
 
 // ---------------------------------------------------------------- emotes (Z, then 1-8)

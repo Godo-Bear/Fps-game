@@ -114,6 +114,11 @@ nearby zombies into a frenzy), the **Juggernaut** (wave 15, armoured, winds up a
 Every gun (and the knife) counts your kills with it: 50 / 150 / 400 / 1000 kills unlock Bronze, Silver, Gold and
 Diamond skins for that gun. Pick what each gun wears in **🏅 Mastery** (Customise window).
 
+### Tutorial
+Your first new game starts with a short tutorial (move, shoot, aim, reload, jump, slide, knife, grenade, build)
+that matches your controls. Skip it with **K** (tap it on touch, **Back** on a controller); turn it back on in
+**Settings**.
+
 ### Daily quests
 Three new quests every day (the same for everyone). Finish one, then claim its coins in **📜 Quests** on the menu.
 

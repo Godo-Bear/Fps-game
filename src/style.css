@@ -2080,3 +2080,50 @@ body.can-revive .t-revive {
   opacity: 0.4;
   cursor: default;
 }
+
+/* ---- tutorial */
+#tutorial {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, calc(100vw - 32px));
+  text-align: center;
+  padding: 10px 16px 8px;
+  border-radius: 10px;
+  background: rgba(10, 8, 6, 0.75);
+  border: 1px solid rgba(255, 211, 138, 0.5);
+  z-index: 9;
+  cursor: pointer;
+}
+.tut-step {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #ffd38a;
+  font-weight: 700;
+}
+.tut-text {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 4px 0 6px;
+}
+.tut-text b {
+  color: #ffd38a;
+}
+.tut-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+.tut-bar i {
+  display: block;
+  height: 100%;
+  background: #ffd34d;
+  transition: width 0.3s;
+}
+.tut-skip {
+  font-size: 12px;
+  opacity: 0.65;
+  margin-top: 4px;
+}
