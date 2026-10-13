@@ -440,6 +440,13 @@ export class AccountUI {
 
   renderCard() {
     const a = this.account;
+    // red counters on the home screen tiles
+    const badge = (id, n) => {
+      const el = document.getElementById(id);
+      if (el) el.dataset.badge = n ? String(n) : '';
+    };
+    badge('quests-btn', a.questsReady);
+    badge('friends-btn', a.unreadTotal);
     const p = a.profile;
     const lvl = a.level;
     const into = a.xp - xpForLevel(lvl);
@@ -450,10 +457,7 @@ export class AccountUI {
         <div class="ac-name" style="color:${esc(p.color)}">${esc(a.name)} <span class="ac-title">${esc(p.title)}</span></div>
         <div class="ac-level"><span class="coins">🪙 ${a.coins}</span> Level ${lvl}<div class="xpbar"><div style="width:${Math.min(100, (into / need) * 100)}%"></div></div><span>${into}/${need} XP</span></div>
         <div class="ac-buttons">
-          <button data-open="shop" class="hot">🪙 Shop</button>
-          <button data-open="quests">📜 Quests${a.questsReady ? ` <span class="badge" title="Quests to claim">${a.questsReady}</span>` : ''}</button>
           <button data-open="profile">Customise</button>
-          <button data-open="friends">Friends${a.unreadTotal ? ` <span class="badge" title="New messages">${a.unreadTotal}</span>` : ''}</button>
           <button data-open="leaderboard">Leaderboard</button>
           ${a.loggedIn ? '' : '<button data-open="login" class="hot">Log in / Sign up</button>'}
         </div>

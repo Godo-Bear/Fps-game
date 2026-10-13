@@ -1862,3 +1862,86 @@ body.touch-mode #build-hud {
   z-index: 40;
   pointer-events: none;
 }
+
+/* ---- home screen */
+.home h1 {
+  margin-top: 6px;
+}
+.home .tag {
+  margin-bottom: 18px;
+}
+.home-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.home-main .btn {
+  width: min(360px, 82vw);
+  margin: 0;
+}
+.home-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 92px;
+  padding: 10px 4px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(233, 217, 184, 0.25);
+  background: rgba(20, 14, 10, 0.55);
+  color: #e9d9b8;
+  font: 700 14px 'Rajdhani', sans-serif;
+  cursor: pointer;
+  transition: transform 0.12s, background 0.12s;
+}
+.tile b {
+  font-size: 26px;
+  line-height: 1.1;
+}
+.tile:hover,
+.tile:focus-visible {
+  transform: translateY(-2px);
+  background: rgba(60, 42, 26, 0.75);
+  outline: none;
+  border-color: #ffd38a;
+}
+.tile[data-badge]:not([data-badge=''])::after {
+  content: attr(data-badge);
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #ff4a3a;
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+}
+#help {
+  z-index: 30;
+}
+.help-modal h2 {
+  margin-top: 0;
+  text-align: center;
+}
+.help-modal h4 {
+  color: #ffd38a;
+}
+.help-modal .controls {
+  margin: 6px 0 0;
+}
+.btn:focus-visible {
+  outline: 3px solid #ffd38a;
+  outline-offset: 3px;
+}

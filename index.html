@@ -75,43 +75,56 @@
     </div>
 
     <div id="menu" class="overlay">
-      <div class="panel wide">
+      <div class="panel wide home">
         <div id="account-card"></div>
         <h1>DEAD PLAINS</h1>
         <p class="tag">The town is gone. The dead are not.</p>
-        <div class="menu-buttons">
+        <div class="home-main">
           <button id="continue-btn" class="btn hidden">CONTINUE</button>
           <button id="saves-btn" class="btn">SAVED GAMES</button>
           <button id="mp-btn" class="btn alt">MULTIPLAYER</button>
-          <button id="shop-btn" class="btn gold">🪙 SHOP</button>
-          <button id="settings-btn" class="btn ghost">⚙ SETTINGS</button>
         </div>
+        <div class="home-row">
+          <button id="quests-btn" class="tile"><b>📜</b><span>Quests</span></button>
+          <button id="shop-btn" class="tile"><b>🪙</b><span>Shop</span></button>
+          <button id="friends-btn" class="tile"><b>👥</b><span>Friends</span></button>
+          <button id="help-btn" class="tile"><b>❔</b><span>How to play</span></button>
+          <button id="settings-btn" class="tile"><b>⚙️</b><span>Settings</span></button>
+        </div>
+        <div id="best"></div>
+      </div>
+    </div>
+
+    <div id="help" class="overlay hidden">
+      <div class="modal help-modal">
+        <button class="close" data-close-help>✕</button>
+        <h2>HOW TO PLAY</h2>
+        <p>Survive the zombie waves. After each wave, pick 1 of 3 power-ups:
+          <span class="r-rare">Rare</span> · <span class="r-epic">Epic</span> · <span class="r-legendary">Legendary</span>.
+          Loot guns under the light beams; <span style="color:#6dff2a">glowing mutated guns</span> have special powers.
+          Climb cars, walls, wrecks and ladders. Build barricades and turrets with scrap from kills.</p>
+        <h4>Keyboard &amp; mouse</h4>
         <div class="controls">
           <div><b>WASD</b> move</div>
-          <div><b>Mouse</b> aim</div>
-          <div><b>Click</b> shoot</div>
+          <div><b>Mouse</b> aim · <b>Click</b> shoot</div>
           <div><b>Right click</b> zoom / scope</div>
           <div><b>R</b> reload</div>
           <div><b>Shift</b> sprint</div>
           <div><b>C</b> crouch · slide while sprinting</div>
           <div><b>Space</b> jump / climb</div>
-          <div><b>W</b> at a ladder to climb</div>
-          <div><b>1-8 / wheel</b> switch gun</div>
-          <div><b>Q</b> last gun</div>
+          <div><b>1-8 / wheel</b> switch gun · <b>Q</b> last</div>
           <div><b>V</b> knife stab · <b>2</b> knife</div>
           <div><b>G</b> throw grenade</div>
-          <div><b>B</b> build barricades & turrets</div>
-          <div><b>Tab</b> scores (online)</div>
-          <div><b>T / Enter</b> chat (online)</div>
+          <div><b>B</b> build barricades &amp; turrets</div>
+          <div><b>E</b> revive a teammate (co-op)</div>
+          <div><b>Z</b> emotes</div>
+          <div><b>Tab</b> scores · <b>T</b> chat (online)</div>
         </div>
-        <div class="odds-line">Multiplayer maps: <b>Frostbite Outpost</b> and <b>Blackwood Hollow</b>.</div>
-        <div class="odds-line">Loot guns under the light beams; <span style="color:#6dff2a">glowing mutated guns</span> have special powers. Climb cars, walls, wrecks and ladders.</div>
-        <div class="odds-line">
-          After each wave pick 1 of 3 power-ups:
-          <span class="r-rare">Rare</span> · <span class="r-epic">Epic</span> · <span class="r-legendary">Legendary</span>
-        </div>
-        <div id="best"></div>
-        <div id="mobile-note">Play with a keyboard and mouse, a controller or a touch screen.</div>
+        <h4>Controller</h4>
+        <p class="small">Left stick move · right stick look · RT fire · LT aim · A jump · B crouch · X reload/revive · Y swap · LB grenade · RB knife · D-pad up build · Start pause</p>
+        <h4>Touch</h4>
+        <p class="small">Left thumb moves (a joystick appears), drag on the right to look, buttons on the right for everything else.</p>
+        <p class="muted small">Multiplayer maps: Frostbite Outpost and Blackwood Hollow. Modes: Co-op Survival, Defend the Points, Free-for-all, Team Deathmatch, Capture Point, Capture the Flag.</p>
       </div>
     </div>
 

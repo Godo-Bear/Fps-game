@@ -2072,6 +2072,12 @@ $('saves-list').addEventListener('click', (e) => {
   }
 });
 $('shop-btn').addEventListener('click', () => accountUI.open('shop'));
+$('quests-btn').addEventListener('click', () => accountUI.open('quests'));
+$('friends-btn').addEventListener('click', () => accountUI.open('friends'));
+$('help-btn').addEventListener('click', () => $('help').classList.remove('hidden'));
+$('help').addEventListener('click', (e) => {
+  if (e.target === $('help') || e.target.closest('[data-close-help]')) $('help').classList.add('hidden');
+});
 $('continue-btn').addEventListener('click', () => savedGames[0] && startGame(savedGames[0]));
 $('again-btn').addEventListener('click', () => startGame(null, game.runName));
 account.onChange(() => refreshSave());
