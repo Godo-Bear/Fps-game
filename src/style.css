@@ -2274,3 +2274,52 @@ body.touch-mode #emotes .w-pointer {
 #emotes button.quick {
   border-color: rgba(127, 212, 255, 0.6);
 }
+
+/* ---- settings: show all, HUD size, crosshair size, hide minimap / chat */
+.settings-all {
+  display: block;
+  margin: 12px auto 4px;
+}
+.settings-more h4 {
+  color: #ffd38a;
+  margin: 14px 0 4px;
+}
+.s-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 4px 14px;
+  font-size: 14px;
+}
+.s-controls div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(233, 217, 184, 0.08);
+}
+.s-controls b {
+  color: #ffd38a;
+  white-space: nowrap;
+}
+.settings-modal {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+#top-right-stats,
+#map-corner,
+#bottom-left,
+#bottom-right,
+#mp-hud,
+#chat {
+  zoom: var(--hud-scale, 1);
+}
+#crosshair {
+  transform: scale(var(--xh-size, 1));
+}
+body.no-minimap #minimap,
+body.no-minimap #weather-label {
+  display: none;
+}
+body.no-chat #chat {
+  display: none !important;
+}

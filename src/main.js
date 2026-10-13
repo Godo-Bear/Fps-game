@@ -202,7 +202,7 @@ const flashlight = new THREE.SpotLight(0xfff2d8, 0, 48, 0.42, 0.55, 1.4);
 scene.add(flashlight, flashlight.target);
 const _fl = new THREE.Vector3();
 function updateFlashlight() {
-  const k = weather ? weather.nightK : 0;
+  const k = weather && settings.flashlight ? weather.nightK : 0;
   flashlight.intensity = k * 60;
   flashlight.visible = k > 0.02 && !player.dead && !inMenu();
   if (!flashlight.visible) return;
@@ -1415,6 +1415,7 @@ function subBanner(text, dur = 1.5) {
   subTimer = dur;
 }
 function showHit(kind) {
+  if (!settings.hitmarkers) return;
   $('hitmarker').className = 'show ' + kind;
   hitT = 0.12;
 }
@@ -2322,11 +2323,11 @@ document.addEventListener('mousedown', (e) => {
     trigger = true;
     pressed = true;
   }
-  if (e.button === 2) aim = true;
+  if (e.button === 2) aim = settings.toggleAim ? !aim : true;
 });
 document.addEventListener('mouseup', (e) => {
   if (e.button === 0) trigger = false;
-  if (e.button === 2) aim = false;
+  if (e.button === 2 && !settings.toggleAim) aim = false;
 });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener(
@@ -2727,7 +2728,11 @@ function nextSpectate() {
 
 // ---------------------------------------------------------------- settings (saved in this browser)
 const SETTINGS_KEY = 'deadplains.settings';
-const DEFAULT_SETTINGS = { sens: 1, padSens: 1, invertY: false, fov: 75, volume: 0.8, quality: 'high', dmgNumbers: true, fps: false, tutorial: true };
+const DEFAULT_SETTINGS = {
+  sens: 1, padSens: 1, invertY: false, fov: 75, volume: 0.8, quality: 'high', dmgNumbers: true, fps: false, tutorial: true,
+  // the extra ones behind "Show all settings"
+  hudScale: 1, crosshairSize: 1, minimap: true, chat: true, hitmarkers: true, shake: 1, bob: true, toggleAim: false, bubbles: true, flashlight: true,
+};
 const settings = { ...DEFAULT_SETTINGS };
 try {
   Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
@@ -2750,10 +2755,19 @@ function applySettings() {
     });
   }
   $('fps').classList.toggle('hidden', !settings.fps);
+  const root = document.documentElement.style;
+  root.setProperty('--hud-scale', settings.hudScale);
+  root.setProperty('--xh-size', settings.crosshairSize);
+  document.body.classList.toggle('no-minimap', !settings.minimap);
+  document.body.classList.toggle('no-chat', !settings.chat);
+  player.shakeMul = settings.shake;
+  player.bobMul = settings.bob ? 1 : 0;
+  mp.showBubbles = settings.bubbles;
   savePref(SETTINGS_KEY, JSON.stringify(settings));
 }
 
 const SETTING_ROWS = [
+  // the everyday ones
   ['sens', 'Mouse sensitivity', 'range', 0.2, 3, 0.05],
   ['padSens', 'Touch / controller look speed', 'range', 0.2, 3, 0.05],
   ['invertY', 'Invert look up/down', 'check'],
@@ -2764,23 +2778,57 @@ const SETTING_ROWS = [
   ['fps', 'Show FPS', 'check'],
   ['tutorial', 'Tutorial wave for new games', 'check'],
 ];
+// everything else, behind "Show all settings"
+const MORE_SETTING_ROWS = [
+  ['toggleAim', 'Right click toggles aim (instead of holding)', 'check'],
+  ['hudScale', 'HUD size', 'range', 0.7, 1.3, 0.05],
+  ['crosshairSize', 'Crosshair size', 'range', 0.5, 2, 0.05],
+  ['minimap', 'Show the minimap', 'check'],
+  ['chat', 'Show the chat', 'check'],
+  ['hitmarkers', 'Hit markers', 'check'],
+  ['shake', 'Screen shake', 'range', 0, 1.5, 0.05],
+  ['bob', 'View bob when walking', 'check'],
+  ['bubbles', "Show other players' quick chat over their heads", 'check'],
+  ['flashlight', 'Flashlight at night', 'check'],
+];
+const ALL_SETTING_ROWS = [...SETTING_ROWS, ...MORE_SETTING_ROWS];
+let showAllSettings = false;
+const CONTROL_LIST = [
+  ['WASD / arrows', 'Move'], ['Mouse', 'Look'], ['Left click', 'Shoot'], ['Right click', 'Aim / scope'], ['R', 'Reload'], ['Shift', 'Sprint'],
+  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-8 / wheel', 'Switch gun'], ['Q', 'Last gun'], ['V', 'Knife stab'],
+  ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
+  ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
+];
 function openSettings() {
   const fmt = (k, v) => (k === 'volume' ? `${Math.round(v * 100)}%` : k === 'fov' ? `${v}°` : `${Number(v).toFixed(2)}x`);
-  $('settings-body').innerHTML = SETTING_ROWS.map(([k, label, type, a, b, step]) => {
+  const row = ([k, label, type, a, b, step]) => {
     const v = settings[k];
     let input = '';
     if (type === 'range') input = `<input type="range" data-k="${k}" min="${a}" max="${b}" step="${step}" value="${v}" /><span class="s-val">${fmt(k, v)}</span>`;
     if (type === 'check') input = `<input type="checkbox" data-k="${k}" ${v ? 'checked' : ''} />`;
     if (type === 'select') input = `<select data-k="${k}">${a.map((o) => `<option ${o === v ? 'selected' : ''} value="${o}">${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}</select>`;
     return `<label class="s-row"><span>${label}</span><span class="s-in">${input}</span></label>`;
-  }).join('');
+  };
+  $('settings-body').innerHTML = `${SETTING_ROWS.map(row).join('')}
+    <button id="settings-all" class="btn small ghost settings-all">${showAllSettings ? 'HIDE EXTRA SETTINGS ▴' : 'SHOW ALL SETTINGS ▾'}</button>
+    <div class="settings-more ${showAllSettings ? '' : 'hidden'}">
+      <h4>More settings</h4>
+      ${MORE_SETTING_ROWS.map(row).join('')}
+      <h4>Controls</h4>
+      <div class="s-controls">${CONTROL_LIST.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>
+      <p class="muted small">Controller and touch controls are in How to Play.</p>
+    </div>`;
+  $('settings-all').addEventListener('click', () => {
+    showAllSettings = !showAllSettings;
+    openSettings();
+  });
   $('settings').classList.remove('hidden');
 }
 $('settings-body').addEventListener('input', (e) => {
   const el = e.target;
   const k = el.dataset.k;
   if (!k) return;
-  const row = SETTING_ROWS.find((r) => r[0] === k);
+  const row = ALL_SETTING_ROWS.find((r) => r[0] === k);
   settings[k] = row[2] === 'check' ? el.checked : row[2] === 'select' ? el.value : Number(el.value);
   const val = el.parentElement.querySelector('.s-val');
   if (val) val.textContent = k === 'volume' ? `${Math.round(settings[k] * 100)}%` : k === 'fov' ? `${settings[k]}°` : `${settings[k].toFixed(2)}x`;

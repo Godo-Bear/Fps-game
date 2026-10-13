@@ -169,6 +169,7 @@ class Avatar {
 
   // a speech bubble over their head for a few seconds
   say(text) {
+    if (this.hideBubbles) return;
     if (this.bubble) {
       this.root.remove(this.bubble);
       this.bubble.material.map.dispose();
@@ -396,7 +397,11 @@ export class Multiplayer {
         break;
       case 'emote':
         if (typeof m.text !== 'string') break;
-        this.avatars.get(m.id)?.say(`💬 ${m.text}`);
+        const av = this.avatars.get(m.id);
+        if (av) {
+          av.hideBubbles = this.showBubbles === false;
+          av.say(`💬 ${m.text}`);
+        }
         this.ctx.onChat(m.name, m.text, this.teams ? TEAM_CSS[this._team(m.id)] : '#ffd38a', false);
         break;
       case 'fx':

@@ -318,13 +318,14 @@ export class Player {
     this.shake = Math.max(0, this.shake - dt * 2.5);
     const targetEye = this.dead ? 0.4 : this.sliding ? SLIDE_EYE : this.crouching ? CROUCH_EYE : EYE;
     this.eye += (targetEye - this.eye) * Math.min(1, dt * 12);
-    const bobY = this.onGround && !this.sliding ? Math.abs(Math.sin(this.bob)) * 0.05 * Math.min(1, hSpeed / 6) : 0;
+    const bobK = this.bobMul ?? 1; // settings: view bob on/off
+    const bobY = this.onGround && !this.sliding ? Math.abs(Math.sin(this.bob)) * 0.05 * Math.min(1, hSpeed / 6) * bobK : 0;
     this.camera.position.set(this.pos.x, this.pos.y + this.eye + bobY - dip, this.pos.z);
-    const sh = this.shake * this.shake;
+    const sh = this.shake * this.shake * (this.shakeMul ?? 1); // settings: screen shake
     this.camera.rotation.set(
       this.pitch + this.recoil - dip * 0.8 + (Math.random() - 0.5) * sh * 0.06,
       this.yaw + (Math.random() - 0.5) * sh * 0.06,
-      Math.sin(this.bob * 0.5) * 0.004 * Math.min(1, hSpeed / 6) + (this.sliding ? 0.06 : 0) + (this.dead ? 0.5 : 0)
+      Math.sin(this.bob * 0.5) * 0.004 * Math.min(1, hSpeed / 6) * bobK + (this.sliding ? 0.06 : 0) + (this.dead ? 0.5 : 0)
     );
   }
 }

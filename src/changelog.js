@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.3', date: '13 Oct 2026', title: 'All settings',
+    items: [
+      'Settings → Show all settings: HUD size, crosshair size, toggle aim, hit markers, screen shake, view bob, hide the minimap or chat, quick chat bubbles, flashlight.',
+      'The full list of keyboard controls is there too.',
+    ],
+  },
+  {
     v: '4.2', date: '13 Oct 2026', title: 'Night waves',
     items: [
       'Every 4th wave happens at night: the sky goes dark, the moon comes up and you get a flashlight.',

@@ -136,6 +136,12 @@ that matches your controls. Skip it with **K** (tap it on touch, **Back** on a c
 - **Spectating:** while you're down in co-op you watch a squadmate (click for the next one).
 - **Kill cam:** in PvP, after you die the camera follows whoever got you until you respawn.
 
+### Settings
+**⚙ Settings** has the everyday options (sensitivity, look speed, invert, field of view, volume, graphics, damage
+numbers, FPS, tutorial). **Show all settings** opens the rest: right-click toggles aim, HUD size, crosshair size,
+minimap, chat, hit markers, screen shake, view bob, quick chat bubbles and the night flashlight, plus the full list
+of keyboard controls. Settings are saved in your browser.
+
 ### Updates page
 The **📰 Updates** tile on the home screen lists every update, newest first, with a **NEW** badge until you've
 looked. New updates go at the top of `src/changelog.js`.
