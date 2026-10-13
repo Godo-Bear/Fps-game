@@ -240,10 +240,10 @@ export class Controls {
       if (pressed(3)) this.ctx.weapon.cycle(1);
       if (pressed(4)) tap('KeyG');
       if (this.ctx.emotesOpen()) {
-        // emote menu: A B X Y and the D-pad pick one, R3 closes it
-        const map = [[0, 1], [1, 2], [2, 3], [3, 4], [12, 5], [15, 6], [13, 7], [14, 8]];
-        for (const [i, n] of map) if (pressed(i)) tap(`Digit${n}`);
-        if (pressed(11)) tap('KeyZ');
+        // emote wheel: point with the right stick, A or RT sends, B or R3 closes
+        this.ctx.emoteAim(ax[2] || 0, ax[3] || 0);
+        if (pressed(0) || pressed(7)) this.ctx.emoteSend();
+        if (pressed(1) || pressed(11)) tap('KeyZ');
         this.padPrev = b;
         return;
       }

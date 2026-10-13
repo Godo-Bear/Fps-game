@@ -2010,26 +2010,81 @@ body.can-revive .t-revive {
   position: absolute;
   top: 50%;
   left: 50%;
+  width: 430px;
+  height: 430px;
   transform: translate(-50%, -50%);
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  width: min(560px, calc(100vw - 32px));
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.55) 0 30%, rgba(0, 0, 0, 0.35) 31% 70%, transparent 71%);
   z-index: 8;
+  pointer-events: auto;
 }
-#emotes button {
-  font: 700 16px 'Rajdhani', sans-serif;
+#emotes .w-item {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 100px;
+  min-height: 50px;
+  font: 700 14px 'Rajdhani', sans-serif;
   color: #fff;
-  padding: 10px 6px;
-  border-radius: 8px;
+  padding: 6px 4px;
+  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.7);
   cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: transform 0.08s, background 0.08s;
 }
-#emotes button b {
+#emotes .w-item b {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   opacity: 0.6;
+}
+#emotes .w-item.quick {
+  border-color: rgba(127, 212, 255, 0.6);
+}
+#emotes .w-item.hi {
+  transform: translate(-50%, -50%) scale(1.15);
+  background: rgba(255, 176, 32, 0.85);
+  color: #1a120c;
+  border-color: #ffd34d;
+}
+#emotes .w-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 120px;
+  text-align: center;
+  font-weight: 700;
+  pointer-events: none;
+}
+#emotes .w-center b {
+  display: block;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+#emotes .w-center span {
+  font-size: 11px;
+  opacity: 0.7;
+}
+#emotes .w-pointer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffd34d;
+  box-shadow: 0 0 8px #ffd34d;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+@media (max-width: 470px), (max-height: 470px) {
+  #emotes {
+    transform: translate(-50%, -50%) scale(0.78);
+  }
+}
+body.touch-mode #emotes .w-pointer {
+  display: none;
 }
 .t-emote {
   left: calc(12px + env(safe-area-inset-left));

@@ -2236,13 +2236,23 @@ document.addEventListener('pointerlockchange', () => {
 
 // ---------------------------------------------------------------- input
 document.addEventListener('mousemove', (e) => {
+  // (with a free cursor the wheel just uses whichever slot the mouse is over)
+  if (emoteMenu.open && !document.pointerLockElement) return;
   if (game.state !== 'playing' || document.pointerLockElement !== canvas || player.dead) return;
+  // the emote wheel takes the mouse while it's open
+  if (emoteMenu.open) return aimWheel(emoteMenu.x + e.movementX, emoteMenu.y + e.movementY);
   player.look(e.movementX, e.movementY, camera.fov / 75);
   weapon.sway(e.movementX * (1 - weapon.ads * 0.8), e.movementY * (1 - weapon.ads * 0.8));
 });
 document.addEventListener('mousedown', (e) => {
   if (game.state === 'playing' && player.dead && spectate.on && e.button === 0) return nextSpectate();
   if (game.state !== 'playing' || player.dead) return;
+  if (emoteMenu.open) {
+    // click sends the slot you're pointing at; right click closes
+    if (e.button === 0 && emoteMenu.hi >= 0 && document.pointerLockElement) sendEmote(emoteMenu.hi);
+    else if (e.button === 2) setEmotes(false);
+    return;
+  }
   if (build.on) {
     if (e.button === 0) placeStructure();
     if (e.button === 2) setBuild(false);
@@ -2479,10 +2489,18 @@ $('tutorial').addEventListener('touchstart', (e) => {
   endTutorial(true);
 });
 
-// ---------------------------------------------------------------- emotes (Z, then 1-8)
-const emoteMenu = { open: false };
+// ---------------------------------------------------------------- emote / quick chat wheel (Z)
+// Point at a slot (move the mouse, the right stick, or tap it) and click to send. 1-8 still work.
+const WHEEL_R = 150; // how far out the slots sit (px)
+const emoteMenu = { open: false, x: 0, y: 0, hi: -1 };
 function setEmotes(open) {
   emoteMenu.open = open && game.state === 'playing';
+  emoteMenu.x = emoteMenu.y = 0;
+  setWheelHighlight(-1);
+  if (emoteMenu.open) {
+    trigger = false;
+    aim = false;
+  }
   $('emotes').classList.toggle('hidden', !emoteMenu.open);
 }
 // slot: 0-7 in your emote menu (which emote is in each slot is up to you, see the Shop)
@@ -2495,17 +2513,58 @@ function sendEmote(slot) {
   if (game.mode === 'mp' && mp.inMatch) mp.send(typeof v === 'string' ? { t: 'emote', text } : { t: 'emote', i: v });
   else addChat(account.name, text, account.profile.color);
 }
+function setWheelHighlight(i) {
+  if (emoteMenu.hi === i) return;
+  emoteMenu.hi = i;
+  $('emotes').querySelectorAll('[data-emote]').forEach((b) => b.classList.toggle('hi', Number(b.dataset.emote) === i));
+  const center = $('emotes').querySelector('.w-center');
+  if (center) {
+    const v = i >= 0 ? emoteSlots(account.items, account.admin)[i] : null;
+    center.innerHTML = i >= 0 ? `<b>${esc(slotText(v, account.items))}</b><span>click to send</span>` : '<span>point at one,<br>then click</span>';
+  }
+}
+// where the pointer is (x, y from the middle): the slot in that direction
+function aimWheel(x, y) {
+  const d = Math.hypot(x, y);
+  if (d > WHEEL_R) {
+    x *= WHEEL_R / d;
+    y *= WHEEL_R / d;
+  }
+  emoteMenu.x = x;
+  emoteMenu.y = y;
+  const pointer = $('emotes').querySelector('.w-pointer');
+  if (pointer) pointer.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+  if (Math.hypot(x, y) < 28) return setWheelHighlight(-1);
+  const a = Math.atan2(x, -y); // 0 = straight up, clockwise
+  setWheelHighlight(((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8);
+}
 function renderEmoteMenu() {
-  const html = emoteSlots(account.items, account.admin)
-    .map((v, slot) => `<button data-emote="${slot}" class="${typeof v === 'string' ? 'quick' : ''}"><b>${slot + 1}</b>${typeof v === 'string' ? '💬 ' : ''}${esc(slotText(v, account.items))}</button>`)
-    .join('');
-  if ($('emotes').innerHTML !== html) $('emotes').innerHTML = html;
+  const slots = emoteSlots(account.items, account.admin);
+  const html =
+    slots
+      .map((v, slot) => {
+        const a = (slot / 8) * Math.PI * 2;
+        const x = Math.sin(a) * WHEEL_R;
+        const y = -Math.cos(a) * WHEEL_R;
+        return `<button data-emote="${slot}" class="w-item ${typeof v === 'string' ? 'quick' : ''}" style="left:calc(50% + ${x.toFixed(1)}px);top:calc(50% + ${y.toFixed(1)}px)"><b>${slot + 1}</b>${typeof v === 'string' ? '💬 ' : ''}${esc(slotText(v, account.items))}</button>`;
+      })
+      .join('') + '<div class="w-center"></div><div class="w-pointer"></div>';
+  if ($('emotes').innerHTML !== html) {
+    $('emotes').innerHTML = html;
+    emoteMenu.hi = -2;
+    setWheelHighlight(-1);
+  }
 }
 renderEmoteMenu();
 account.onChange(renderEmoteMenu);
+// without a locked mouse (touch, or a free cursor): hover or tap the slot itself
+$('emotes').addEventListener('mouseover', (e) => {
+  const b = e.target.closest('[data-emote]');
+  if (b && !document.pointerLockElement) setWheelHighlight(Number(b.dataset.emote));
+});
 $('emotes').addEventListener('click', (e) => {
   const b = e.target.closest('[data-emote]');
-  if (b) sendEmote(Number(b.dataset.emote));
+  if (b && emoteMenu.open) sendEmote(Number(b.dataset.emote));
 });
 $('emotes').addEventListener('touchstart', (e) => {
   const b = e.target.closest('[data-emote]');
@@ -2707,6 +2766,8 @@ const controls = new Controls({
   inMatch: () => game.mode === 'mp' && mp.inMatch,
   building: () => build.on,
   emotesOpen: () => emoteMenu.open,
+  emoteAim: (x, y) => (Math.hypot(x, y) > 0.35 ? aimWheel(x * WHEEL_R, y * WHEEL_R) : null),
+  emoteSend: () => (emoteMenu.hi >= 0 ? sendEmote(emoteMenu.hi) : setEmotes(false)),
   look(dx, dy) {
     if (game.state !== 'playing' || player.dead) return;
     player.look(dx, dy, camera.fov / 75);
@@ -3150,6 +3211,6 @@ if (import.meta.env.DEV) {
     get savedGames() {
       return savedGames;
     },
-    game, player, weapon, mp, account, defend, structures, spectate, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
+    game, player, weapon, mp, account, defend, structures, spectate, controls, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

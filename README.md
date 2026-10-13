@@ -122,7 +122,8 @@ that matches your controls. Skip it with **K** (tap it on touch, **Back** on a c
 ### Parties, emotes, revives, spectating, kill cam
 - **Parties:** invite friends from **Friends** (🎉 Invite). When the party leader creates or joins a room, everyone
   in the party follows them in. The home screen shows your party.
-- **Emotes:** press **Z** (touch 😀, controller R3) for quick callouts shown above your head and in chat. 12 more
+- **Emotes:** press **Z** for the emote / quick chat **wheel**: move the mouse towards one and click to send it (or press 1-8).
+  Controller: R3 opens it, point with the right stick, A or RT sends. Touch: tap 😀, then tap one. They show above your head and in chat. 12 more
   emotes are in the **Shop**; put the ones you buy into any of your 8 emote slots there.
   You can also write up to 6 of your own **quick chat** phrases (Shop → Your quick chat) and put them in any slot.
 - **Co-op revives:** hold **E** (controller X) next to a downed squadmate for 3 seconds.
