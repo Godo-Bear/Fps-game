@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { GameAudio } from './audio.js';
 import { Effects } from './effects.js';
+import { GUNS, TIER_CSS } from './guns.js';
+import { GunPickups } from './pickups.js';
 import { Player } from './player.js';
 import { POWERUPS, RARITY_ODDS, RARITY_RANK, baseStats, rollOffer } from './powerups.js';
 import { heightAt } from './terrain.js';
@@ -32,8 +34,12 @@ const zombies = new ZombieManager(scene, world, effects, audio);
 const player = new Player(camera);
 const weapon = new Weapon(camera, audio);
 weapon.resize(camera.aspect);
+const pickups = new GunPickups(scene, world);
 
 let stats = baseStats();
+weapon.reset(stats);
+weapon.onDrop = (def) => subBanner(`${def.name} is out of ammo`, 1.8);
+const projectiles = [];
 const owned = new Map();
 const medkits = [];
 
@@ -54,6 +60,8 @@ const game = {
 };
 
 let trigger = false;
+let pressed = false; // a fresh left click this frame (semi-auto guns)
+let aim = false; // right mouse held
 let time = 0;
 let hitT = 0;
 let vignette = 0;
@@ -133,7 +141,10 @@ function updateWave(dt) {
       const bonus = 50 * game.wave;
       game.score += bonus;
       player.heal(20, stats.maxHealth);
-      banner(`WAVE ${game.wave} CLEARED`, `+${bonus} score · +20 HP`, 'gold', 2.3);
+      const before = pickups.items.length;
+      pickups.topUp(Math.min(9, 4 + Math.floor(game.wave / 2)), player.pos);
+      const dropped = pickups.items.length > before ? ' · new guns dropped' : '';
+      banner(`WAVE ${game.wave} CLEARED`, `+${bonus} score · +20 HP${dropped}`, 'gold', 2.3);
       audio.waveCleared();
     }
     return;
@@ -166,31 +177,38 @@ function terrainHit(origin, dir, far) {
 }
 
 function fireShot(moving, speed) {
-  audio.shot(stats.explosive > 0);
-  player.addRecoil(0.011);
+  const def = weapon.def;
+  audio.shot(def.sound, stats.explosive > 0);
+  player.addRecoil(def.recoil * (1 - weapon.ads * 0.4));
   camera.updateMatrixWorld();
   camera.getWorldDirection(_dir);
   _right.setFromMatrixColumn(camera.matrixWorld, 0);
   _up.setFromMatrixColumn(camera.matrixWorld, 1);
   camera.getWorldPosition(_origin);
   weapon.muzzleWorld(_muzzle);
-  const baseSpread = 0.006 + (moving ? 0.006 + speed * 0.0012 : 0) + (player.onGround ? 0 : 0.02);
-  for (let i = 0; i < stats.multishot; i++) {
-    const spread = baseSpread + (i > 0 ? 0.02 : 0);
+  const aimed = weapon.ads;
+  const gunSpread = def.hipSpread !== undefined ? def.hipSpread + (def.spread - def.hipSpread) * aimed : def.spread * (def.pellets > 1 ? 1 : 1 - aimed * 0.6);
+  const moveSpread = (moving ? 0.006 + speed * 0.0012 : 0) * (1 - aimed * 0.5) + (player.onGround ? 0 : 0.02);
+  const pellets = def.pellets * stats.multishot;
+  for (let i = 0; i < pellets; i++) {
+    const spread = gunSpread + moveSpread + (def.pellets === 1 && i > 0 ? 0.02 : 0);
     const a = Math.random() * Math.PI * 2;
     const r = Math.sqrt(Math.random()) * spread;
     const d = _dir.clone().addScaledVector(_right, Math.cos(a) * r).addScaledVector(_up, Math.sin(a) * r).normalize();
-    traceBullet(_origin, d);
+    if (def.projectile) launchGrenade(d);
+    else traceBullet(_origin, d, i === 0);
   }
 }
 
-function traceBullet(origin, dir) {
-  const far = 220;
+let hitSoundPlayed = false;
+function traceBullet(origin, dir, primary) {
+  const def = weapon.def;
+  const far = 260;
   raycaster.set(origin, dir);
   raycaster.far = far;
   const hits = raycaster.intersectObjects(zombies.parts.concat(world.solids), false);
   const groundT = terrainHit(origin, dir, far);
-  let pierceLeft = stats.pierce;
+  let pierceLeft = stats.pierce + (def.pierce || 0);
   const struck = new Set();
   let end = null;
   let impact = false;
@@ -200,7 +218,7 @@ function traceBullet(origin, dir) {
     if (z) {
       if (struck.has(z) || !z.alive) continue;
       struck.add(z);
-      hitZombie(z, h.object.userData.kind === 'head', h.point, dir);
+      hitZombie(z, h.object.userData.kind === 'head', h.point, dir, h.distance);
       impact = true;
       if (pierceLeft-- <= 0) {
         end = h.point.clone();
@@ -220,26 +238,33 @@ function traceBullet(origin, dir) {
     effects.dust(end);
   }
   if (!end) end = origin.clone().addScaledVector(dir, 120);
-  if (stats.explosive > 0 && impact) explode(end);
-  effects.tracer(_muzzle, end);
+  // explosive rounds: one blast per trigger pull, so shotguns don't nuke everything
+  if (stats.explosive > 0 && impact && primary) explodeAt(end, 2.6 + (stats.explosive - 1) * 0.9, weapon.damage(stats) * 0.6 * Math.max(1, def.pellets / 3));
+  if (!weapon.scoped) effects.tracer(_muzzle, end);
 }
 
-function hitZombie(z, head, point, dir) {
+function hitZombie(z, head, point, dir, distance = 0) {
+  const def = weapon.def;
   let dmg = weapon.damage(stats);
+  if (def.falloff) {
+    const [near, far] = def.falloff;
+    dmg *= Math.max(0.25, 1 - Math.max(0, distance - near) / (far - near));
+  }
   const crit = Math.random() < stats.critChance;
   if (head) dmg *= stats.headshotMul;
   if (crit) dmg *= 2.5;
-  effects.blood(point, dir, head ? 1.8 : 1);
+  effects.blood(point, dir, head ? 1.8 : def.pellets > 1 ? 0.5 : 1);
   const killed = zombies.damage(z, dmg, { slow: stats.slow });
-  if (!killed && z.typeId !== 'boss') zombies.knockback(z, player.pos, z.typeId === 'brute' ? 0.02 : 0.06);
-  audio.hit(head || crit);
+  if (!killed && z.typeId !== 'boss') zombies.knockback(z, player.pos, (z.typeId === 'brute' ? 0.02 : 0.06) * (def.pellets > 1 ? 0.5 : 1));
+  if (!hitSoundPlayed) {
+    audio.hit(head || crit);
+    hitSoundPlayed = true;
+  }
   showHit(killed ? 'kill' : head || crit ? 'head' : '');
   if (killed) onKill(z, head);
 }
 
-function explode(point) {
-  const radius = 2.6 + (stats.explosive - 1) * 0.9;
-  const dmg = weapon.damage(stats) * 0.6;
+function explodeAt(point, radius, dmg) {
   effects.explosion(point, radius / 2.6);
   if (explosionSoundT <= 0) {
     audio.explosion(point);
@@ -252,7 +277,69 @@ function explode(point) {
     if (d > radius + z.radius) continue;
     const fall = 1 - Math.min(1, d / (radius + z.radius)) * 0.5;
     if (zombies.damage(z, dmg * fall, { slow: stats.slow })) onKill(z, false);
+    else showHit('');
   }
+}
+
+// ---------------------------------------------------------------- grenades
+const grenadeGeo = new THREE.SphereGeometry(0.09, 10, 8);
+grenadeGeo.scale(1, 1, 1.6);
+const grenadeMat = new THREE.MeshStandardMaterial({ color: 0x4a5530, roughness: 0.6, emissive: 0x2a1500 });
+const _step = new THREE.Vector3();
+function launchGrenade(dir) {
+  const def = weapon.def;
+  const mesh = new THREE.Mesh(grenadeGeo, grenadeMat);
+  mesh.position.copy(_muzzle);
+  scene.add(mesh);
+  const vel = dir.clone().multiplyScalar(def.projectile.speed);
+  vel.y += 1.5;
+  projectiles.push({
+    mesh, vel, life: 6,
+    radius: def.projectile.radius, gravity: def.projectile.gravity,
+    damage: def.damage * stats.damageMul,
+  });
+}
+
+function updateProjectiles(dt) {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.life -= dt;
+    p.vel.y -= p.gravity * dt;
+    _step.copy(p.vel).multiplyScalar(dt);
+    const len = _step.length();
+    const pos = p.mesh.position;
+    raycaster.set(pos, _step.clone().normalize());
+    raycaster.far = len;
+    const hit = raycaster.intersectObjects(zombies.parts.concat(world.solids), false)[0];
+    let at = hit ? hit.point : null;
+    if (!at) {
+      const nx = pos.x + _step.x;
+      const nz = pos.z + _step.z;
+      if (pos.y + _step.y < heightAt(nx, nz)) at = new THREE.Vector3(nx, heightAt(nx, nz) + 0.1, nz);
+    }
+    if (at || p.life <= 0) {
+      explodeAt(at || pos, p.radius, p.damage);
+      scene.remove(p.mesh);
+      projectiles.splice(i, 1);
+      continue;
+    }
+    pos.add(_step);
+    p.mesh.lookAt(pos.x + p.vel.x, pos.y + p.vel.y, pos.z + p.vel.z);
+    if (Math.random() < 0.6) effects.burst(pos, { count: 1, color: [0x8a8070, 0x6a645a], speed: 0.4, size: 0.12, life: 0.5, grav: -1, up: 0.5 });
+  }
+}
+
+function clearProjectiles() {
+  for (const p of projectiles) scene.remove(p.mesh);
+  projectiles.length = 0;
+}
+
+function onPickGun(id) {
+  const def = GUNS[id];
+  const result = weapon.give(id, stats);
+  audio.pickup();
+  subBanner(result === 'new' ? `Picked up ${def.name}` : `+ammo for ${def.name}`, 1.8);
+  return true;
 }
 
 function onKill(z, head) {
@@ -340,6 +427,7 @@ const RARITY_LABEL = Object.fromEntries(RARITY_ODDS.map((r) => [r.id, r.label]))
 function openChoice() {
   game.state = 'choosing';
   trigger = false;
+  aim = false;
   player.keys.clear();
   if (document.pointerLockElement) document.exitPointerLock();
   game.offer = rollOffer(stats);
@@ -370,9 +458,9 @@ function choose(i) {
   if (game.state !== 'choosing') return;
   const o = game.offer[i];
   if (!o) return;
-  const prevMag = weapon.magSize(stats);
+  const prevMag = weapon.magSize(stats, GUNS.rifle);
   o.def.apply(stats, o.value, { player });
-  if (weapon.magSize(stats) !== prevMag) weapon.ammo = weapon.magSize(stats);
+  if (weapon.magSize(stats, GUNS.rifle) !== prevMag) weapon.refillMags(stats);
   const cur = owned.get(o.def.id);
   if (cur) {
     cur.count++;
@@ -437,6 +525,7 @@ function showOnly(id) {
 function pauseFor(title, text) {
   game.state = 'paused';
   trigger = false;
+  aim = false;
   $('pause-title').textContent = title;
   $('pause').querySelector('p').textContent = text;
   showOnly('pause');
@@ -458,11 +547,23 @@ function updateHud(dt) {
   const hp = Math.max(0, Math.ceil(player.health));
   setText('health-text', `${hp}`);
   $('health-fill').style.width = `${Math.max(0, (player.health / stats.maxHealth) * 100)}%`;
-  setText('ammo-mag', String(weapon.ammo));
-  setText('ammo-max', String(weapon.magSize(stats)));
-  $('ammo').classList.toggle('low', weapon.ammo <= weapon.magSize(stats) * 0.2);
-  $('reload-hint').classList.toggle('show', weapon.reloading > 0 || weapon.ammo === 0);
-  setText('reload-hint', weapon.reloading > 0 ? 'RELOADING' : 'PRESS R');
+  const slot = weapon.slot;
+  setText('ammo-mag', String(slot.ammo));
+  setText('ammo-max', slot.reserve === Infinity ? '∞' : String(slot.reserve));
+  setText('weapon-name', slot.def.name.toUpperCase());
+  $('weapon-name').style.color = TIER_CSS[slot.def.tier];
+  $('ammo').classList.toggle('low', slot.ammo <= weapon.magSize(stats) * 0.2);
+  $('reload-hint').classList.toggle('show', weapon.reloading > 0 || slot.ammo === 0);
+  setText('reload-hint', weapon.reloading > 0 ? 'RELOADING' : slot.reserve > 0 ? 'PRESS R' : 'NO AMMO');
+  const slotsKey = weapon.slots.map((x) => x.def.id).join() + weapon.cur;
+  if (last.slots !== slotsKey) {
+    last.slots = slotsKey;
+    $('slots').innerHTML = weapon.slots
+      .map((x, i) => `<div class="slot ${i === weapon.cur ? 'active' : ''}" style="--c: ${TIER_CSS[x.def.tier]}"><b>${i + 1}</b>${x.def.name}</div>`)
+      .join('');
+  }
+  $('scope').classList.toggle('hidden', !weapon.scoped);
+  $('crosshair').style.opacity = String(Math.max(0, 1 - weapon.ads * 1.6));
 
   const boss = zombies.boss;
   $('boss-bar').classList.toggle('hidden', !boss);
@@ -502,6 +603,9 @@ function startGame() {
   player.reset(stats.maxHealth);
   player.update(0, world.colliders, stats, false, audio);
   weapon.reset(stats);
+  clearProjectiles();
+  pickups.clear();
+  pickups.topUp(5, player.pos);
   Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0 });
   $('banner').className = '';
   $('subbanner').className = '';
@@ -512,6 +616,7 @@ function startGame() {
 function gameOver() {
   game.state = 'gameover';
   trigger = false;
+  aim = false;
   if (document.pointerLockElement) document.exitPointerLock();
   const newBest = game.wave > game.best;
   if (newBest) {
@@ -531,6 +636,7 @@ function toMenu() {
   if (document.pointerLockElement) document.exitPointerLock();
   zombies.clear();
   clearMedkits();
+  clearProjectiles();
   renderBest();
   showOnly('menu');
 }
@@ -564,15 +670,29 @@ document.addEventListener('pointerlockchange', () => {
 // ---------------------------------------------------------------- input
 document.addEventListener('mousemove', (e) => {
   if (game.state !== 'playing' || document.pointerLockElement !== canvas) return;
-  player.look(e.movementX, e.movementY);
-  weapon.sway(e.movementX, e.movementY);
+  player.look(e.movementX, e.movementY, camera.fov / 75);
+  weapon.sway(e.movementX * (1 - weapon.ads * 0.8), e.movementY * (1 - weapon.ads * 0.8));
 });
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 0 && game.state === 'playing') trigger = true;
+  if (game.state !== 'playing') return;
+  if (e.button === 0) {
+    trigger = true;
+    pressed = true;
+  }
+  if (e.button === 2) aim = true;
 });
 document.addEventListener('mouseup', (e) => {
   if (e.button === 0) trigger = false;
+  if (e.button === 2) aim = false;
 });
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+document.addEventListener(
+  'wheel',
+  (e) => {
+    if (game.state === 'playing' && Math.abs(e.deltaY) > 1) weapon.cycle(e.deltaY > 0 ? 1 : -1);
+  },
+  { passive: true }
+);
 document.addEventListener('keydown', (e) => {
   if (game.state === 'choosing' && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
     choose(Number(e.code.slice(-1)) - 1);
@@ -583,11 +703,15 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space') e.preventDefault();
   player.keys.add(e.code);
   if (e.code === 'KeyR') weapon.startReload(stats);
+  if (e.code === 'KeyQ') weapon.equipLast();
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit) weapon.equip(Number(digit[1]) - 1);
 });
 document.addEventListener('keyup', (e) => player.keys.delete(e.code));
 window.addEventListener('blur', () => {
   player.keys.clear();
   trigger = false;
+  aim = false;
 });
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -599,10 +723,20 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------- loop
 const _fwd = new THREE.Vector3();
 function update(dt) {
-  const hSpeed = player.update(dt, world.colliders, stats, trigger, audio);
-  const shots = weapon.update(dt, { trigger, sprinting: player.sprinting, moving: hSpeed > 0.5, speed: hSpeed }, stats);
+  const def = weapon.def;
+  const moveMul = (def.moveMul || 1) * (1 - weapon.ads * 0.35);
+  const hSpeed = player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul);
+  hitSoundPlayed = false;
+  const shots = weapon.update(
+    dt,
+    { trigger, pressed, sprinting: player.sprinting || player.climbing, moving: hSpeed > 0.5, speed: hSpeed, aim },
+    stats
+  );
+  pressed = false;
   for (let i = 0; i < shots; i++) fireShot(hSpeed > 0.5, hSpeed);
-  if (weapon.ammo === 0 && weapon.reloading <= 0 && !trigger) weapon.startReload(stats);
+  if (weapon.ammo === 0 && weapon.slot.reserve > 0 && weapon.reloading <= 0 && !trigger) weapon.startReload(stats);
+  updateProjectiles(dt);
+  pickups.update(dt, player.pos, onPickGun);
   zombies.update(dt, player, onPlayerHit);
   updateMedkits(dt);
   updateWave(dt);
@@ -623,6 +757,11 @@ function frame(now) {
   time += dt;
 
   if (game.state === 'playing') update(dt);
+  const fov = game.state === 'menu' ? 75 : 75 + (weapon.def.zoomFov - 75) * weapon.ads;
+  if (Math.abs(camera.fov - fov) > 0.01) {
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
   if (game.state === 'menu') menuCamera();
   if (game.state !== 'menu') updateHud(dt);
   world.update(dt, time, game.state === 'menu' ? camera.position : player.pos);
@@ -642,5 +781,14 @@ requestAnimationFrame(frame);
 
 if (import.meta.env.DEV) {
   // Handy for poking at the game from the console / automated smoke tests.
-  window.__game = { game, player, zombies, stats: () => stats, startGame, beginWave, openChoice, choose, POWERUPS, scene, camera, renderer };
+  window.__game = {
+    tick: (n = 1, dt = 1 / 60) => {
+      for (let i = 0; i < n; i++) update(dt);
+    },
+    input: (o) => {
+      if ('trigger' in o) trigger = o.trigger;
+      if ('pressed' in o) pressed = o.pressed;
+      if ('aim' in o) aim = o.aim;
+    },
+    game, player, zombies, weapon, pickups, world, stats: () => stats, startGame, beginWave, openChoice, choose, POWERUPS, scene, camera, renderer };
 }

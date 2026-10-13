@@ -12,13 +12,40 @@ After every wave you survive, pick **one of three power-ups** to take into the n
 | --- | --- |
 | WASD / arrows | Move |
 | Mouse | Aim |
-| Left click | Shoot (hold for full-auto) |
+| Left click | Shoot (hold for full-auto guns) |
+| Right click | Zoom / aim down sights (the Longshot has a real scope) |
 | R | Reload |
 | Shift | Sprint |
-| Space | Jump (you can hop over low rubble and fences) |
-| 1 / 2 / 3 | Pick a power-up card |
+| Space | Jump, or climb onto whatever is in front of you |
+| 1–7 / mouse wheel | Switch gun |
+| Q | Previous gun |
+| 1 / 2 / 3 | Pick a power-up card (between waves) |
 | M | Mute |
 | Esc | Pause |
+
+### Climbing
+Walk into something and press **Space** to pull yourself up onto it: cars (hood, then roof), crates, barrels,
+hay bales, rocks, broken walls and the airliner wreck (climb the wing, then the fuselage). Anything up to about
+2.3 m is climbable, and low rubble can just be walked over. Zombies can climb too, so a car roof buys you time, not safety.
+
+### Guns
+You start with the **AR-7 Rifle** (unlimited reserve ammo). Other guns lie around the map, marked by a tall
+light beam in their rarity colour; some sit on rooftops or on top of the plane wreck. Walk over one to pick it up.
+Picking up a gun you already carry gives you more ammo. Found guns have limited ammo and are dropped when empty.
+More guns appear after every wave.
+
+| Gun | Rarity | Notes |
+| --- | --- | --- |
+| AR-7 Rifle | Starter | Full-auto, unlimited reserve |
+| Viper SMG | Rare | Very fast fire, low damage |
+| Boomstick | Rare | 9-pellet shotgun, loads shell by shell |
+| Hand Cannon | Epic | Revolver, huge damage, pierces one zombie |
+| Mule LMG | Epic | 100-round box, slows you down a little |
+| Longshot | Legendary | Scoped sniper, pierces 3 zombies |
+| Thumper | Legendary | Grenade launcher, lobbed explosive rounds |
+
+Gun spawn odds: Rare 60%, Epic 30%, Legendary 10% (`GUN_DROP_TABLE` in `src/guns.js`).
+Every gun has its own reload animation (mag swap, shell-by-shell, revolver speed-loader, bolt-action, drum).
 
 ### Zombies
 - **Walker**: slow and steady.
@@ -78,8 +105,10 @@ src/
   main.js      game loop, waves, shooting, HUD, menus
   world.js     the map: terrain, houses, plane wrecks, cars, props, sky, ambience
   zombies.js   zombie types, AI and animation
-  weapon.js    rifle view model, ammo, reload
-  player.js    movement, jumping, collision
+  weapon.js    guns in hand: inventory, firing, aiming, reload animations
+  guns.js      gun stats and 3D models
+  pickups.js   guns lying around the map
+  player.js    movement, jumping, climbing, collision
   powerups.js  power-up definitions and rarity rolls
   effects.js   blood, dust, tracers, explosions
   audio.js     synthesised sound effects (no audio files)

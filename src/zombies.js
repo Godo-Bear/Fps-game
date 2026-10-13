@@ -61,6 +61,8 @@ class Zombie {
     this.slowT = 0;
     this.slowAmt = 0;
     this.stuckT = 0;
+    this.vy = 0;
+    this.climb = null;
     this.sideT = 0;
     this.side = 1;
     this.groanT = rand(1, 6);
@@ -221,6 +223,8 @@ export class ZombieManager {
     if (z.hp <= 0) {
       z.state = 'dead';
       z.deadT = 0;
+      z.climb = null;
+      z.deathY = z.root.position.y;
       z.fallDir = Math.random() < 0.5 ? -1 : 1;
       this._rebuildParts();
       return true;
@@ -234,6 +238,23 @@ export class ZombieManager {
     const d = Math.hypot(dx, dz) || 1;
     z.root.position.x += (dx / d) * force;
     z.root.position.z += (dz / d) * force;
+  }
+
+  // Looks for something to climb in the given direction and starts climbing it.
+  _tryClimb(z, dirX, dirZ) {
+    const rp = z.root.position;
+    const reach = 2.3 * Math.min(1.4, z.type.scale);
+    for (const d of [z.radius + 0.2, z.radius + 0.45, z.radius + 0.7, z.radius + 0.95]) {
+      const x = rp.x + dirX * d;
+      const zz = rp.z + dirZ * d;
+      const top = this.world.colliders.ledgeAt(x, zz, rp.y, 0.35, reach, 1.6 * z.type.scale);
+      if (top !== null) {
+        z.climb = { t: 0, dur: z.typeId === 'runner' ? 0.7 : 1.1 * z.type.scale, fx: rp.x, fy: rp.y, fz: rp.z, tx: x + dirX * 0.2, ty: top, tz: zz + dirZ * 0.2 };
+        z.windup = 0;
+        return true;
+      }
+    }
+    return false;
   }
 
   update(dt, player, onPlayerHit) {
@@ -269,7 +290,7 @@ export class ZombieManager {
         const k = Math.min(1, z.deadT / 0.45);
         z.body.rotation.x = -k * k * (Math.PI / 2) * 0.95;
         z.body.rotation.z = z.fallDir * k * 0.2;
-        rp.y = ground - Math.max(0, z.deadT - 1.6) * 0.5;
+        rp.y = z.deathY - Math.max(0, z.deadT - 1.6) * 0.5;
         if (z.deadT > 3.5) {
           z.remove = true;
           removed = true;
@@ -282,6 +303,26 @@ export class ZombieManager {
       const dz = pp.z - rp.z;
       const dist = Math.hypot(dx, dz);
       const speedMul = frosted ? 1 - z.slowAmt : 1;
+      const colliders = this.world.colliders;
+
+      // pulling itself up onto a car, wall or wreck
+      if (z.climb) {
+        const c = z.climb;
+        c.t += dt * speedMul;
+        const t = Math.min(1, c.t / c.dur);
+        const up = Math.min(1, t / 0.7);
+        const over = Math.max(0, (t - 0.4) / 0.6);
+        rp.set(c.fx + (c.tx - c.fx) * over, c.fy + (c.ty - c.fy) * up * up * (3 - 2 * up), c.fz + (c.tz - c.fz) * over);
+        z.armL.rotation.x = z.armR.rotation.x = -2.6 + t * 1.2;
+        z.legL.rotation.x = -0.9 * Math.sin(t * Math.PI);
+        z.legR.rotation.x = -0.4 * Math.sin(t * Math.PI);
+        if (t >= 1) {
+          z.climb = null;
+          z.vy = 0;
+        }
+        continue;
+      }
+      const above = pp.y - rp.y;
 
       // turn towards the player
       const want = Math.atan2(dx, dz);
@@ -320,7 +361,7 @@ export class ZombieManager {
         const bz = rp.z;
         rp.x += (mx / ml) * step;
         rp.z += (mz / ml) * step;
-        this.world.colliders.resolve(rp, z.radius);
+        colliders.resolve(rp, z.radius, rp.y, 1.8 * T.scale);
         const r = Math.hypot(rp.x, rp.z);
         if (r > ARENA_RADIUS) {
           rp.x *= ARENA_RADIUS / r;
@@ -329,24 +370,41 @@ export class ZombieManager {
         const moved = Math.hypot(rp.x - bx, rp.z - bz);
         if (moved < step * 0.35) z.stuckT += dt;
         else z.stuckT = Math.max(0, z.stuckT - dt * 0.5);
-        if (z.stuckT > 0.35) {
+        if (z.stuckT > 0.35 && above > 0.6 && dist < 8 && this._tryClimb(z, dx / dist, dz / dist)) {
+          z.stuckT = 0;
+        } else if (z.stuckT > 0.35) {
           z.stuckT = 0;
           z.sideT = rand(0.9, 1.8);
           z.side = Math.random() < 0.5 ? -1 : 1;
         }
         moving = true;
       }
-      rp.y = heightAt(rp.x, rp.z);
+      // the player is standing on something right above us: climb up after them
+      if (!moving && !z.climb && above > 0.6 && above > 1.6 * T.scale - 0.3 && dist < T.range + 1 && z.windup <= 0) {
+        this._tryClimb(z, dx / (dist || 1), dz / (dist || 1));
+      }
+      if (!z.climb) {
+        const floor = Math.max(heightAt(rp.x, rp.z), colliders.floorAt(rp.x, rp.z, z.radius * 0.6, rp.y));
+        if (rp.y > floor + 0.05) {
+          z.vy -= 20 * dt;
+          rp.y = Math.max(floor, rp.y + z.vy * dt);
+          if (rp.y === floor) z.vy = 0;
+        } else {
+          rp.y = floor;
+          z.vy = 0;
+        }
+      }
 
       // attacking
       z.attackCd -= dt;
       if (z.windup > 0) {
         z.windup -= dt;
         if (z.windup <= 0) {
-          if (dist < T.range + 0.5 && Math.abs(pp.y - rp.y) < 2.5 * T.scale) onPlayerHit(z, z.damage);
+          const dy = pp.y - rp.y;
+          if (dist < T.range + 0.5 && dy < 1.6 * T.scale && dy > -1.8) onPlayerHit(z, z.damage);
           z.attackCd = T.cooldown;
         }
-      } else if (dist < T.range && z.attackCd <= 0) {
+      } else if (dist < T.range && z.attackCd <= 0 && above < 1.6 * T.scale && !z.climb) {
         z.windup = 0.38;
         this.audio.zombieAttack(rp);
       }

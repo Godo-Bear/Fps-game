@@ -23,15 +23,18 @@ export function heightAt(x, z) {
   );
 }
 
-// Oriented boxes on the ground plane (XZ). Used for player / zombie collision.
+// How high you can walk up without jumping (curbs, rubble, low steps).
+export const STEP_HEIGHT = 0.4;
+
+// Oriented boxes with a vertical span. Used for player / zombie collision, standing on things and climbing.
 export class Colliders {
   constructor() {
     this.list = [];
   }
 
-  add(x, z, hx, hz, rot = 0, top = Infinity) {
+  add(x, z, hx, hz, rot = 0, top = Infinity, bottom = -Infinity) {
     const c = {
-      x, z, hx, hz, top,
+      x, z, hx, hz, top, bottom,
       cos: Math.cos(rot),
       sin: Math.sin(rot),
       r: Math.hypot(hx, hz),
@@ -55,15 +58,30 @@ export class Colliders {
     const h = prm.height ?? 1;
     const pad = mesh.userData.colPad ?? 0;
     const top = mesh.userData.colTop ?? p.y + (h * s.y) / 2;
-    return this.add(p.x, p.z, (w * s.x) / 2 + pad, (d * s.z) / 2 + pad, e.y, top);
+    // Overhead pieces (lintels, the wall above a window) can be walked under.
+    const bottom = mesh.userData.overhead ? p.y - (h * s.y) / 2 : -Infinity;
+    return this.add(p.x, p.z, (w * s.x) / 2 + pad, (d * s.z) / 2 + pad, e.y, top, bottom);
   }
 
-  // Pushes a circle (pos.x, pos.z, radius) out of every collider. feetY lets jumpers clear low walls.
-  resolve(pos, radius, feetY = -Infinity) {
+  // Squared distance from a point to a collider's footprint (0 when inside).
+  _dist2(c, x, z) {
+    const dx = x - c.x;
+    const dz = z - c.z;
+    const lx = c.cos * dx - c.sin * dz;
+    const lz = c.sin * dx + c.cos * dz;
+    const ox = Math.max(Math.abs(lx) - c.hx, 0);
+    const oz = Math.max(Math.abs(lz) - c.hz, 0);
+    return ox * ox + oz * oz;
+  }
+
+  // Pushes a body (circle of `radius`, standing at feetY, `height` tall) out of everything it overlaps.
+  // Things lower than a step are ignored (you walk onto them), as are things above your head.
+  resolve(pos, radius, feetY, height = 1.8, step = STEP_HEIGHT) {
+    if (feetY === undefined) feetY = heightAt(pos.x, pos.z);
     let hit = false;
     for (let i = 0; i < this.list.length; i++) {
       const c = this.list[i];
-      if (feetY > c.top - 0.05) continue;
+      if (c.top <= feetY + step || c.bottom >= feetY + height) continue;
       const dx = pos.x - c.x;
       const dz = pos.z - c.z;
       const reach = c.r + radius;
@@ -93,6 +111,41 @@ export class Colliders {
       hit = true;
     }
     return hit;
+  }
+
+  // Highest surface under a body that it can stand on (or step up onto). -Infinity when there is none.
+  floorAt(x, z, radius, feetY, step = STEP_HEIGHT) {
+    let best = -Infinity;
+    const r2 = radius * radius;
+    for (let i = 0; i < this.list.length; i++) {
+      const c = this.list[i];
+      if (c.top > feetY + step || c.top <= best || c.top === Infinity) continue;
+      const dx = x - c.x;
+      const dz = z - c.z;
+      const reach = c.r + radius;
+      if (dx > reach || dx < -reach || dz > reach || dz < -reach) continue;
+      if (this._dist2(c, x, z) <= r2) best = c.top;
+    }
+    return best;
+  }
+
+  // A ledge to climb onto at (x, z): the top of something between minUp and maxUp above feetY,
+  // with room to stand on it. Returns the ledge height or null.
+  ledgeAt(x, z, feetY, minUp, maxUp, headroom = 1.7) {
+    let best = null;
+    for (let i = 0; i < this.list.length; i++) {
+      const c = this.list[i];
+      if (c.top === Infinity || c.top <= feetY + minUp || c.top > feetY + maxUp) continue;
+      if (this._dist2(c, x, z) > 0.01) continue;
+      if (best === null || c.top > best) best = c.top;
+    }
+    if (best === null) return null;
+    for (let i = 0; i < this.list.length; i++) {
+      const c = this.list[i];
+      if (c.top <= best + 0.05 || c.bottom >= best + headroom) continue;
+      if (this._dist2(c, x, z) < 0.09) return null;
+    }
+    return best;
   }
 
   blocked(x, z, radius) {

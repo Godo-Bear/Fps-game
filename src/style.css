@@ -352,7 +352,7 @@ h2 {
   grid-template-columns: repeat(4, auto);
   gap: 6px 22px;
   justify-content: center;
-  margin: 28px 0 18px;
+  margin: 24px 0 14px;
   font-size: 17px;
 }
 .controls b {
@@ -361,6 +361,10 @@ h2 {
 .odds-line {
   font-size: 17px;
   opacity: 0.9;
+  margin-top: 6px;
+}
+.odds-line b {
+  color: #ffd38a;
 }
 .r-rare { color: var(--rare); font-weight: 700; }
 .r-epic { color: var(--epic); font-weight: 700; }
@@ -497,4 +501,55 @@ h2 {
   margin-top: 26px;
   font-size: 16px;
   opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------- weapons */
+#weapon-name {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 20px;
+  letter-spacing: 2px;
+}
+#slots {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+.slot {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-right: 3px solid var(--c);
+  background: rgba(20, 16, 12, 0.35);
+  opacity: 0.55;
+}
+.slot b {
+  margin-right: 6px;
+  color: var(--c);
+}
+.slot.active {
+  opacity: 1;
+  background: rgba(20, 16, 12, 0.6);
+}
+#scope {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 0, transparent min(34vh, 34vw), rgba(0, 0, 0, 0.6) calc(min(34vh, 34vw) + 1px), #000 calc(min(34vh, 34vw) + 6px));
+}
+#scope i {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.85);
+  left: 50%;
+  top: 50%;
+}
+#scope i:nth-child(1) {
+  width: 2px;
+  height: min(68vh, 68vw);
+  transform: translate(-1px, -50%);
+}
+#scope i:nth-child(2) {
+  height: 2px;
+  width: min(68vh, 68vw);
+  transform: translate(-50%, -1px);
 }

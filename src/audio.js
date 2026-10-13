@@ -1,3 +1,13 @@
+const SHOTS = {
+  rifle: { lp: 3600, end: 300, dur: 0.2, vol: 0.75, boom: 150, boomVol: 0.8 },
+  smg: { lp: 4200, end: 500, dur: 0.12, vol: 0.5, boom: 190, boomVol: 0.5 },
+  shotgun: { lp: 2200, end: 150, dur: 0.42, vol: 1.1, boom: 95, boomVol: 1.1, tail: 0.25 },
+  revolver: { lp: 2800, end: 200, dur: 0.35, vol: 1.0, boom: 115, boomVol: 1.0, tail: 0.2 },
+  lmg: { lp: 3000, end: 250, dur: 0.22, vol: 0.8, boom: 130, boomVol: 0.85 },
+  sniper: { lp: 5200, end: 180, dur: 0.55, vol: 1.15, boom: 80, boomVol: 1.1, tail: 0.35 },
+  launcher: { lp: 900, end: 120, dur: 0.25, vol: 0.7, boom: 70, boomVol: 1.0 },
+};
+
 // All sounds are synthesised with WebAudio so the game ships without audio files.
 export class GameAudio {
   constructor() {
@@ -111,30 +121,47 @@ export class GameAudio {
     lfo2.start();
   }
 
-  shot(heavy = false) {
+  // Gunshot: filtered noise crack plus a low thump, shaped per gun.
+  shot(kind = 'rifle', heavy = false) {
     if (!this.ctx) return;
+    const P = SHOTS[kind] || SHOTS.rifle;
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const n = this._noise();
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
-    f.frequency.setValueAtTime(heavy ? 2200 : 3600, t);
-    f.frequency.exponentialRampToValueAtTime(300, t + 0.18);
+    f.frequency.setValueAtTime(heavy ? P.lp * 0.6 : P.lp, t);
+    f.frequency.exponentialRampToValueAtTime(P.end, t + P.dur);
     const g = ctx.createGain();
-    this._env(g, t, heavy ? 1.0 : 0.75, 0.002, 0.2);
+    this._env(g, t, P.vol * (heavy ? 1.2 : 1), 0.002, P.dur);
     n.connect(f).connect(g).connect(this.master);
     n.start(t, Math.random());
-    n.stop(t + 0.3);
+    n.stop(t + P.dur + 0.1);
 
     const o = ctx.createOscillator();
     o.type = 'sine';
-    o.frequency.setValueAtTime(150, t);
-    o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+    o.frequency.setValueAtTime(P.boom, t);
+    o.frequency.exponentialRampToValueAtTime(35, t + P.dur * 0.7);
     const og = ctx.createGain();
-    this._env(og, t, 0.8, 0.002, 0.13);
+    this._env(og, t, P.boomVol, 0.002, P.dur * 0.7);
     o.connect(og).connect(this.master);
     o.start(t);
-    o.stop(t + 0.2);
+    o.stop(t + P.dur);
+
+    if (P.tail) {
+      // distant echo rolling across the plains
+      const e = this._noise();
+      const ef = ctx.createBiquadFilter();
+      ef.type = 'lowpass';
+      ef.frequency.value = 700;
+      const eg = ctx.createGain();
+      eg.gain.setValueAtTime(0.0001, t + 0.08);
+      eg.gain.exponentialRampToValueAtTime(P.tail, t + 0.15);
+      eg.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+      e.connect(ef).connect(eg).connect(this.master);
+      e.start(t + 0.08, Math.random());
+      e.stop(t + 1.3);
+    }
   }
 
   click(pitch = 1, vol = 0.25, delay = 0) {

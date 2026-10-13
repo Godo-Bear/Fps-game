@@ -1,102 +1,444 @@
 import * as THREE from 'three';
+import { GUNS, buildGun, buildHands } from './guns.js';
 import { muzzleTexture } from './textures.js';
 
-const BASE = {
-  damage: 26,
-  fireRate: 9, // rounds per second
-  mag: 30,
-  reloadTime: 1.9,
-};
+const SCALE = 0.78;
+const REST = new THREE.Vector3(0.2, -0.21, -0.5);
+const SWITCH_TIME = 0.45;
+// Height of each gun's sights above its origin (gun units), used to line them up when aiming.
+const SIGHT_Y = { rifle: 0.083, smg: 0.075, shotgun: 0.066, revolver: 0.07, lmg: 0.12, sniper: 0.1, launcher: 0.14 };
 
-// First-person rifle: handles ammo, fire timing, reload and the view model animation.
+const ease = (t) => t * t * (3 - 2 * t);
+// Piecewise keyframes: [[time, value], ...] with smooth interpolation.
+function kf(t, frames) {
+  if (t <= frames[0][0]) return frames[0][1];
+  for (let i = 1; i < frames.length; i++) {
+    const [t1, v1] = frames[i];
+    if (t <= t1) {
+      const [t0, v0] = frames[i - 1];
+      return v0 + (v1 - v0) * ease((t - t0) / (t1 - t0 || 1));
+    }
+  }
+  return frames[frames.length - 1][1];
+}
+
+// The player's guns: inventory, ammo, firing rhythm, aiming and all first-person animation.
 export class Weapon {
   constructor(camera, audio) {
     this.camera = camera;
     this.audio = audio;
-    this.ammo = BASE.mag;
-    this.cooldown = 0;
-    this.reloading = 0;
-    this.reloadDur = BASE.reloadTime;
+    this.scene = new THREE.Scene();
+    this.cam = new THREE.PerspectiveCamera(65, 1, 0.01, 10);
+    this.scene.add(this.cam);
+    this.scene.add(new THREE.HemisphereLight(0xe6e9ec, 0x7a6650, 2.2));
+    const key = new THREE.DirectionalLight(0xffd3a1, 2.4);
+    key.position.set(-1, 2, 1.5);
+    this.scene.add(key);
+
+    this.holder = new THREE.Group();
+    this.cam.add(this.holder);
+    this.models = {};
+
+    this.flash = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: muzzleTexture(), color: 0xffe0a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    this.flash.visible = false;
+    this.light = new THREE.PointLight(0xffb060, 0, 9, 2);
+    this.muzzle = new THREE.Object3D();
+    this.muzzle.add(this.flash, this.light);
+
+    this.slots = [];
+    this.cur = 0;
+    this.last = 0;
+    this.onDrop = null;
+    this.ads = 0;
     this.kick = 0;
     this.flashT = 0;
     this.swayX = 0;
     this.swayY = 0;
     this.bobT = 0;
     this.sprintBlend = 0;
-    this._buildModel();
+    this.reloading = 0;
+    this.reloadDur = 1;
+    this.cooldown = 0;
+    this.queued = 0;
+    this.boltT = 0;
+    this.switchT = 0;
+    this.pending = -1;
+  }
+
+  // ---------------------------------------------------------------- inventory
+  get slot() {
+    return this.slots[this.cur];
+  }
+  get def() {
+    return this.slot.def;
+  }
+  get ammo() {
+    return this.slot.ammo;
+  }
+  get scoped() {
+    return !!this.def.scope && this.ads > 0.85;
+  }
+
+  magSize(stats, def = this.def) {
+    return Math.max(1, Math.round(def.mag * (1 + stats.magBonus / 30)));
   }
 
   damage(stats) {
-    return BASE.damage * stats.damageMul;
-  }
-
-  magSize(stats) {
-    return BASE.mag + stats.magBonus;
+    return this.def.damage * stats.damageMul;
   }
 
   reset(stats) {
-    this.ammo = this.magSize(stats);
+    this.slots = [{ def: GUNS.rifle, ammo: this.magSize(stats, GUNS.rifle), reserve: Infinity }];
+    this.cur = 0;
+    this.last = 0;
     this.reloading = 0;
     this.cooldown = 0;
+    this.switchT = 0;
+    this.pending = -1;
+    this.ads = 0;
+    this._show(0);
   }
 
-  _buildModel() {
-    const metal = new THREE.MeshStandardMaterial({ color: 0x45484d, roughness: 0.5, metalness: 0.25 });
-    const wood = new THREE.MeshStandardMaterial({ color: 0x7a4e2c, roughness: 0.7 });
-    const glove = new THREE.MeshStandardMaterial({ color: 0x4a423a, roughness: 0.9 });
-    const sleeve = new THREE.MeshStandardMaterial({ color: 0x5b6450, roughness: 1 });
-    const g = (this.model = new THREE.Group());
-    const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      m.rotation.set(rx, ry, rz);
-      g.add(m);
-      return m;
-    };
-    add(new THREE.BoxGeometry(0.075, 0.1, 0.46), metal, 0, 0, 0);
-    add(new THREE.BoxGeometry(0.07, 0.07, 0.3), wood, 0, -0.01, -0.36);
-    const barrel = add(new THREE.CylinderGeometry(0.017, 0.017, 0.42, 10), metal, 0, 0.02, -0.66, Math.PI / 2);
-    add(new THREE.CylinderGeometry(0.026, 0.026, 0.08, 10), metal, 0, 0.02, -0.86, Math.PI / 2);
-    add(new THREE.BoxGeometry(0.02, 0.05, 0.02), metal, 0, 0.065, -0.8);
-    add(new THREE.BoxGeometry(0.05, 0.035, 0.08), metal, 0, 0.065, 0.06);
-    add(new THREE.BoxGeometry(0.065, 0.11, 0.28), wood, 0, -0.04, 0.34, 0.12);
-    add(new THREE.BoxGeometry(0.05, 0.13, 0.06), wood, 0, -0.1, 0.1, -0.35);
-    this.mag = add(new THREE.BoxGeometry(0.05, 0.2, 0.09), metal, 0, -0.14, -0.08, 0.3);
-    this.magRest = this.mag.position.clone();
-    add(new THREE.BoxGeometry(0.09, 0.09, 0.09), glove, 0.005, -0.1, 0.11, -0.3);
-    add(new THREE.BoxGeometry(0.1, 0.1, 0.3), sleeve, 0.05, -0.16, 0.28, 0.4, 0.2);
-    add(new THREE.BoxGeometry(0.09, 0.08, 0.11), glove, -0.02, -0.06, -0.38);
-    add(new THREE.BoxGeometry(0.1, 0.1, 0.34), sleeve, -0.12, -0.12, -0.2, 0.3, -0.6);
+  // Picks up a gun. Returns 'new' for a new gun, 'ammo' if it was already owned.
+  give(id, stats) {
+    const def = GUNS[id];
+    const have = this.slots.findIndex((s) => s.def.id === id);
+    if (have >= 0) {
+      this.slots[have].reserve += this.magSize(stats, def) * 2;
+      return 'ammo';
+    }
+    this.slots.push({ def, ammo: this.magSize(stats, def), reserve: def.reserve });
+    this.equip(this.slots.length - 1);
+    return 'new';
+  }
 
-    this.muzzle = new THREE.Object3D();
-    this.muzzle.position.set(0, 0.02, -0.92);
-    g.add(this.muzzle);
-    this.flash = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: muzzleTexture(), color: 0xffe0a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
+  refillMags(stats) {
+    for (const s of this.slots) s.ammo = Math.max(s.ammo, this.magSize(stats, s.def));
+  }
+
+  equip(i) {
+    if (i < 0 || i >= this.slots.length || i === (this.pending >= 0 ? this.pending : this.cur)) return;
+    this.pending = i;
+    this.switchT = SWITCH_TIME;
+    this.reloading = 0;
+    this.audio.click(0.7, 0.18);
+  }
+
+  cycle(dir) {
+    const n = this.slots.length;
+    if (n < 2) return;
+    const from = this.pending >= 0 ? this.pending : this.cur;
+    this.equip((from + dir + n) % n);
+  }
+
+  equipLast() {
+    this.equip(this.last);
+  }
+
+  _model(id) {
+    if (!this.models[id]) {
+      const gun = buildGun(id);
+      const hands = buildHands(GUNS[id]);
+      gun.group.add(hands.left, hands.right);
+      gun.group.scale.setScalar(SCALE);
+      gun.hands = hands;
+      gun.magRest = gun.mag ? gun.mag.position.clone() : null;
+      gun.extraRest = gun.extra ? { p: gun.extra.position.clone(), r: gun.extra.rotation.clone() } : null;
+      gun.group.visible = false;
+      this.holder.add(gun.group);
+      this.models[id] = gun;
+    }
+    return this.models[id];
+  }
+
+  _show(i) {
+    for (const m of Object.values(this.models)) m.group.visible = false;
+    const def = this.slots[i].def;
+    const m = this._model(def.id);
+    m.group.visible = true;
+    m.group.add(this.muzzle);
+    this.muzzle.position.set(0, m.muzzleY, m.muzzleZ);
+    this.flash.scale.setScalar(def.id === 'smg' ? 0.22 : def.id === 'shotgun' || def.id === 'sniper' ? 0.45 : 0.32);
+  }
+
+  _dropEmpty() {
+    const s = this.slot;
+    if (s.def.reserve === Infinity || s.ammo > 0 || s.reserve > 0) return;
+    const dropped = s.def;
+    this.slots.splice(this.cur, 1);
+    this.cur = 0;
+    this.last = 0;
+    this.pending = -1;
+    this._show(0);
+    this.switchT = SWITCH_TIME * 0.5;
+    if (this.onDrop) this.onDrop(dropped);
+  }
+
+  // ---------------------------------------------------------------- firing
+  startReload(stats) {
+    const s = this.slot;
+    if (this.reloading > 0 || this.switchT > 0 || s.ammo >= this.magSize(stats) || s.reserve <= 0) return;
+    const speed = stats.reloadSpeed;
+    this.reloadDur = s.def.reload / speed;
+    this.reloading = this.reloadDur;
+    if (s.def.reloadStyle === 'shells') this.audio.click(0.9, 0.25);
+    else this.audio.reload(this.reloadDur);
+  }
+
+  _finishReload(stats) {
+    const s = this.slot;
+    const mag = this.magSize(stats);
+    if (s.def.reloadStyle === 'shells') {
+      // one shell at a time, keeps going until full
+      if (s.reserve > 0 && s.ammo < mag) {
+        s.ammo++;
+        s.reserve--;
+        this.audio.click(1.1, 0.3);
+      }
+      if (s.ammo < mag && s.reserve > 0) {
+        this.reloading = this.reloadDur;
+        return;
+      }
+      this.audio.click(0.6, 0.35, 0.05);
+      return;
+    }
+    const take = Math.min(mag - s.ammo, s.reserve);
+    s.ammo += take;
+    s.reserve -= take;
+  }
+
+  // Returns how many shots fire this frame.
+  update(dt, { trigger, pressed, sprinting, moving, speed, aim }, stats) {
+    const s = this.slot;
+    const def = s.def;
+    this.cooldown = Math.max(this.cooldown - dt, -dt);
+    this.queued = pressed ? 0.2 : Math.max(0, this.queued - dt);
+    let shots = 0;
+
+    // weapon swap: lower, change model, raise
+    if (this.switchT > 0) {
+      const before = this.switchT;
+      this.switchT -= dt;
+      if (this.pending >= 0 && before > SWITCH_TIME / 2 && this.switchT <= SWITCH_TIME / 2) {
+        this.last = this.cur;
+        this.cur = this.pending;
+        this.pending = -1;
+        this._show(this.cur);
+      }
+    } else if (this.reloading > 0) {
+      // shotguns can interrupt a shell-by-shell reload to fire
+      if (def.reloadStyle === 'shells' && (pressed || this.queued > 0) && s.ammo > 0) {
+        this.reloading = 0;
+      } else {
+        this.reloading -= dt;
+        if (this.reloading <= 0) this._finishReload(stats);
+      }
+    }
+
+    if (this.switchT <= 0 && this.reloading <= 0 && !sprinting) {
+      const wants = def.auto ? trigger : this.queued > 0;
+      if (wants && s.ammo <= 0) {
+        if (this.cooldown <= 0) {
+          this.audio.empty();
+          this.cooldown = 0.25;
+          this.queued = 0;
+          if (s.reserve > 0) this.startReload(stats);
+          else this._dropEmpty();
+        }
+      } else if (wants) {
+        const interval = 1 / (def.fireRate * stats.fireRateMul);
+        while (this.cooldown <= 0 && s.ammo > 0) {
+          this.cooldown += interval;
+          s.ammo--;
+          shots++;
+          this.queued = 0;
+          if (!def.auto) break;
+        }
+      }
+    }
+
+    if (shots > 0) {
+      this.kick = Math.min(1, this.kick + def.kick * shots);
+      this.flashT = 0.045;
+      this.flash.material.rotation = Math.random() * Math.PI;
+      if (def.reloadStyle === 'bolt') this.boltT = 1 / (def.fireRate * stats.fireRateMul);
+    }
+    if (s.ammo === 0 && s.reserve === 0 && def.reserve !== Infinity && this.reloading <= 0 && this.switchT <= 0 && !trigger) {
+      this._dropEmpty();
+    }
+
+    this._animate(dt, { sprinting, moving, speed, aim }, stats);
+    return shots;
+  }
+
+  // ---------------------------------------------------------------- animation
+  _animate(dt, { sprinting, moving, speed, aim }, stats) {
+    const def = this.def;
+    const m = this._model(def.id);
+    this.kick = Math.max(0, this.kick - dt * 9);
+    this.flashT -= dt;
+    this.boltT = Math.max(0, this.boltT - dt);
+    this.flash.visible = this.flashT > 0;
+    this.light.intensity = this.flashT > 0 ? 6 : 0;
+
+    const canAim = aim && !sprinting && this.reloading <= 0 && this.switchT <= 0;
+    this.ads += ((canAim ? 1 : 0) - this.ads) * Math.min(1, dt * (def.scope ? 9 : 12));
+    this.sprintBlend += ((sprinting ? 1 : 0) - this.sprintBlend) * Math.min(1, dt * 8);
+    if (moving) this.bobT += dt * speed * 1.4;
+    const bobAmt = (moving ? 1 : 0) * (1 - this.ads * 0.85);
+    const bx = Math.sin(this.bobT) * 0.012 * bobAmt;
+    const by = Math.abs(Math.cos(this.bobT)) * 0.012 * bobAmt;
+
+    const a = this.ads;
+    const sightY = -(SIGHT_Y[def.id] ?? 0.08) * SCALE;
+    const h = this.holder;
+    h.position.set(
+      REST.x * (1 - a) + bx + this.swayX * (1 - a * 0.7) - this.sprintBlend * 0.08,
+      REST.y * (1 - a) + sightY * a - by + this.swayY * (1 - a * 0.7) - this.sprintBlend * 0.06,
+      REST.z * (1 - a) - 0.55 * a + this.kick * (0.06 - a * 0.03)
     );
-    this.flash.scale.setScalar(0.32);
-    this.flash.visible = false;
-    this.muzzle.add(this.flash);
-    this.light = new THREE.PointLight(0xffb060, 0, 9, 2);
-    this.muzzle.add(this.light);
+    h.rotation.set(this.kick * (0.09 - a * 0.06) - this.sprintBlend * 0.35, this.sprintBlend * 0.7 + 0.03 * (1 - a), this.sprintBlend * 0.2);
+    this.swayX *= Math.exp(-dt * 8);
+    this.swayY *= Math.exp(-dt * 8);
 
-    this.rest = new THREE.Vector3(0.2, -0.21, -0.5);
-    g.position.copy(this.rest);
-    g.scale.setScalar(0.78);
-    void barrel;
+    // raise/lower when switching
+    if (this.switchT > 0) {
+      const t = this.switchT / SWITCH_TIME; // 1 → 0
+      const down = Math.sin(t * Math.PI);
+      h.position.y -= down * 0.35;
+      h.rotation.x -= down * 0.6;
+    }
 
-    // The rifle lives in its own scene, drawn after the world with a cleared depth buffer,
-    // so it never clips into walls or zombies.
-    this.scene = new THREE.Scene();
-    this.cam = new THREE.PerspectiveCamera(65, 1, 0.01, 10);
-    this.cam.add(g);
-    this.scene.add(this.cam);
-    this.scene.add(new THREE.HemisphereLight(0xe6e9ec, 0x7a6650, 2.2));
-    const key = new THREE.DirectionalLight(0xffd3a1, 2.4);
-    key.position.set(-1, 2, 1.5);
-    this.scene.add(key);
+    // hide the gun while looking through a scope
+    m.group.visible = !(def.scope && a > 0.85);
+
+    this._reloadPose(m, def, stats);
   }
 
+  // Reload animations. Everything is driven by k = 0..1 through the reload.
+  _reloadPose(m, def, stats) {
+    const g = m.group;
+    const left = m.hands.left;
+    left.position.copy(m.hands.leftRest);
+    g.position.set(0, 0, 0);
+    g.rotation.set(0, 0, 0);
+    if (m.mag) {
+      m.mag.position.copy(m.magRest);
+      m.mag.visible = true;
+    }
+    if (m.extra) {
+      m.extra.position.copy(m.extraRest.p);
+      m.extra.rotation.copy(m.extraRest.r);
+      if (def.reloadStyle === 'shells') m.extra.visible = false;
+    }
+
+    // bolt-action cycling between sniper shots
+    if (def.reloadStyle === 'bolt' && this.boltT > 0 && this.reloading <= 0) {
+      const k = 1 - this.boltT / (1 / (def.fireRate * stats.fireRateMul));
+      const lift = kf(k, [[0.15, 0], [0.3, 1], [0.6, 1], [0.75, 0]]);
+      const pull = kf(k, [[0.3, 0], [0.45, 1], [0.55, 1], [0.7, 0]]);
+      m.extra.rotation.x = -lift * 1.2;
+      m.extra.position.z = m.extraRest.p.z + pull * 0.09;
+      g.rotation.z = lift * 0.12;
+      if (k > 0.44 && k < 0.47) this.audio.click(0.8, 0.12);
+    }
+
+    if (this.reloading <= 0) return;
+    const k = 1 - this.reloading / this.reloadDur;
+    const sk = Math.sin(k * Math.PI);
+
+    switch (def.reloadStyle) {
+      case 'mag':
+      case 'box': {
+        const side = def.reloadStyle === 'box' ? -1 : 0;
+        // bring the gun up and turn its side towards you so the mag swap is visible
+        const pose = kf(k, [[0, 0], [0.12, 1], [0.8, 1], [0.95, 0]]);
+        g.rotation.z = pose * 0.45;
+        g.rotation.y = pose * 0.55;
+        g.rotation.x = pose * 0.2 + kf(k, [[0.6, 0], [0.66, 0.15], [0.74, 0]]);
+        g.position.x = -pose * 0.12;
+        g.position.y = pose * 0.06;
+        // old mag drops out, new one comes up from below and gets slapped in
+        const drop = kf(k, [[0.12, 0], [0.28, 0.45]]);
+        const insert = kf(k, [[0.38, 0.4], [0.62, 0]]);
+        const magOff = k < 0.33 ? drop : k < 0.38 ? 0.45 : insert;
+        if (m.mag) {
+          m.mag.position.y = m.magRest.y - magOff;
+          m.mag.position.x = m.magRest.x + side * magOff * 0.3;
+          m.mag.visible = k < 0.3 || k > 0.38;
+        }
+        // left hand: grab old mag, reach down, bring the new one up, then rack the charging handle
+        const toMag = kf(k, [[0.05, 0], [0.15, 1], [0.62, 1], [0.72, 0]]);
+        const handDrop = k > 0.15 && k < 0.62 ? magOff : 0;
+        const rack = kf(k, [[0.7, 0], [0.78, 1], [0.86, 1], [0.92, 0]]);
+        const rackPull = kf(k, [[0.78, 0], [0.83, 0.1], [0.86, 0]]);
+        if (m.mag) {
+          left.position.x += (m.magRest.x - left.position.x + side * 0.03) * toMag;
+          left.position.y += (m.magRest.y - 0.05 - left.position.y) * toMag - handDrop;
+          left.position.z += (m.magRest.z - left.position.z) * toMag;
+        }
+        left.position.x += rack * 0.1;
+        left.position.y += rack * 0.12;
+        left.position.z += rack * (0.3 + rackPull);
+        break;
+      }
+      case 'shells': {
+        // gun tipped, one shell pushed in per cycle
+        g.rotation.z = 0.5 * Math.min(1, k * 6, (1 - k) * 6 + 0.3);
+        g.rotation.x = 0.1;
+        const push = kf(k, [[0, 0], [0.35, 1], [0.6, 1], [0.8, 0.3], [1, 0]]);
+        left.position.set(m.hands.leftRest.x, -0.2 + push * 0.12, 0.02 - push * 0.04);
+        m.extra.visible = k < 0.6;
+        m.extra.position.set(0, -0.15 + push * 0.12, 0.02);
+        g.position.y = -0.03 * sk;
+        break;
+      }
+      case 'cylinder': {
+        // flick the cylinder out, dump the brass, speed-load, snap it shut
+        g.rotation.z = kf(k, [[0, 0], [0.12, 0.9], [0.85, 0.9], [1, 0]]);
+        g.rotation.x = kf(k, [[0.2, 0], [0.28, 0.7], [0.36, 0.7], [0.45, -0.1], [0.85, -0.1], [1, 0]]);
+        const out = kf(k, [[0.08, 0], [0.16, 1], [0.82, 1], [0.9, 0]]);
+        m.extra.position.x = m.extraRest.p.x - out * 0.06;
+        m.extra.rotation.y = out * 0.5;
+        m.extra.rotation.z = Math.PI / 2 + kf(k, [[0.45, 0], [0.8, Math.PI * 2]]);
+        const load = kf(k, [[0.4, 0], [0.55, 1], [0.78, 1], [0.86, 0]]);
+        left.position.x += -0.05 * load;
+        left.position.y += 0.08 * load - 0.15 * kf(k, [[0.36, 0], [0.42, 1], [0.5, 0]]);
+        left.position.z += -0.12 * load;
+        break;
+      }
+      case 'bolt': {
+        g.rotation.z = kf(k, [[0, 0], [0.1, 0.3], [0.85, 0.3], [1, 0]]);
+        const lift = kf(k, [[0.08, 0], [0.16, 1], [0.8, 1], [0.88, 0]]);
+        const pull = kf(k, [[0.16, 0], [0.24, 1], [0.74, 1], [0.82, 0]]);
+        m.extra.rotation.x = -lift * 1.2;
+        m.extra.position.z = m.extraRest.p.z + pull * 0.09;
+        const magOff = kf(k, [[0.25, 0], [0.38, 0.35], [0.5, 0.35], [0.66, 0]]);
+        m.mag.position.y = m.magRest.y - magOff;
+        m.mag.visible = !(k > 0.38 && k < 0.48);
+        const toMag = kf(k, [[0.2, 0], [0.3, 1], [0.66, 1], [0.74, 0]]);
+        left.position.x += (m.magRest.x - left.position.x) * toMag;
+        left.position.y += (m.magRest.y - 0.05 - left.position.y) * toMag - magOff * toMag;
+        left.position.z += (m.magRest.z - left.position.z) * toMag;
+        break;
+      }
+      case 'drum': {
+        // tip the launcher, spin the drum while feeding grenades in
+        g.rotation.z = kf(k, [[0, 0], [0.12, 0.7], [0.85, 0.7], [1, 0]]);
+        g.rotation.x = kf(k, [[0, 0], [0.12, -0.2], [0.85, -0.2], [1, 0]]);
+        m.extra.rotation.y = kf(k, [[0.15, 0], [0.85, Math.PI * 2]]);
+        const feed = Math.abs(Math.sin(k * Math.PI * 4));
+        left.position.x += -0.04;
+        left.position.y += 0.02 - feed * 0.12;
+        left.position.z += 0.3 + feed * 0.03;
+        break;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- rendering
   resize(aspect) {
     this.cam.aspect = aspect;
     this.cam.updateProjectionMatrix();
@@ -112,81 +454,6 @@ export class Weapon {
     this.muzzle.updateWorldMatrix(true, false);
     target.setFromMatrixPosition(this.muzzle.matrixWorld);
     return target.applyMatrix4(this.camera.matrixWorld);
-  }
-
-  startReload(stats) {
-    if (this.reloading > 0 || this.ammo >= this.magSize(stats)) return;
-    this.reloadDur = BASE.reloadTime / stats.reloadSpeed;
-    this.reloading = this.reloadDur;
-    this.audio.reload(this.reloadDur);
-  }
-
-  // Returns how many trigger pulls happen this frame.
-  update(dt, { trigger, sprinting, moving, speed }, stats) {
-    this.cooldown = Math.max(this.cooldown - dt, -dt);
-    let shots = 0;
-    if (this.reloading > 0) {
-      this.reloading -= dt;
-      if (this.reloading <= 0) this.ammo = this.magSize(stats);
-    } else if (trigger && !sprinting) {
-      if (this.ammo <= 0) {
-        if (this.cooldown <= 0) {
-          this.audio.empty();
-          this.cooldown = 0.25;
-          this.startReload(stats);
-        }
-      } else {
-        const interval = 1 / (BASE.fireRate * stats.fireRateMul);
-        while (this.cooldown <= 0 && this.ammo > 0) {
-          this.cooldown += interval;
-          this.ammo--;
-          shots++;
-        }
-      }
-    }
-    if (shots > 0) {
-      this.kick = Math.min(1, this.kick + 0.55 * shots);
-      this.flashT = 0.045;
-      this.flash.material.rotation = Math.random() * Math.PI;
-      this.flash.scale.setScalar(0.25 + Math.random() * 0.15);
-    }
-
-    // ---- view model animation
-    this.kick = Math.max(0, this.kick - dt * 9);
-    this.flashT -= dt;
-    this.flash.visible = this.flashT > 0;
-    this.light.intensity = this.flashT > 0 ? 6 : 0;
-
-    this.sprintBlend += ((sprinting ? 1 : 0) - this.sprintBlend) * Math.min(1, dt * 8);
-    if (moving) this.bobT += dt * speed * 1.4;
-    const bobAmt = moving ? 1 : 0;
-    const bx = Math.sin(this.bobT) * 0.012 * bobAmt;
-    const by = Math.abs(Math.cos(this.bobT)) * 0.012 * bobAmt;
-
-    const m = this.model;
-    m.position.set(
-      this.rest.x + bx + this.swayX - this.sprintBlend * 0.08,
-      this.rest.y - by + this.swayY - this.sprintBlend * 0.06,
-      this.rest.z + this.kick * 0.06
-    );
-    m.rotation.set(this.kick * 0.09 - this.sprintBlend * 0.35, this.sprintBlend * 0.7 + 0.03, this.sprintBlend * 0.2);
-    this.swayX *= Math.exp(-dt * 8);
-    this.swayY *= Math.exp(-dt * 8);
-
-    if (this.reloading > 0) {
-      const k = 1 - this.reloading / this.reloadDur;
-      const dip = Math.sin(k * Math.PI);
-      m.rotation.x -= dip * 0.35;
-      m.rotation.z += dip * 0.6;
-      m.position.y -= dip * 0.08;
-      const magDrop = k < 0.5 ? Math.min(1, k * 4) : Math.max(0, 1 - (k - 0.5) * 3);
-      this.mag.position.set(this.magRest.x, this.magRest.y - magDrop * 0.35, this.magRest.z);
-      this.mag.visible = !(k > 0.3 && k < 0.55);
-    } else {
-      this.mag.position.copy(this.magRest);
-      this.mag.visible = true;
-    }
-    return shots;
   }
 
   sway(dx, dy) {

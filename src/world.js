@@ -13,6 +13,7 @@ export function buildWorld(scene) {
   const colliders = new Colliders();
   const solids = []; // meshes that stop bullets
   const reserved = []; // circles kept clear of random clutter
+  const lootSpots = []; // places weapons can spawn (some are on top of things, to reward climbing)
   const updaters = [];
 
   const grime = grimeTexture();
@@ -266,7 +267,8 @@ export function buildWorld(scene) {
           const seg = box(wl.alongX ? sl + 0.01 : T, ph, wl.alongX ? T : sl + 0.01, wall);
           seg.position.set(wl.alongX ? off : wl.cx, y0 + ph / 2, wl.alongX ? wl.cz : off);
           if (ht < h * 0.9 && y0 === 0) seg.rotation[wl.alongX ? 'z' : 'x'] = rand(-0.04, 0.04);
-          solid(seg, y0 === 0);
+          if (y0 > 0) seg.userData.overhead = true;
+          solid(seg);
           g.add(seg);
         }
       }
@@ -338,6 +340,7 @@ export function buildWorld(scene) {
     }
     place(g, x, z, rot, 0.05);
     reserve(x, z, Math.hypot(w, d) / 2 + 2);
+    lootSpots.push({ x, z });
     return g;
   }
 
@@ -393,7 +396,7 @@ export function buildWorld(scene) {
     front.position.set(2 * s, R * 0.72, 0);
     front.rotation.set(0.12, 0, -0.06);
     g.add(front);
-    proxy(g, 9 * s + 2 * R, 2 * R, 2 * R, 2.4 * s, R, 0);
+    proxy(g, 9 * s + 2 * R, 2 * R, 2 * R, 2.4 * s, R * 0.72, 0);
 
     // Tail section broken off and twisted
     const tail = new THREE.Group();
@@ -419,12 +422,12 @@ export function buildWorld(scene) {
     tail.position.set(-9.5 * s, R * 0.62, 1.8 * s);
     tail.rotation.set(0.35, 0.35, 0.02);
     g.add(tail);
-    proxy(g, 7 * s, 2 * R, 1.9 * R, -9.5 * s, R, 1.8 * s, 0.35);
+    proxy(g, 7 * s, 1.8 * R, 1.6 * R, -9.5 * s, R * 0.62, 1.8 * s, 0.35);
 
     // Attached wing dug into the dirt
     const wing = box(3.2 * s, 0.32 * s, 11 * s, hull);
     wing.position.set(1.8 * s, R * 0.35, R + 5.2 * s);
-    wing.rotation.set(0.11, -0.12, 0);
+    wing.rotation.set(0.05, -0.12, 0);
     g.add(solid(wing));
     const eng = cyl(0.75 * s, 0.6 * s, 2.8 * s, M.metalDark, 14);
     eng.rotation.z = PI / 2;
@@ -462,6 +465,9 @@ export function buildWorld(scene) {
     place(g, x, z, rot, 0.25);
     conform(26 * s, 20 * s, 12, 10, x, z, rot, scorchMat, 0.06);
     reserve(x, z, 16 * s);
+    // on top of the fuselage, reachable by climbing up the wing
+    const top = new THREE.Vector3(1.5 * s, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+    lootSpots.push({ x: x + top.x, z: z + top.z });
     if (smoking) {
       const local = new THREE.Vector3(-4.5 * s, R, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
       smokeSources.push(new THREE.Vector3(x + local.x, heightAt(x, z) + R, z + local.z));
@@ -504,9 +510,19 @@ export function buildWorld(scene) {
       g.rotation.x = PI;
       g.position.y = 1.95;
     }
-    proxy(outer, 4.2, 1.9, 1.9, 0, 1, 0, 0, Infinity);
+    if (flipped) {
+      proxy(outer, 4.2, 1.6, 1.9, 0, 0.8, 0);
+    } else {
+      // hood/trunk you can hop onto, then the roof
+      proxy(outer, 4.2, 1.15, 1.9, 0, 0.575, 0);
+      proxy(outer, 2.3, 1.9, 1.75, -0.25, 0.95, 0);
+    }
     place(outer, x, z, rot, 0.05);
     reserve(x, z, 3.5);
+    if (!flipped) {
+      const roof = new THREE.Vector3(-0.25, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+      lootSpots.push({ x: x + roof.x, z: z + roof.z, roof: true });
+    }
   }
 
   // ---------------------------------------------------------------- structures
@@ -518,7 +534,7 @@ export function buildWorld(scene) {
       leg.position.set(lx * 0.9, 5, lz * 0.9);
       leg.rotation.set(lz * 0.03, 0, -lx * 0.03);
       lean.add(solid(leg, false));
-      proxy(g, 0.5, 2, 0.5, lx, 1, lz);
+      proxy(g, 0.5, 10, 0.5, lx * 0.9, 5, lz * 0.9);
     }
     for (const y of [3, 6.5]) {
       for (const side of [-1.8, 1.8]) {
@@ -547,6 +563,7 @@ export function buildWorld(scene) {
     g.add(lean);
     place(g, x, z, 0.4);
     reserve(x, z, 5);
+    lootSpots.push({ x, z });
   }
 
   function windmill(x, z) {
@@ -556,7 +573,7 @@ export function buildWorld(scene) {
       leg.position.set(lx * 0.85, 5.5, lz * 0.85);
       leg.rotation.set(-lz * 0.12, 0, lx * 0.12);
       g.add(leg);
-      proxy(g, 0.4, 2, 0.4, lx * 1.45, 1, lz * 1.45);
+      proxy(g, 0.4, 11, 0.4, lx * 0.85, 5.5, lz * 0.85);
     }
     for (let y = 2; y < 10; y += 2.5) {
       const ring = box(2.6 - y * 0.18, 0.08, 2.6 - y * 0.18, M.metalDark);
@@ -587,6 +604,7 @@ export function buildWorld(scene) {
     g.add(head);
     place(g, x, z, 0.8);
     reserve(x, z, 3);
+    lootSpots.push({ x, z });
     updaters.push((dt, t) => {
       rotor.rotation.z += dt * (0.6 + Math.sin(t * 0.3) * 0.4);
     });
@@ -634,6 +652,7 @@ export function buildWorld(scene) {
     // small shop ruin behind the pumps
     place(g, x, z, rot, 0.05);
     reserve(x, z, 9);
+    lootSpots.push({ x: x + Math.sin(rot) * 3, z: z + Math.cos(rot) * 3 });
     brokenHouse(x + Math.sin(rot) * -8, z + Math.cos(rot) * -8, rot, 6, 4.5, { h: 3, wall: M.plaster2, chimney: false, roof: false });
   }
 
@@ -657,7 +676,7 @@ export function buildWorld(scene) {
       pivot.add(br);
       g.add(pivot);
     }
-    proxy(g, 0.6, 2, 0.6, 0, 1, 0);
+    proxy(g, 0.6, h, 0.6, 0, h / 2, 0);
     place(g, x, z, rand(0, PI * 2), 0.1);
     reserve(x, z, 1.5);
   }
@@ -670,7 +689,7 @@ export function buildWorld(scene) {
     scene.add(m);
     if (r > 0.8) {
       solid(m, false);
-      colliders.add(x, z, r * 0.85, r * 0.85, rand(0, PI), heightAt(x, z) + r * 0.6);
+      colliders.add(x, z, r * 0.8, r * 0.8, rand(0, PI), heightAt(x, z) + r * 0.75);
     }
     reserve(x, z, r + 0.5);
   }
@@ -685,7 +704,7 @@ export function buildWorld(scene) {
       m.position.set(x, heightAt(x, z) + 0.47, z);
     }
     scene.add(solid(m, false));
-    colliders.add(x, z, 0.42, 0.42, 0, heightAt(x, z) + 0.95);
+    colliders.add(x, z, 0.42, 0.42, 0, heightAt(x, z) + (tipped ? 0.7 : 0.95));
     reserve(x, z, 0.8);
   }
 
@@ -735,7 +754,7 @@ export function buildWorld(scene) {
         g.add(rail);
         rails++;
       }
-      if (rails) proxy(g, 2.5, 1, 0.2, 0, 0.5, 0, 0, heightAt(x, z) + 1.0);
+      if (rails) proxy(g, 2.5, 1, 0.2, 0, 0.5, 0);
       place(g, x, z, rot);
     }
   }
@@ -766,7 +785,7 @@ export function buildWorld(scene) {
         g.rotation.z = lean;
         const outer = new THREE.Group();
         outer.add(g);
-        proxy(outer, 0.4, 2, 0.4, 0, 1, 0);
+        proxy(outer, 0.4, 8, 0.4, 0, 4, 0);
         place(outer, x, z, 0);
         const y = heightAt(x, z);
         tops.push(new THREE.Vector3(x - Math.sin(lean) * 7.4, y + Math.cos(lean) * 7.4, z));
@@ -1031,6 +1050,7 @@ export function buildWorld(scene) {
   return {
     colliders,
     solids,
+    lootSpots,
     update(dt, t, playerPos) {
       for (const u of updaters) u(dt, t, playerPos);
     },

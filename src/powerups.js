@@ -54,7 +54,7 @@ export const POWERUPS = [
   {
     id: 'mag', name: 'Extended Mag', icon: '📦',
     tiers: { rare: 8, epic: 16, legendary: 32 },
-    desc: (v) => `+${v} rounds per magazine`,
+    desc: (v) => `+${Math.round((v / 30) * 100)}% magazine size on every gun`,
     apply: (s, v) => { s.magBonus += v; },
   },
   {
