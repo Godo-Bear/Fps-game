@@ -165,6 +165,25 @@ export class GameAudio {
     }
   }
 
+  // a knife swing or a throw: a quick filtered whoosh
+  swing(pitch = 1) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const n = this._noise();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.2;
+    f.frequency.setValueAtTime(600 * pitch, t);
+    f.frequency.exponentialRampToValueAtTime(2600 * pitch, t + 0.12);
+    f.frequency.exponentialRampToValueAtTime(500 * pitch, t + 0.22);
+    const g = ctx.createGain();
+    this._env(g, t, 0.35, 0.03, 0.22);
+    n.connect(f).connect(g).connect(this.master);
+    n.start(t, Math.random());
+    n.stop(t + 0.3);
+  }
+
   click(pitch = 1, vol = 0.25, delay = 0) {
     if (!this.ctx) return;
     const ctx = this.ctx;

@@ -346,6 +346,9 @@ export class Multiplayer {
         this.ctx.onMatchStart(m.map, m.mode, m.weather);
         this._buildObjectives();
         break;
+      case 'fx':
+        if (this.ctx.onFx) this.ctx.onFx(m);
+        break;
       case 'spawn':
         this.ctx.onSpawn(m.p[0], m.p[1], m.yaw, m.hp);
         break;

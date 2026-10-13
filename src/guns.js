@@ -3,6 +3,13 @@ import * as THREE from 'three';
 // Every gun in the game. The rifle is what you start with; the rest are found around the map.
 // tier decides how often a gun spawns and the colour of its loot beam.
 export const GUNS = {
+  // Everyone carries a knife: slot 2, or a quick stab with V. Headshots and backstabs hit harder.
+  knife: {
+    id: 'knife', name: 'Combat Knife', tier: 'common', icon: '🔪', melee: true, range: 2.7,
+    damage: 60, pellets: 1, fireRate: 2.4, mag: 1, reload: 0, reserve: Infinity,
+    spread: 0, auto: true, recoil: 0.004, kick: 0, zoomFov: 75, sound: 'knife', moveMul: 1.08,
+    hands: { grip: [0, -0.02, 0.06], fore: [-0.2, -0.16, 0.1] },
+  },
   rifle: {
     id: 'rifle', name: 'AR-7 Rifle', tier: 'common', icon: '🔫',
     damage: 26, pellets: 1, fireRate: 9, mag: 30, reload: 1.9, reserve: Infinity,
@@ -256,6 +263,18 @@ function buildGunBase(id) {
       out.mag = part(g, B(0.045, 0.08, 0.08), M.dark, 0, -0.08, -0.06);
       out.muzzleZ = -1.03;
       out.muzzleY = 0.015;
+      break;
+    }
+    case 'knife': {
+      // blade forward, edge down, held low on the right
+      const steel = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.25, metalness: 0.8 });
+      part(g, B(0.012, 0.045, 0.2), steel, 0, 0.01, -0.13);
+      part(g, B(0.01, 0.025, 0.05), steel, 0, 0.022, -0.25, 0.5);
+      part(g, B(0.05, 0.016, 0.02), M.dark, 0, 0, -0.025);
+      part(g, B(0.03, 0.038, 0.11), M.dark, 0, -0.004, 0.035);
+      part(g, B(0.032, 0.04, 0.012), M.metal, 0, -0.004, 0.095);
+      out.muzzleZ = -0.25;
+      out.muzzleY = 0.01;
       break;
     }
     case 'launcher': {

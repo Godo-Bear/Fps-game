@@ -1591,3 +1591,11 @@ b.coin {
   flex: 1;
   min-width: 0;
 }
+
+/* ---- grenades */
+#grenade-count {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}

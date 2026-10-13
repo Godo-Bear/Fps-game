@@ -663,6 +663,15 @@ export class Room extends DurableObject {
         this._send(p, { t: 'healed', hp: p.hp });
         break;
       }
+      case 'fx': {
+        // effects other players should see (a grenade going off); nothing here does damage
+        if (this.phase !== 'playing' || now - (p.lastFx || 0) < 200) return;
+        if (m.k !== 'boom' || !Array.isArray(m.p) || m.p.length !== 3 || !m.p.every(Number.isFinite)) return;
+        p.lastFx = now;
+        const msg = JSON.stringify({ t: 'fx', id: p.id, k: 'boom', p: m.p.map((v) => Math.max(-500, Math.min(500, v))) });
+        for (const o of this.players.values()) if (o !== p && o.joined) o.ws.send(msg);
+        break;
+      }
       case 'chat': {
         // room chat: short messages, max ~1 per 0.7s each
         if (typeof m.text !== 'string') return;

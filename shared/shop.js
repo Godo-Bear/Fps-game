@@ -12,6 +12,7 @@ export const SHOP = [
   { id: 'toughness', kind: 'upgrade', name: 'Toughness', icon: '❤️', desc: '+10 max health per level', max: 5, base: 150 },
   { id: 'firepower', kind: 'upgrade', name: 'Firepower', icon: '💥', desc: '+5% damage per level', max: 5, base: 200 },
   { id: 'quickhands', kind: 'upgrade', name: 'Quick Hands', icon: '🔄', desc: '+10% reload speed per level', max: 5, base: 150 },
+  { id: 'grenadier', kind: 'upgrade', name: 'Grenadier', icon: '💣', desc: 'Carry 1 more grenade and start with 1 more, per level', max: 3, base: 250 },
   { id: 'scavenger', kind: 'upgrade', name: 'Scavenger', icon: '🎒', desc: 'More guns and medkits on the map', max: 3, base: 250 },
   { id: 'gun_smg', kind: 'gun', gun: 'smg', name: 'Viper SMG', icon: '⚡', desc: 'Start solo runs with it', price: 300 },
   { id: 'gun_shotgun', kind: 'gun', gun: 'shotgun', name: 'Boomstick', icon: '💥', desc: 'Start solo runs with it', price: 300 },

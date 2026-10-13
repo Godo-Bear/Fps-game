@@ -5,6 +5,8 @@ import { muzzleTexture } from './textures.js';
 const SCALE = 0.78;
 const REST = new THREE.Vector3(0.2, -0.21, -0.5);
 const SWITCH_TIME = 0.45;
+const SWING = 0.34; // knife swing
+const QUICK = 0.5; // quick melee: knife out, stab, back to the gun
 // Height of each gun's sights above its origin (gun units), used to line them up when aiming.
 const SIGHT_Y = { rifle: 0.1, smg: 0.075, shotgun: 0.066, revolver: 0.07, lmg: 0.145, dmr: 0.095, sniper: 0.1, launcher: 0.14 };
 
@@ -66,6 +68,9 @@ export class Weapon {
     this.switchT = 0;
     this.pending = -1;
     this.finish = null;
+    this.swingT = 0;
+    this.swingSide = 1;
+    this.quickT = 0;
   }
 
   // Gun finish from the player's profile (hex colour or null for standard).
@@ -114,7 +119,10 @@ export class Weapon {
   }
 
   reset(stats) {
-    this.slots = [{ def: GUNS.rifle, ammo: this.magSize(stats, GUNS.rifle), reserve: Infinity }];
+    this.slots = [
+      { def: GUNS.rifle, ammo: this.magSize(stats, GUNS.rifle), reserve: Infinity },
+      { def: GUNS.knife, ammo: 1, reserve: Infinity },
+    ];
     this.cur = 0;
     this.last = 0;
     this.reloading = 0;
@@ -147,6 +155,33 @@ export class Weapon {
 
   refillMags(stats) {
     for (const s of this.slots) s.ammo = Math.max(s.ammo, this.magSize(stats, s.def));
+  }
+
+  // Older saves and loadouts may not have the knife yet.
+  ensureKnife() {
+    if (this.slots.some((s) => s.def.melee)) return;
+    this.slots.splice(Math.min(1, this.slots.length), 0, { def: GUNS.knife, ammo: 1, reserve: Infinity });
+    if (this.cur >= 1) this.cur++;
+  }
+
+  // V: a quick stab with the knife whatever you're holding. Returns true if a swing starts.
+  quickMelee() {
+    if (this.quickT > 0 || this.switchT > 0) return false;
+    if (this.def.melee) {
+      if (this.cooldown > 0) return false;
+      this.cooldown = 1 / this.def.fireRate;
+      this.swingT = SWING;
+      this.swingSide = -this.swingSide;
+      return true;
+    }
+    this.reloading = 0;
+    this.quickT = QUICK;
+    this.swingT = SWING;
+    this.swingSide = 1;
+    for (const m of Object.values(this.models)) m.group.visible = false;
+    const k = this._model('knife');
+    k.group.visible = true;
+    return true;
   }
 
   equip(i) {
@@ -211,6 +246,7 @@ export class Weapon {
   // ---------------------------------------------------------------- firing
   startReload(stats) {
     const s = this.slot;
+    if (s.def.melee) return;
     if (this.reloading > 0 || this.switchT > 0 || s.ammo >= this.magSize(stats) || s.reserve <= 0) return;
     const speed = stats.reloadSpeed;
     this.reloadDur = s.def.reload / speed;
@@ -248,6 +284,13 @@ export class Weapon {
     this.cooldown = Math.max(this.cooldown - dt, -dt);
     this.queued = pressed ? 0.2 : Math.max(0, this.queued - dt);
     let shots = 0;
+    this.swingT = Math.max(0, this.swingT - dt);
+    if (this.quickT > 0) {
+      this.quickT -= dt;
+      if (this.quickT <= 0) this._show(this.cur);
+      this._animate(dt, { sprinting, moving, speed, aim: false }, stats);
+      return 0;
+    }
 
     // weapon swap: lower, change model, raise
     if (this.switchT > 0) {
@@ -269,7 +312,16 @@ export class Weapon {
       }
     }
 
-    if (this.switchT <= 0 && this.reloading <= 0 && !sprinting) {
+    if (def.melee) {
+      // the knife never runs out: each "shot" is a swing (you can swing while sprinting)
+      if (this.switchT <= 0 && (def.auto ? trigger : this.queued > 0) && this.cooldown <= 0) {
+        this.cooldown = 1 / def.fireRate;
+        this.swingT = SWING;
+        this.swingSide = -this.swingSide;
+        this.queued = 0;
+        shots = 1;
+      }
+    } else if (this.switchT <= 0 && this.reloading <= 0 && !sprinting) {
       const wants = def.auto ? trigger : this.queued > 0;
       if (wants && s.ammo <= 0) {
         if (this.cooldown <= 0) {
@@ -291,7 +343,7 @@ export class Weapon {
       }
     }
 
-    if (shots > 0) {
+    if (shots > 0 && !def.melee) {
       this.kick = Math.min(1, this.kick + def.kick * shots);
       this.flashT = 0.045;
       this.flash.material.rotation = Math.random() * Math.PI;
@@ -307,8 +359,9 @@ export class Weapon {
 
   // ---------------------------------------------------------------- animation
   _animate(dt, { sprinting, moving, speed, aim }, stats) {
-    const def = this.def;
-    const m = this._model(def.id, this.slot.mut);
+    const def = this.quickT > 0 ? GUNS.knife : this.def;
+    const m = this.quickT > 0 ? this._model('knife') : this._model(def.id, this.slot.mut);
+    if (def.melee) aim = false;
     this.kick = Math.max(0, this.kick - dt * 9);
     this.flashT -= dt;
     this.boltT = Math.max(0, this.boltT - dt);
@@ -345,6 +398,27 @@ export class Weapon {
 
     // hide the gun while looking through a scope
     m.group.visible = !(def.scope && a > 0.85);
+    if (def.melee) {
+      // knife sits lower and pointed in; a swing slashes across and stabs forward
+      h.position.y -= 0.04;
+      h.rotation.y += 0.25;
+      if (this.quickT > 0) {
+        const t = this.quickT / QUICK; // 1 → 0: comes up, stabs, goes away
+        const up = Math.sin(t * Math.PI);
+        h.position.y -= (1 - up) * 0.3;
+      }
+      if (this.swingT > 0) {
+        const k = 1 - this.swingT / SWING;
+        const s = this.swingSide;
+        const arc = kf(k, [[0, 0], [0.25, -1], [0.55, 1], [1, 0]]);
+        const thrust = kf(k, [[0, 0], [0.35, 1], [0.6, 1], [1, 0]]);
+        h.position.x += arc * 0.12 * s;
+        h.position.z -= thrust * 0.22;
+        h.rotation.y -= arc * 0.6 * s;
+        h.rotation.z += arc * 0.5 * s;
+        h.rotation.x -= thrust * 0.3;
+      }
+    }
 
     this._reloadPose(m, def, stats);
   }

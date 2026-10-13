@@ -70,6 +70,8 @@ const game = {
   score: 0,
   runId: '',
   runName: '',
+  scrap: 0, // for barricades and turrets
+  grenades: 2,
   timer: 0,
   toSpawn: 0,
   bossToSpawn: 0,
@@ -222,6 +224,8 @@ function updateWave(dt) {
       game.timer = 2.4;
       const bonus = 50 * game.wave + pointsBonus();
       game.score += bonus;
+      giveGrenades(2);
+      game.scrap = Math.min(999, game.scrap + 10);
       player.heal(20, overhealCap());
       if (isCoop()) {
         mp.relay('all', { k: 'cleared', wave: game.wave });
@@ -299,6 +303,7 @@ const targets = () => (zombieGame() ? zombies.parts : mp.parts).concat(world.sol
 
 function fireShot(moving, speed) {
   const def = weapon.def;
+  if (def.melee) return meleeAttack();
   audio.shot(def.sound, stats.explosive > 0);
   player.addRecoil(def.recoil * (1 - weapon.ads * 0.4) * (player.crouching ? 0.7 : 1));
   camera.updateMatrixWorld();
@@ -419,7 +424,7 @@ function hitZombie(z, head, point, dir, distance = 0) {
 }
 
 // Damage a zombie on the machine that runs them (solo, or the co-op host), with mutated-gun powers.
-function applyZombieHit(z, dmg, { head = false, crit = false, mut = null, dir = null, point = null, slow = 0, shooter = 'me', pellets = 1 }) {
+function applyZombieHit(z, dmg, { head = false, crit = false, mut = null, dir = null, point = null, slow = 0, shooter = 'me', pellets = 1, src = null }) {
   if (!z.alive) return;
   if (mut === 'frost' && z.slowT > 0) dmg *= 1.4;
   if (!point) point = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
@@ -452,16 +457,17 @@ function applyZombieHit(z, dmg, { head = false, crit = false, mut = null, dir = 
     showHit(killed ? 'kill' : head || crit ? 'head' : '');
     damageNumber(point, dmg, voided ? 'void' : head ? 'head' : crit ? 'crit' : '');
   }
-  if (killed) killedBy(z, head, shooter, mut);
+  if (killed) killedBy(z, head, shooter, mut, src);
 }
 
 // Who gets the kill: us, or (co-op) a guest whose bullet it was.
-function killedBy(z, head, shooter, mut) {
+// src: what did it ('melee', 'grenade', 'turret' or null for guns), for quests.
+function killedBy(z, head, shooter, mut, src = null) {
   worldKill(z, mut);
-  if (shooter === 'me' || shooter === undefined) onKill(z, head);
+  if (shooter === 'me' || shooter === undefined) onKill(z, head, src);
   else
     mp.relay(shooter, {
-      k: 'kill', type: z.typeId, mut: z.mutated ? 1 : 0, head: !!head,
+      k: 'kill', type: z.typeId, mut: z.mutated ? 1 : 0, head: !!head, src,
       x: Math.round(z.root.position.x * 10) / 10, y: Math.round(z.root.position.y * 10) / 10, z: Math.round(z.root.position.z * 10) / 10,
     });
 }
@@ -483,7 +489,7 @@ function chainLightning(from, point, dmg) {
   if (near.length) audio.zap();
 }
 
-function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false } = {}) {
+function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false, src = null } = {}) {
   effects.explosion(point, radius / 2.6);
   if (color) effects.burst(point, { count: 30, color, speed: radius * 1.5, size: 0.16, life: 0.7, grav: 4, up: 1.2 });
   if (explosionSoundT <= 0) {
@@ -503,12 +509,12 @@ function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false } = {
     if (d > radius + z.radius) continue;
     const fall = 1 - Math.min(1, d / (radius + z.radius)) * 0.5;
     if (!simHost()) {
-      mp.relay('host', { k: 'zhit', id: z.id, dmg: Math.round(dmg * fall), head: false, mut: null, slow: stats.slow });
+      mp.relay('host', { k: 'zhit', id: z.id, dmg: Math.round(dmg * fall), head: false, mut: null, slow: stats.slow, src });
       showHit('');
       continue;
     }
     z.lastHit = 'me';
-    if (zombies.damage(z, dmg * fall, { slow: stats.slow })) killedBy(z, false, 'me', null);
+    if (zombies.damage(z, dmg * fall, { slow: stats.slow })) killedBy(z, false, 'me', null, src);
     else showHit('');
   }
 }
@@ -579,6 +585,195 @@ function updateProjectiles(dt) {
 function clearProjectiles() {
   for (const p of projectiles) scene.remove(p.mesh);
   projectiles.length = 0;
+  for (const g of thrown) scene.remove(g.mesh);
+  thrown.length = 0;
+}
+
+// Scrap for building barricades and turrets: what each zombie gives.
+const SCRAP_FOR = { walker: 1, runner: 1, crawler: 1, spitter: 2, bloater: 2, brute: 4, boss: 15 };
+
+// Quest progress made since it was last sent (see the quests section).
+const questDelta = {};
+function questAdd(key, n = 1) {
+  questDelta[key] = (questDelta[key] || 0) + n;
+}
+
+// ---------------------------------------------------------------- knife
+// Slot 2 (or V for a quick stab whatever you're holding). Hits whatever is right in front of you;
+// headshots and stabbing a zombie in the back hit much harder.
+const _flat = new THREE.Vector3();
+function meleeAttack() {
+  const def = GUNS.knife;
+  audio.swing();
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(_dir);
+  camera.getWorldPosition(_origin);
+  raycaster.set(_origin, _dir);
+  raycaster.far = def.range;
+  let target = null;
+  let head = false;
+  let point = null;
+  for (const h of raycaster.intersectObjects(targets(), false)) {
+    const ud = h.object.userData;
+    if (ud.zombie) {
+      if (!ud.zombie.alive) continue;
+      target = { z: ud.zombie };
+    } else if (ud.player !== undefined) {
+      if (!mp.isAlive(ud.player) || !mp.isEnemy(ud.player)) continue;
+      target = { p: ud.player };
+    } else {
+      effects.sparks(h.point);
+      audio.click(1.6, 0.3);
+      return;
+    }
+    head = ud.kind === 'head';
+    point = h.point.clone();
+    break;
+  }
+  // a forgiving cone so you don't have to be pixel perfect up close
+  if (!target) {
+    _flat.set(_dir.x, 0, _dir.z).normalize();
+    let best = def.range + 0.6;
+    const consider = (pos, r, t) => {
+      const dx = pos.x - player.pos.x;
+      const dz = pos.z - player.pos.z;
+      const d = Math.hypot(dx, dz) - r;
+      if (d > best || Math.abs(pos.y - player.pos.y) > 2) return;
+      if ((dx * _flat.x + dz * _flat.z) / (Math.hypot(dx, dz) || 1) < 0.7) return;
+      best = d;
+      target = t;
+    };
+    if (zombieGame()) for (const z of zombies.list) if (z.alive) consider(z.root.position, z.radius, { z });
+    if (game.mode === 'mp' && !isCoop()) for (const a of mp.avatars.values()) if (a.alive && mp.isEnemy(a.id)) consider(a.pos, 0.4, { p: a.id });
+    if (!target) return;
+    const tp = target.z ? target.z.root.position : mp.avatars.get(target.p).pos;
+    point = new THREE.Vector3(tp.x, target.z ? target.z.centerY : tp.y + 1.2, tp.z);
+  }
+  let dmg = def.damage * stats.damageMul;
+  if (target.p !== undefined) {
+    if (head) dmg *= 1.5;
+    effects.blood(point, _dir, 1.2);
+    mp.reportHit(target.p, dmg, head);
+    audio.hit(head);
+    showHit(head ? 'head' : '');
+    damageNumber(point, dmg, head ? 'head' : '');
+    return;
+  }
+  const z = target.z;
+  // in the back: the zombie faces the same way we're looking
+  const back = Math.sin(z.root.rotation.y) * _dir.x + Math.cos(z.root.rotation.y) * _dir.z > 0.5;
+  if (head) dmg *= stats.headshotMul;
+  if (back) {
+    dmg *= 2;
+    subBanner('BACKSTAB', 0.7);
+  }
+  if (cheats.onehit && cheatsOn()) dmg = Math.max(dmg, z.hp + 1);
+  if (!simHost()) {
+    effects.blood(point, _dir, 1.4);
+    z.flashT = 0.08;
+    mp.relay('host', { k: 'zhit', id: z.id, dmg: Math.round(dmg), head, mut: null, slow: 0, src: 'melee' });
+    audio.hit(head);
+    showHit(head ? 'head' : '');
+    damageNumber(point, dmg, head ? 'head' : '');
+    return;
+  }
+  hitSoundPlayed = false;
+  applyZombieHit(z, dmg, { head, dir: _dir.clone(), point, shooter: 'me', src: 'melee' });
+  if (z.alive) zombies.knockback(z, player.pos, 0.12);
+}
+
+// ---------------------------------------------------------------- hand grenades (G)
+// Thrown in an arc, bounce, and go off after a short fuse. You carry up to MAX_GRENADES
+// (+ the Grenadier upgrade); you get more for clearing a wave and when you respawn.
+const MAX_GRENADES = 4;
+const thrown = [];
+const fragGeo = new THREE.SphereGeometry(0.075, 10, 8);
+const fragMat = new THREE.MeshStandardMaterial({ color: 0x3e4a2a, roughness: 0.7 });
+const fragPin = new THREE.MeshStandardMaterial({ color: 0xbfae7a, metalness: 0.6, roughness: 0.4 });
+let throwCd = 0;
+const maxGrenades = () => MAX_GRENADES + (zombieGame() ? account.items.grenadier || 0 : 0);
+function giveGrenades(n) {
+  game.grenades = Math.min(maxGrenades(), game.grenades + n);
+}
+
+function throwGrenade() {
+  if (player.dead || throwCd > 0) return;
+  const free = cheatsOn() && cheats.ammo;
+  if (game.grenades <= 0 && !free) {
+    subBanner('No grenades', 0.8);
+    audio.empty();
+    return;
+  }
+  if (!free) game.grenades--;
+  throwCd = 0.7;
+  audio.swing(0.7);
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(_dir);
+  camera.getWorldPosition(_origin);
+  const mesh = new THREE.Mesh(fragGeo, fragMat);
+  const pin = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.007, 4, 10), fragPin);
+  pin.position.y = 0.08;
+  mesh.add(pin);
+  mesh.position.copy(_origin).addScaledVector(_dir, 0.6);
+  mesh.position.y -= 0.15;
+  scene.add(mesh);
+  const vel = _dir.clone().multiplyScalar(16);
+  vel.y += 3.5;
+  vel.x += player.vel.x * 0.5;
+  vel.z += player.vel.z * 0.5;
+  thrown.push({ mesh, vel, fuse: 2.1, bounced: 0 });
+  questAdd('grenades');
+}
+
+const _next = new THREE.Vector3();
+function updateThrown(dt) {
+  throwCd = Math.max(0, throwCd - dt);
+  for (let i = thrown.length - 1; i >= 0; i--) {
+    const g = thrown[i];
+    g.fuse -= dt;
+    const pos = g.mesh.position;
+    g.vel.y -= 20 * dt;
+    _next.copy(pos).addScaledVector(g.vel, dt);
+    // walls, cars and wrecks: bounce off
+    const bx = _next.x;
+    const bz = _next.z;
+    world.colliders.resolve(_next, 0.1, _next.y - 0.05, 0.15, 0);
+    if (Math.abs(_next.x - bx) > 1e-4 || Math.abs(_next.z - bz) > 1e-4) {
+      g.vel.x *= -0.4;
+      g.vel.z *= -0.4;
+    }
+    const floor = Math.max(heightAt(_next.x, _next.z), world.colliders.floorAt(_next.x, _next.z, 0.05, pos.y + 0.3));
+    if (_next.y < floor + 0.075) {
+      _next.y = floor + 0.075;
+      if (g.vel.y < -2.5 && g.bounced < 4) audio.click(1.5 - g.bounced * 0.2, 0.25);
+      g.vel.y = Math.abs(g.vel.y) * 0.32;
+      g.vel.x *= 0.5;
+      g.vel.z *= 0.5;
+      g.bounced++;
+    }
+    pos.copy(_next);
+    g.mesh.rotation.x += dt * Math.hypot(g.vel.x, g.vel.z) * 3;
+    if (g.fuse <= 0) {
+      scene.remove(g.mesh);
+      thrown.splice(i, 1);
+      grenadeBlast(pos.clone().setY(pos.y + 0.2));
+    }
+  }
+}
+
+function grenadeBlast(at) {
+  const radius = 6.5;
+  explodeAt(at, radius, 240 * stats.damageMul, { src: 'grenade' });
+  if (game.mode === 'mp') {
+    mp.send({ t: 'fx', k: 'boom', p: [at.x, at.y, at.z].map((v) => Math.round(v * 10) / 10) });
+    if (!isCoop()) {
+      for (const a of mp.avatars.values()) {
+        if (!a.alive || !mp.isEnemy(a.id)) continue;
+        const d = Math.hypot(a.pos.x - at.x, a.pos.y + 1 - at.y, a.pos.z - at.z);
+        if (d < radius) mp.reportHit(a.id, 150 * (1 - (d / radius) * 0.7), false);
+      }
+    }
+  }
 }
 
 function onPickGun(id, mut) {
@@ -604,12 +799,18 @@ function worldKill(z, mut) {
 }
 
 // Your reward for a kill: score, healing, drops. In co-op the host tells you about your kills.
-function onKill(z, head) {
-  rewardKill({ type: z.typeId, mut: z.mutated, head, x: z.root.position.x, y: z.root.position.y, z: z.root.position.z });
+function onKill(z, head, src = null) {
+  rewardKill({ type: z.typeId, mut: z.mutated, head, src, x: z.root.position.x, y: z.root.position.y, z: z.root.position.z });
 }
-function rewardKill({ type, mut, head, x, y, z }) {
+function rewardKill({ type, mut, head, src = null, x, y, z }) {
   const T = ZOMBIE_TYPES[type] || ZOMBIE_TYPES.walker;
   game.kills++;
+  questAdd('zkills');
+  if (head) questAdd('headshots');
+  if (mut) questAdd('mutated');
+  if (type === 'boss') questAdd('bosses');
+  if (src === 'melee' || src === 'grenade' || src === 'turret') questAdd(`${src}Kills`);
+  game.scrap = Math.min(999, game.scrap + (SCRAP_FOR[type] ?? 1));
   if (head) {
     game.headshots++;
     headshotPop();
@@ -1063,12 +1264,14 @@ function updateHud(dt) {
   $('over-fill').style.width = `${Math.min(100, (over / Math.max(1, stats.overheal)) * 100)}%`;
   $('health-row').classList.toggle('overheal', over > 0);
   const slot = weapon.slot;
+  $('ammo').classList.toggle('hidden', !!slot.def.melee);
   setText('ammo-mag', String(slot.ammo));
   setText('ammo-max', slot.reserve === Infinity ? '∞' : String(slot.reserve));
+  setText('grenade-count', `💣 ${game.grenades}`);
   setText('weapon-name', weapon.displayName().toUpperCase());
   $('weapon-name').style.color = slot.mut ? MUTATIONS[slot.mut].css : TIER_CSS[slot.def.tier];
   $('ammo').classList.toggle('low', slot.ammo <= weapon.magSize(stats) * 0.2);
-  $('reload-hint').classList.toggle('show', weapon.reloading > 0 || slot.ammo === 0);
+  $('reload-hint').classList.toggle('show', !slot.def.melee && (weapon.reloading > 0 || slot.ammo === 0));
   setText('reload-hint', weapon.reloading > 0 ? 'RELOADING' : slot.reserve > 0 ? 'PRESS R' : 'NO AMMO');
   const slotsKey = weapon.slots.map((x) => x.def.id + (x.mut || '')).join() + weapon.cur;
   if (last.slots !== slotsKey) {
@@ -1172,6 +1375,8 @@ function runSnapshot() {
     guns: weapon.slots.map((s) => [s.def.id, s.ammo, s.reserve === Infinity ? -1 : s.reserve, s.mut || null]),
     health: Math.round(player.health),
     weather: weather.id,
+    grenades: game.grenades,
+    scrap: game.scrap,
   };
 }
 
@@ -1328,7 +1533,10 @@ function restoreRun(save) {
   weapon.slots = slots;
   weapon.cur = 0;
   weapon.last = 0;
+  weapon.ensureKnife();
   weapon.refreshModels();
+  game.grenades = Math.max(0, Math.min(maxGrenades(), save.grenades ?? 2));
+  game.scrap = Math.max(0, Math.min(999, save.scrap | 0));
   player.health = Math.max(1, Math.min(save.health || stats.maxHealth, stats.maxHealth + stats.overheal));
   if (WEATHER[save.weather] && world.theme.weathers.includes(save.weather)) weather.set(save.weather, true);
   Object.assign(game, { wave: save.wave, score: save.score | 0, kills: save.kills | 0, headshots: save.headshots | 0, runId: save.id, runName: saveName(save) });
@@ -1342,6 +1550,7 @@ function applyShop() {
   stats.damageMul += 0.05 * (it.firepower || 0);
   stats.reloadSpeed += 0.1 * (it.quickhands || 0);
   player.health = stats.maxHealth;
+  if (it.grenadier) giveGrenades(it.grenadier);
   if (it.scavenger) pickups.topUp(5 + 2 * it.scavenger, player.pos, 0.06);
   if (it.loadout && it[`gun_${it.loadout}`] && GUNS[it.loadout]) {
     weapon.give(it.loadout, stats); // you start holding it
@@ -1381,7 +1590,7 @@ function startGame(save = null, name = null) {
   pickups.clear();
   pickups.topUp(5, player.pos, 0.06);
   weather.set(world.theme.weather, true);
-  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
+  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: 10, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
   game.runName = cleanSaveName(name || nextGameName());
   if (save) restoreRun(save);
   else {
@@ -1501,7 +1710,7 @@ const mp = new Multiplayer({
     clearProjectiles();
     clearMedkits();
     player.reset(100);
-    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0 });
+    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: 10, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0 });
     coop.remaining = 0;
     if (mode === 'defend') defend.start();
     else defend.stop();
@@ -1527,6 +1736,7 @@ const mp = new Multiplayer({
     if (['ffa', 'tdm', 'coop', 'defend'].includes(mp.mode)) weapon.refillMags(stats);
     else weapon.reset(stats);
     $('respawn').classList.add('hidden');
+    game.grenades = Math.max(game.grenades, 2);
     player.update(0, world.colliders, stats, false, audio, 1, world.ladders);
   },
   onHurt(dmg, hp, from) {
@@ -1556,6 +1766,13 @@ const mp = new Multiplayer({
   },
   onMyHp(hp) {
     if (!MODES[mp.mode]?.coop && !player.dead) player.health = hp;
+  },
+  onFx(m) {
+    if (m.k === 'boom' && Array.isArray(m.p)) {
+      const p = new THREE.Vector3(m.p[0], m.p[1], m.p[2]);
+      effects.explosion(p, 2.5);
+      audio.explosion(p);
+    }
   },
   onChat(name, text, color, admin) {
     addChat(name, text, color, admin);
@@ -1720,6 +1937,8 @@ document.addEventListener('keydown', (e) => {
   player.keys.add(e.code);
   if (e.code === 'KeyR') weapon.startReload(stats);
   if (e.code === 'KeyQ') weapon.equipLast();
+  if (e.code === 'KeyV' && !player.dead && weapon.quickMelee()) meleeAttack();
+  if (e.code === 'KeyG') throwGrenade();
   const digit = /^Digit([1-9])$/.exec(e.code);
   if (digit) weapon.equip(Number(digit[1]) - 1);
 });
@@ -1931,6 +2150,7 @@ function update(dt) {
   for (let i = 0; i < shots; i++) fireShot(hSpeed > 0.5, hSpeed);
   if (weapon.ammo === 0 && weapon.slot.reserve > 0 && weapon.reloading <= 0 && !trigger) weapon.startReload(stats);
   updateProjectiles(dt);
+  updateThrown(dt);
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
   if (!isCoop()) worldTick(dt);
   else updateMedkits(dt); // co-op runs worldTick from the frame loop, even while paused
@@ -1995,11 +2215,12 @@ function onCoopRelay(from, d) {
       const z = zombies.list.find((o) => o.id === d.id);
       if (!z || !z.alive) return;
       const dmg = Math.max(0, Math.min(5000, Number(d.dmg) || 0));
-      applyZombieHit(z, dmg, { head: !!d.head, mut: MUTATIONS[d.mut] ? d.mut : null, slow: Math.min(0.75, Number(d.slow) || 0), shooter: from });
+      const src = ['melee', 'grenade', 'turret'].includes(d.src) ? d.src : null;
+      applyZombieHit(z, dmg, { head: !!d.head, mut: MUTATIONS[d.mut] ? d.mut : null, slow: Math.min(0.75, Number(d.slow) || 0), shooter: from, src });
       break;
     }
     case 'kill':
-      rewardKill({ type: d.type, mut: !!d.mut, head: !!d.head, x: d.x, y: d.y, z: d.z });
+      rewardKill({ type: d.type, mut: !!d.mut, head: !!d.head, src: ['melee', 'grenade', 'turret'].includes(d.src) ? d.src : null, x: d.x, y: d.y, z: d.z });
       break;
     case 'ouch':
       onPlayerHit(null, Math.max(0, Math.min(200, Number(d.dmg) || 0)), d.kind);
@@ -2027,6 +2248,8 @@ function onCoopRelay(from, d) {
       if (mp.isHost()) return;
       player.heal(20, overhealCap());
       game.score += pointsBonus(d.wave);
+      giveGrenades(2);
+      game.scrap = Math.min(999, game.scrap + 10);
       banner(`WAVE ${d.wave} CLEARED`, `+20 HP${isDefend() ? ` · ${defend.heldCount}/3 points held` : ''} · pick a power-up`, 'gold', 2.3);
       audio.waveCleared();
       setTimeout(() => {
