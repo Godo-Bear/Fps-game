@@ -1854,6 +1854,8 @@ const scavengerLevel = () => (game.mode === 'solo' ? account.items.scavenger || 
 
 function startGame(save = null, name = null) {
   audio.init();
+  // admins can try any map in solo; everyone else plays Dead Plains
+  game.map = account.admin && MAPS[adminSoloMap] ? adminSoloMap : SOLO_MAP;
   game.mode = 'solo';
   $('chat-log').innerHTML = '';
   chatLines.length = 0;
@@ -2350,6 +2352,7 @@ window.addEventListener('resize', () => {
 const _fwd = new THREE.Vector3();
 // ---------------------------------------------------------------- admin (solo only; the account must be verified by the server)
 let adminBossN = 0;
+let adminSoloMap = SOLO_MAP;
 const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false, grenades: false, build: false, turrets: false, instabuild: false };
 const cheatsOn = () => account.admin && game.mode === 'solo';
 function flyUpdate(dt) {
@@ -2969,6 +2972,15 @@ accountUI.adminActions = {
   },
   zombieTypes: () => Object.keys(ZOMBIE_TYPES),
   bosses: () => BOSS_IDS.map((id) => [id, BOSSES[id].name]),
+  maps: () => Object.entries(MAPS).map(([id, m]) => [id, m.name]),
+  get soloMap() {
+    return adminSoloMap;
+  },
+  setSoloMap(id) {
+    if (!MAPS[id]) return '';
+    adminSoloMap = id;
+    return `New solo games will be on ${MAPS[id].name}.`;
+  },
   announce(text) {
     if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
     if (!String(text).trim()) return 'Type a message first.';
@@ -3037,7 +3049,7 @@ function worldTick(dt) {
       hazardT = 0.5;
       for (const h of world.hazards) {
         if (Math.hypot(player.pos.x - h.x, player.pos.z - h.z) < h.r && player.pos.y - heightAt(player.pos.x, player.pos.z) < 0.4) {
-          onPlayerHit(null, h.dps * 0.5, 'acid');
+          onPlayerHit(null, h.dps * 0.5, h.kind === 'lava' ? 'fire' : 'acid');
         }
       }
     }

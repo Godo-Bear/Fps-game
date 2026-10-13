@@ -44,6 +44,28 @@ export const WEATHER = {
     name: 'Dusk', fogNear: 20, fogFar: 190, fog: 0x6a5060, top: 0x2e3350, horizon: 0xb0705a,
     sun: 1.4, hemi: 1.2, rain: 0, dust: 0, lightning: false, wind: 0.1,
   },
+  // Rustwater Docks
+  harbour: {
+    name: 'Grey harbour', fogNear: 25, fogFar: 220, fog: 0x9aa4ab, top: 0x5f6f7d, horizon: 0xa8b2b8,
+    sun: 1.3, hemi: 1.7, rain: 0, dust: 0, lightning: false, wind: 0.3,
+  },
+  seafog: {
+    name: 'Sea fog', fogNear: 3, fogFar: 70, fog: 0xb6c0c6, top: 0x9aa6ae, horizon: 0xb6c0c6,
+    sun: 0.6, hemi: 1.7, rain: 0, dust: 0, lightning: false, wind: 0.15,
+  },
+  // Ember Canyon
+  emberdusk: {
+    name: 'Burning sky', fogNear: 30, fogFar: 230, fog: 0x8a4a34, top: 0x3a1e22, horizon: 0xd0602a,
+    sun: 1.8, hemi: 1.2, rain: 0, dust: 0, snow: 0.12, snowColor: 0x6a605a, lightning: false, wind: 0.2,
+  },
+  ashfall: {
+    name: 'Ashfall', fogNear: 12, fogFar: 120, fog: 0x6a5048, top: 0x3a2a28, horizon: 0x8a5a44,
+    sun: 0.9, hemi: 1.2, rain: 0, dust: 0, snow: 0.8, snowColor: 0x5a5452, lightning: false, wind: 0.35,
+  },
+  smoke: {
+    name: 'Choking smoke', fogNear: 3, fogFar: 65, fog: 0x4a3a34, top: 0x2a2020, horizon: 0x5a4038,
+    sun: 0.5, hemi: 1.0, rain: 0, dust: 0, snow: 0.3, snowColor: 0x4a4442, lightning: false, wind: 0.2,
+  },
   mist: {
     name: 'Toxic mist', fogNear: 3, fogFar: 75, fog: 0x4f5a40, top: 0x3a4232, horizon: 0x5a6a48,
     sun: 0.5, hemi: 1.1, rain: 0, dust: 0, lightning: false, wind: 0.05,
@@ -129,6 +151,7 @@ export class Weather {
   set(id, instant = false) {
     if (!WEATHER[id]) return;
     this.id = id;
+    this.snow.material.color.setHex(WEATHER[id].snowColor ?? 0xffffff); // snow, or grey ash
     if (instant) this._blend(1);
   }
 

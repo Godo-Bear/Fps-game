@@ -27,12 +27,14 @@ After every wave you survive, pick **one of three power-ups** to take into the n
 | M | Mute |
 
 ### Maps
-Solo games are always on Dead Plains. The other two are multiplayer maps; the host picks one in the room lobby:
+Solo games are always on Dead Plains. The others are multiplayer maps; the host picks one in the room lobby:
 - **Dead Plains**: ruined town, crashed airliner, water tower and windmill with ladders.
 - **Frostbite Outpost**: snowy military base with bunkers, watchtowers, trucks, containers, a downed helicopter and a frozen lake. Snow and blizzards.
 - **Blackwood Hollow**: dark forest at dusk with cabins, a ruined church, a graveyard, ranger towers and **toxic swamp pools that hurt**.
+- **Rustwater Docks**: an island harbour in a grey sea: stacked containers with ladders, two cranes you can climb, warehouses, beached boats and a lighthouse. Sea fog, rain and storms.
+- **Ember Canyon**: a scorched canyon under a burning sky: **lava pools that burn**, black rock spires, burnt shacks, watchtowers and a smoking plane wreck. Ashfall and choking smoke.
 
-Weather changes between waves: dust storms, rain, thunderstorms, snow, blizzards, fog.
+Weather changes between waves: dust storms, rain, thunderstorms, snow, blizzards, fog, sea fog, ashfall and smoke.
 
 ### Zombies
 - **Walker**, **Runner** (wave 2+), **Brute** (wave 4+), **Abomination** boss every 5th wave.

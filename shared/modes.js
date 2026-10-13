@@ -41,13 +41,15 @@ export function makeRoomCode() {
 
 // Solo play always uses this map; the others are for multiplayer.
 export const SOLO_MAP = 'plains';
-export const MP_MAPS = ['frost', 'forest'];
+export const MP_MAPS = ['frost', 'forest', 'docks', 'ember'];
 
 // Maps. Every map keeps the spawns, flags and capture point above clear, so all modes work everywhere.
 export const MAPS = {
   plains: { name: 'Dead Plains', weathers: ['clear', 'clear', 'overcast', 'dust', 'rain', 'storm'] },
   frost: { name: 'Frostbite Outpost', weathers: ['frostclear', 'snow', 'snow', 'blizzard', 'frostfog'] },
   forest: { name: 'Blackwood Hollow', weathers: ['dusk', 'dusk', 'mist', 'rain', 'storm'] },
+  docks: { name: 'Rustwater Docks', weathers: ['harbour', 'harbour', 'seafog', 'rain', 'storm'] },
+  ember: { name: 'Ember Canyon', weathers: ['emberdusk', 'emberdusk', 'ashfall', 'smoke'] },
 };
 
 // Quick chat wheel (Z): 8 short phrases you can rewrite (Customise). Shown above your head and in chat.

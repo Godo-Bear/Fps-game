@@ -17,7 +17,7 @@ export class Minimap {
     const c = document.createElement('canvas');
     c.width = c.height = WORLD * 2 * PX;
     const g = c.getContext('2d');
-    const look = { plains: ['#8c7651', 'rgba(45,35,25,0.75)', '#3b2f24'], frost: ['#c9d3dc', 'rgba(70,80,95,0.7)', '#4a5260'], forest: ['#2f3a24', 'rgba(15,20,10,0.8)', '#0d120a'] }[world.mapId] || ['#8c7651', 'rgba(45,35,25,0.75)', '#3b2f24'];
+    const look = { plains: ['#8c7651', 'rgba(45,35,25,0.75)', '#3b2f24'], frost: ['#c9d3dc', 'rgba(70,80,95,0.7)', '#4a5260'], forest: ['#2f3a24', 'rgba(15,20,10,0.8)', '#0d120a'], docks: ['#5e5a52', 'rgba(30,34,38,0.8)', '#1c2024'], ember: ['#3a2a24', 'rgba(20,10,8,0.8)', '#120806'] }[world.mapId] || ['#8c7651', 'rgba(45,35,25,0.75)', '#3b2f24'];
     g.fillStyle = look[0];
     g.fillRect(0, 0, c.width, c.height);
     g.translate(WORLD * PX, WORLD * PX);

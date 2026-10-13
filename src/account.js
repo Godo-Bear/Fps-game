@@ -784,6 +784,11 @@ export class AccountUI {
         <button class="btn small ghost" data-run="tutorial">REPLAY THE TUTORIAL</button>
         <button class="btn small ghost" id="admin-quick-reset">RESET MY QUICK CHAT</button>
       </div>
+      <div class="auth inline admin-row">
+        <span>🗺️ Solo map:</span>
+        <select id="admin-map">${(act?.maps() || []).map(([id, n]) => `<option value="${id}" ${act.soloMap === id ? 'selected' : ''}>${n}</option>`).join('')}</select>
+        <span class="muted small">(for your next new solo game)</span>
+      </div>
       <h4>Solo cheats ${mp ? '<span class="muted">(off in multiplayer)</span>' : ''}</h4>
       <div class="admin-grid">
         ${[
@@ -845,6 +850,7 @@ export class AccountUI {
       msg(act.announce(input.value));
       input.value = '';
     });
+    document.getElementById('admin-map').onchange = (e) => msg(act.setSoloMap(e.target.value));
     document.getElementById('admin-quick-reset').onclick = () => a.setQuickChat([]).then(() => msg('Quick chat back to the defaults.'), (e) => msg(e.message));
     const bbtn = document.getElementById('admin-boss-btn');
     if (bbtn) bbtn.onclick = () => msg(act.run('boss', document.getElementById('admin-boss').value));

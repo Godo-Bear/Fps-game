@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.1', date: '13 Oct 2026', title: 'Two new multiplayer maps',
+    items: [
+      'Rustwater Docks: an island harbour with stacked containers, cranes to climb, warehouses, beached boats and a lighthouse.',
+      'Ember Canyon: a scorched canyon with lava pools that burn, black rock spires and falling ash.',
+      'New weather: sea fog, ashfall and choking smoke.',
+      'Admin: play any map in solo (Admin → Solo map).',
+    ],
+  },
+  {
     v: '4.0', date: '13 Oct 2026', title: 'Unlimited ammo for your starting gun',
     items: [
       'The gun you equip in the Shop now has unlimited ammo (you still reload).',

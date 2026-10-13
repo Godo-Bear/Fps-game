@@ -18,6 +18,8 @@ const TERRAIN = {
   plains: { a: 1, f: 1, ox: 0, oz: 0 },
   frost: { a: 1.25, f: 1.15, ox: 40, oz: -25 },
   forest: { a: 0.8, f: 1.4, ox: -70, oz: 55 },
+  docks: { a: 0.45, f: 0.8, ox: 120, oz: 30, island: 116 },
+  ember: { a: 1.5, f: 1.3, ox: -30, oz: -95 },
 };
 let T = TERRAIN.plains;
 export function setTerrain(id) {
@@ -25,6 +27,16 @@ export function setTerrain(id) {
 }
 
 export function heightAt(x, z) {
+  const h = baseHeight(x, z);
+  // islands (the docks): past the edge the ground slopes down into the sea
+  if (T.island) {
+    const d = Math.hypot(x, z);
+    if (d > T.island) return h - Math.min(14, (d - T.island) * 0.35);
+  }
+  return h;
+}
+
+function baseHeight(x, z) {
   const X = x * T.f + T.ox;
   const Z = z * T.f + T.oz;
   return (

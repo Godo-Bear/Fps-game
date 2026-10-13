@@ -20,6 +20,8 @@ function finish(c, repeat = 1) {
 export const GROUND_PALETTES = {
   plains: { base: '#b39b74', blots: ['#a08560', '#c2aa80', '#8f7a52', '#9c8f5a', '#7f7448', '#c9b48c'], strokes: ['#8a7c45', '#6e6538'], specks: ['#5d5141', '#d8c8a8'] },
   snow: { base: '#e6ebf0', blots: ['#d5dde6', '#f4f7fa', '#c9d3de', '#dfe6ee', '#bcc8d4', '#ffffff'], strokes: ['#c3ccd6', '#aeb9c6'], specks: ['#9aa6b4', '#ffffff'] },
+  mud: { base: '#6a6458', blots: ['#5a554a', '#76705f', '#4e4a40', '#6e6a5a', '#585e5a', '#807864'], strokes: ['#5a5a40', '#4a4a34'], specks: ['#3a3630', '#9a9282'] },
+  ash: { base: '#3a3330', blots: ['#2c2624', '#4a403a', '#241e1c', '#55463c', '#3e2a22', '#5a4a40'], strokes: ['#4a3a30', '#2e2420'], specks: ['#ff6a1a', '#6a5a50'] },
   forest: { base: '#4a4632', blots: ['#3c3a28', '#565236', '#2f3122', '#4f4a2e', '#3a4a2a', '#5a4a34'], strokes: ['#3f5a2a', '#2e4220'], specks: ['#2a241c', '#6a5e44'] },
 };
 
