@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
-import { EMOTES, MAPS, MODES, SOLO_MAP } from '../shared/modes.js';
+import { ALL_EMOTES, MAPS, MODES, SOLO_MAP, emoteSlots } from '../shared/modes.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
@@ -2464,13 +2464,22 @@ function setEmotes(open) {
   emoteMenu.open = open && game.state === 'playing';
   $('emotes').classList.toggle('hidden', !emoteMenu.open);
 }
-function sendEmote(i) {
+// slot: 0-7 in your emote menu (which emote is in each slot is up to you, see the Shop)
+function sendEmote(slot) {
   setEmotes(false);
-  if (!EMOTES[i]) return;
+  const i = emoteSlots(account.items, account.admin)[slot];
+  if (!ALL_EMOTES[i]) return;
   if (game.mode === 'mp' && mp.inMatch) mp.send({ t: 'emote', i });
-  else addChat(account.name, EMOTES[i], account.profile.color);
+  else addChat(account.name, ALL_EMOTES[i], account.profile.color);
 }
-$('emotes').innerHTML = EMOTES.map((e, i) => `<button data-emote="${i}"><b>${i + 1}</b>${e}</button>`).join('');
+function renderEmoteMenu() {
+  const html = emoteSlots(account.items, account.admin)
+    .map((e, slot) => `<button data-emote="${slot}"><b>${slot + 1}</b>${ALL_EMOTES[e]}</button>`)
+    .join('');
+  if ($('emotes').innerHTML !== html) $('emotes').innerHTML = html;
+}
+renderEmoteMenu();
+account.onChange(renderEmoteMenu);
 $('emotes').addEventListener('click', (e) => {
   const b = e.target.closest('[data-emote]');
   if (b) sendEmote(Number(b.dataset.emote));

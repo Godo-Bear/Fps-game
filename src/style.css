@@ -2148,3 +2148,30 @@ body.can-revive .t-revive {
 .party h4 {
   margin-top: 8px;
 }
+
+/* ---- shop emotes */
+.emote-preview {
+  font-weight: 700;
+  margin: 4px 0;
+}
+.emote-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.emote-slots label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.emote-slots select {
+  flex: 1;
+  min-width: 0;
+  font: 700 14px 'Rajdhani', sans-serif;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #f3e6cc;
+  border: 1px solid rgba(233, 217, 184, 0.35);
+  border-radius: 4px;
+}

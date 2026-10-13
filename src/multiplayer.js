@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EMOTES, MAPS, MODES, MP_MAPS, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
+import { ALL_EMOTES, MAPS, MODES, MP_MAPS, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 
@@ -391,8 +391,8 @@ export class Multiplayer {
         this.ctx.onStructureGone?.(m.id, m.by);
         break;
       case 'emote':
-        this.avatars.get(m.id)?.say(EMOTES[m.i] || '');
-        this.ctx.onChat(m.name, EMOTES[m.i] || '', this.teams ? TEAM_CSS[this._team(m.id)] : '#ffd38a', false);
+        this.avatars.get(m.id)?.say(ALL_EMOTES[m.i] || '');
+        this.ctx.onChat(m.name, ALL_EMOTES[m.i] || '', this.teams ? TEAM_CSS[this._team(m.id)] : '#ffd38a', false);
         break;
       case 'fx':
         if (this.ctx.onFx) this.ctx.onFx(m);

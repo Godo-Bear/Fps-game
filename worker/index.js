@@ -5,7 +5,7 @@ import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
 import { addMasteryKills, chooseSkin, cleanMastery } from '../shared/mastery.js';
-import { EMOTES, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
+import { ALL_EMOTES, EMOTES, canUseEmote, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -398,6 +398,12 @@ export class GameDB extends DurableObject {
     }
     if (path === '/shop/loadout' && method === 'POST') {
       const items = this._items(me);
+      if (Array.isArray(body.emotes)) {
+        // which emotes go in the Z menu
+        if (body.emotes.length !== EMOTES.length || !body.emotes.every((i) => canUseEmote(i, items, !!me.admin))) return err("You don't own that emote");
+        items.emotes = body.emotes;
+        return saveItems(items, me.coins);
+      }
       if (body.gun === null) delete items.loadout;
       else if (typeof body.gun === 'string' && items[`gun_${body.gun}`]) items.loadout = body.gun;
       else return err("You don't own that gun");
@@ -722,6 +728,7 @@ export class Room extends DurableObject {
               p.admin = !!user.admin;
               p.avatar = user.profile.avatar;
               p.color = user.profile.color;
+              p.items = user.items || {};
             }
           } catch {
             /* fall back to guest */
@@ -857,7 +864,8 @@ export class Room extends DurableObject {
         break;
       }
       case 'emote':
-        if (!Number.isInteger(m.i) || m.i < 0 || m.i >= EMOTES.length || now - (p.lastEmote || 0) < 800) return;
+        // shop emotes only for accounts that own them
+        if (!canUseEmote(m.i, p.items, p.admin) || now - (p.lastEmote || 0) < 800) return;
         p.lastEmote = now;
         this._broadcast({ t: 'emote', id: p.id, name: p.name, i: m.i });
         break;

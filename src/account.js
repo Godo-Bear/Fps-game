@@ -1,5 +1,6 @@
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, TITLES, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
+import { ALL_EMOTES, canUseEmote, emoteSlots } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
 import { GUNS } from './guns.js';
@@ -371,6 +372,18 @@ export class Account {
     else if (g.items?.[`gun_${gun}`]) g.items.loadout = gun;
     this._saveGuest();
   }
+  // which 8 emotes are in your Z menu
+  async setEmoteSlots(slots) {
+    if (this.user) {
+      const { user } = await this._api('/shop/loadout', { method: 'POST', body: { emotes: slots } });
+      this.user = user;
+      this._changed();
+      return;
+    }
+    if (!slots.every((i) => canUseEmote(i, this.guest.items))) throw new Error("You don't own that emote");
+    this.guest.items = { ...this.guest.items, emotes: slots };
+    this._saveGuest();
+  }
   async adminSetCoins(coins) {
     const { user } = await this._api('/admin/coins', { method: 'POST', body: { coins } });
     this.user = user;
@@ -650,6 +663,9 @@ export class AccountUI {
         if (!have) button = `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
         else if (items.loadout === def.gun) button = '<button class="btn small ghost" data-unequip="1">EQUIPPED ✓</button>';
         else button = `<button class="btn small ghost" data-equip="${def.gun}">EQUIP</button>`;
+      } else if (def.kind === 'emote') {
+        status = `<div class="emote-preview">${esc(ALL_EMOTES[def.emote])}</div>`;
+        button = have || a.admin ? '<span class="maxed">OWNED ✓</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
       } else {
         status = `<div class="owned-count">You have ${have}</div>`;
         button = price === null ? '<span class="maxed">MAX</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
@@ -679,6 +695,13 @@ export class AccountUI {
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>
       <h4>Items</h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
+      <h4>Emotes <span class="muted small">(press Z in game)</span></h4>
+      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'emote').map(card).join('')}</div>
+      <h4>Your emote menu <span class="muted small">(put bought emotes in any slot)</span></h4>
+      <div class="emote-slots">${emoteSlots(items, a.admin)
+        .map((cur, slot) => `<label><b>${slot + 1}</b><select data-slot="${slot}">${ALL_EMOTES.map((e, i) => (canUseEmote(i, items, a.admin) ? `<option value="${i}" ${i === cur ? 'selected' : ''}>${esc(e)}</option>` : '')).join('')}</select></label>`)
+        .join('')}</div>
+      ${a.loggedIn ? '' : '<p class="muted small">Bought emotes show to other players online only when you\'re logged in.</p>'}
       <h4>Cosmetics <span class="muted small">(skip the level requirement)</span></h4>
       <div class="cos-list">${cosmetics || '<p class="muted">You own every cosmetic!</p>'}</div>
       ${a.loggedIn ? '' : '<p class="muted small">Guest: coins and purchases are saved in this browser. Log in to keep them on your account.</p>'}`;
@@ -692,6 +715,13 @@ export class AccountUI {
           msg(err.message);
         }
       })
+    );
+    this.body.querySelectorAll('select[data-slot]').forEach((sel) =>
+      sel.addEventListener('change', () => {
+        const slots = emoteSlots(a.items, a.admin);
+        slots[Number(sel.dataset.slot)] = Number(sel.value);
+        a.setEmoteSlots(slots).then(() => msg('Emote menu saved'), (e) => msg(e.message));
+      }),
     );
     this.body.querySelectorAll('[data-equip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(b.dataset.equip).catch((e) => msg(e.message))));
     this.body.querySelectorAll('[data-unequip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(null).catch((e) => msg(e.message))));

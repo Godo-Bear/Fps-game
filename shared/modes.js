@@ -52,3 +52,18 @@ export const MAPS = {
 
 // Quick callouts (Z): shown above your head and in the chat.
 export const EMOTES = ['👋 Hi!', '👍 Nice!', '🆘 Help!', '📍 Over here!', '🔄 Reloading!', '😂 LOL', '🧟 Zombies!', '🤝 GG'];
+// More emotes from the shop: [text, price in coins]
+export const SHOP_EMOTES = [
+  ['🔥 On fire!', 150], ['💀 Too easy', 150], ['🏃 RUN!', 150], ['🎯 Headshot!', 200], ['🫡 Salute', 200], ['💤 Boring...', 200],
+  ['🧠 Big brain', 250], ['🤡 Clown', 250], ['🧟 Braaains...', 250], ['👑 Bow down', 300], ['🍗 Winner winner', 300], ['🚀 To the moon', 400],
+];
+export const ALL_EMOTES = [...EMOTES, ...SHOP_EMOTES.map((e) => e[0])];
+export const emoteItemId = (i) => `emote_${i}`; // i: index in ALL_EMOTES
+export const canUseEmote = (i, items, admin = false) =>
+  Number.isInteger(i) && i >= 0 && (i < EMOTES.length || (i < ALL_EMOTES.length && (admin || !!items?.[emoteItemId(i)])));
+// The 8 emotes in your Z menu (you can swap bought ones in).
+export function emoteSlots(items, admin = false) {
+  const s = items?.emotes;
+  if (Array.isArray(s) && s.length === EMOTES.length && s.every((i) => canUseEmote(i, items, admin))) return [...s];
+  return EMOTES.map((_, i) => i);
+}
