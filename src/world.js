@@ -1,11 +1,43 @@
 import * as THREE from 'three';
-import { ARENA_RADIUS, Colliders, heightAt, mulberry32 } from './terrain.js';
-import { grimeTexture, groundTexture, planksTexture, roadTexture, softDotTexture, textTexture } from './textures.js';
+import { FFA_SPAWNS, FLAG_BASES, POINT, TEAM_SPAWNS } from '../shared/modes.js';
+import { ARENA_RADIUS, Colliders, heightAt, mulberry32, setTerrain } from './terrain.js';
+import { GROUND_PALETTES, grimeTexture, groundTexture, planksTexture, roadTexture, softDotTexture, textTexture } from './textures.js';
 
 const PI = Math.PI;
 
-// Builds the abandoned plains map: terrain, ruined houses, plane wrecks, cars and clutter.
-export function buildWorld(scene) {
+// Look of each map. Layouts are further down in buildWorld.
+export const THEMES = {
+  plains: {
+    name: 'Dead Plains', desc: 'Sun-baked farmland: a ruined town, a crashed airliner, a water tower.',
+    skyTop: 0x6f8ba3, skyHorizon: 0xd8b88e, sunDir: [-0.55, 0.32, -0.77], sunColor: 0xffd3a1, hemiSky: 0xdfe4e8, hemiGround: 0x8a7458,
+    ground: 'plains', groundTint: [0xffffff, 0xdcd6b0, 0xcab89a], grass: { count: 7000, shades: [0x9c8b52, 0xb39f62, 0x857a48, 0xa69062, 0x7a7444], h: 1 },
+    horizon: 'mesas', horizonColor: 0xa47e5f, road: true, tumbleweeds: true, motes: 0xe8d6b0,
+    weathers: ['clear', 'clear', 'overcast', 'dust', 'rain', 'storm'], weather: 'clear',
+  },
+  frost: {
+    name: 'Frostbite Outpost', desc: 'An abandoned military base buried in snow. Bunkers, watchtowers, a downed chopper.',
+    skyTop: 0x7d93ab, skyHorizon: 0xd9e2ea, sunDir: [0.5, 0.22, -0.84], sunColor: 0xfff0e0, hemiSky: 0xe8f0f8, hemiGround: 0xa8b4c0,
+    ground: 'snow', groundTint: [0xffffff, 0xeef3f8, 0xdde6ee], grass: { count: 2500, shades: [0x8a8070, 0x9a9282, 0x6a6458], h: 0.6 },
+    horizon: 'mountains', horizonColor: 0xc8d2dc, road: false, tumbleweeds: false, motes: 0xffffff, snowfall: true,
+    weathers: ['frostclear', 'snow', 'snow', 'blizzard', 'frostfog'], weather: 'snow',
+  },
+  forest: {
+    name: 'Blackwood Hollow', desc: 'A dark pine forest at dusk: cabins, a ruined church, a graveyard and toxic swamp.',
+    skyTop: 0x2e3350, skyHorizon: 0xb0705a, sunDir: [-0.7, 0.12, 0.7], sunColor: 0xff9a6a, hemiSky: 0x9aa0c0, hemiGround: 0x3a3a28,
+    ground: 'forest', groundTint: [0xffffff, 0xd8e0c8, 0xc8c0a8], grass: { count: 9000, shades: [0x3f5a2a, 0x4f6a30, 0x2e4220, 0x5a6a3a], h: 1.2 },
+    horizon: 'treeline', horizonColor: 0x1e2a1e, road: false, tumbleweeds: false, motes: 0xc8ff8a, fireflies: true,
+    weathers: ['dusk', 'dusk', 'mist', 'rain', 'storm'], weather: 'dusk',
+  },
+};
+export const MAP_IDS = Object.keys(THEMES);
+
+// Builds a map: terrain, buildings, wrecks and clutter. Returns collision data and update/dispose hooks.
+export function buildWorld(scene, mapId = 'plains') {
+  if (!THEMES[mapId]) mapId = 'plains';
+  const theme = THEMES[mapId];
+  setTerrain(mapId);
+  const root = new THREE.Group();
+  scene.add(root);
   const rng = mulberry32(1337);
   const rand = (a, b) => a + rng() * (b - a);
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
@@ -14,7 +46,10 @@ export function buildWorld(scene) {
   const solids = []; // meshes that stop bullets
   const reserved = []; // circles kept clear of random clutter
   const lootSpots = []; // places weapons can spawn (some are on top of things, to reward climbing)
+  const ladders = []; // { x, z, nx, nz, bottom, top } in world space; n points away from the wall
+  const pendingLadders = [];
   const updaters = [];
+  const hazards = []; // toxic pools etc: { x, z, r, dps }
 
   const grime = grimeTexture();
   const mat = (color, opts = {}) =>
@@ -48,6 +83,18 @@ export function buildWorld(scene) {
     paintC: mat(0x5d6b7a),
     paintD: mat(0x9b8c6a),
     redPaint: mat(0x8b3a2f),
+    snow: mat(0xf4f7fa),
+    pine: mat(0x2f4a30),
+    pineDark: mat(0x22362a),
+    olive: mat(0x5a6340),
+    sandbag: mat(0xa89a74),
+    stone: mat(0x8a8780),
+    concreteDark: mat(0x7a7870),
+    containerA: mat(0x8a3a2a),
+    containerB: mat(0x2f5a7a),
+    containerC: mat(0x6a7a3a),
+    toxic: new THREE.MeshStandardMaterial({ color: 0x7adf3a, emissive: 0x3a9a10, roughness: 0.2, transparent: true, opacity: 0.85 }),
+    ice: new THREE.MeshStandardMaterial({ color: 0xcfe6f5, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85, polygonOffset: true, polygonOffsetFactor: -2 }),
   };
 
   const meshOf = (geo, material, { shadow = true } = {}) => {
@@ -79,22 +126,27 @@ export function buildWorld(scene) {
   const place = (obj, x, z, rot = 0, sink = 0) => {
     obj.position.set(x, heightAt(x, z) - sink, z);
     obj.rotation.y = rot;
-    scene.add(obj);
+    root.add(obj);
     return obj;
   };
   const reserve = (x, z, r) => reserved.push({ x, z, r });
+  // keep multiplayer spawns, flags and the capture point clear on every map
+  for (const team of Object.values(TEAM_SPAWNS)) for (const [x, z] of team) reserve(x, z, 3);
+  for (const [x, z] of FFA_SPAWNS) reserve(x, z, 2.5);
+  for (const [x, z] of Object.values(FLAG_BASES)) reserve(x, z, 4);
+  reserve(POINT.x, POINT.z, POINT.radius + 2);
   const isFree = (x, z, r) => {
     if (Math.hypot(x, z) < 12) return false;
-    if (Math.abs(z - 24) < 6) return false; // keep the road clear-ish
+    if (theme.road && Math.abs(z - 24) < 6) return false; // keep the road clear-ish
     for (const o of reserved) if (Math.hypot(x - o.x, z - o.z) < o.r + r) return false;
     return true;
   };
 
   // ---------------------------------------------------------------- sky & atmosphere
-  const skyColorTop = new THREE.Color(0x6f8ba3);
-  const skyColorHorizon = new THREE.Color(0xd8b88e);
+  const skyColorTop = new THREE.Color(theme.skyTop);
+  const skyColorHorizon = new THREE.Color(theme.skyHorizon);
   scene.fog = new THREE.Fog(skyColorHorizon.clone(), 35, 300);
-  const sunDir = new THREE.Vector3(-0.55, 0.32, -0.77).normalize();
+  const sunDir = new THREE.Vector3(...theme.sunDir).normalize();
 
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(900, 32, 16),
@@ -124,16 +176,16 @@ export function buildWorld(scene) {
     })
   );
   sky.renderOrder = -1;
-  scene.add(sky);
+  root.add(sky);
   updaters.push((dt, t, p) => sky.position.copy(p));
 
-  const hemi = new THREE.HemisphereLight(0xdfe4e8, 0x8a7458, 1.9);
-  scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, 1.9);
+  root.add(hemi);
   // soft bounce light from the opposite side so things facing away from the sun aren't pitch black
   const fill = new THREE.DirectionalLight(0xc9d4e0, 0.7);
   fill.position.set(-sunDir.x, 0.6, -sunDir.z);
-  scene.add(fill);
-  const sun = new THREE.DirectionalLight(0xffd3a1, 2.6);
+  root.add(fill);
+  const sun = new THREE.DirectionalLight(theme.sunColor, 2.6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
@@ -143,7 +195,7 @@ export function buildWorld(scene) {
   sc.far = 240;
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.04;
-  scene.add(sun, sun.target);
+  root.add(sun, sun.target);
   updaters.push((dt, t, p) => {
     sun.position.set(p.x + sunDir.x * 110, p.y + sunDir.y * 110, p.z + sunDir.z * 110);
     sun.target.position.set(p.x, p.y, p.z);
@@ -157,9 +209,9 @@ export function buildWorld(scene) {
     geo.rotateX(-PI / 2);
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
-    const cDry = new THREE.Color(0xffffff);
-    const cOlive = new THREE.Color(0xdcd6b0);
-    const cDark = new THREE.Color(0xcab89a);
+    const cDry = new THREE.Color(theme.groundTint[0]);
+    const cOlive = new THREE.Color(theme.groundTint[1]);
+    const cDark = new THREE.Color(theme.groundTint[2]);
     const tmp = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
@@ -174,10 +226,10 @@ export function buildWorld(scene) {
     geo.computeVertexNormals();
     const ground = new THREE.Mesh(
       geo,
-      new THREE.MeshStandardMaterial({ map: groundTexture(), vertexColors: true, roughness: 1, metalness: 0 })
+      new THREE.MeshStandardMaterial({ map: groundTexture(GROUND_PALETTES[theme.ground]), vertexColors: true, roughness: 1, metalness: 0 })
     );
     ground.receiveShadow = true;
-    scene.add(ground);
+    root.add(ground);
   }
 
   // A flat strip/patch that follows the terrain (roads, scorch marks, shadows of debris).
@@ -199,12 +251,12 @@ export function buildWorld(scene) {
     m.position.set(x, 0, z);
     m.rotation.y = rot;
     m.receiveShadow = true;
-    scene.add(m);
+    root.add(m);
     return m;
   };
 
   // Road across the map
-  conform(
+  if (theme.road) conform(
     300, 7, 150, 2, 0, 24, 0,
     new THREE.MeshStandardMaterial({ map: roadTexture(), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2 })
   );
@@ -214,18 +266,46 @@ export function buildWorld(scene) {
     polygonOffset: true, polygonOffsetFactor: -4,
   });
 
-  // ---------------------------------------------------------------- distant mesas
+  // ---------------------------------------------------------------- the horizon: mesas, mountains or a treeline
   {
-    const mesaMat = new THREE.MeshStandardMaterial({ color: 0xa47e5f, roughness: 1, flatShading: true });
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * PI * 2 + rand(-0.15, 0.15);
-      const r = rand(290, 360);
-      const h = rand(25, 60);
-      const rb = rand(30, 60);
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(rb * rand(0.55, 0.8), rb, h, 7), mesaMat);
-      m.position.set(Math.cos(a) * r, h / 2 - 4, Math.sin(a) * r);
-      m.rotation.y = rand(0, PI);
-      scene.add(m);
+    const farMat = new THREE.MeshStandardMaterial({ color: theme.horizonColor, roughness: 1, flatShading: true });
+    if (theme.horizon === 'mesas') {
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * PI * 2 + rand(-0.15, 0.15);
+        const r = rand(290, 360);
+        const h = rand(25, 60);
+        const rb = rand(30, 60);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(rb * rand(0.55, 0.8), rb, h, 7), farMat);
+        m.position.set(Math.cos(a) * r, h / 2 - 4, Math.sin(a) * r);
+        m.rotation.y = rand(0, PI);
+        root.add(m);
+      }
+    } else if (theme.horizon === 'mountains') {
+      const capMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
+      for (let i = 0; i < 22; i++) {
+        const a = (i / 22) * PI * 2 + rand(-0.1, 0.1);
+        const r = rand(300, 380);
+        const h = rand(60, 140);
+        const rb = rand(45, 80);
+        const m = new THREE.Mesh(new THREE.ConeGeometry(rb, h, 6), farMat);
+        m.position.set(Math.cos(a) * r, h / 2 - 6, Math.sin(a) * r);
+        m.rotation.y = rand(0, PI);
+        root.add(m);
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(rb * 0.36, h * 0.36, 6), capMat);
+        cap.position.set(m.position.x, h - 6 - h * 0.18 + 0.5, m.position.z);
+        cap.rotation.y = m.rotation.y;
+        root.add(cap);
+      }
+    } else {
+      // a wall of dark pines all round
+      for (let i = 0; i < 160; i++) {
+        const a = rand(0, PI * 2);
+        const r = rand(190, 300);
+        const h = rand(18, 34);
+        const m = new THREE.Mesh(new THREE.ConeGeometry(h * 0.28, h, 6), farMat);
+        m.position.set(Math.cos(a) * r, h / 2 - 2, Math.sin(a) * r);
+        root.add(m);
+      }
     }
   }
 
@@ -526,6 +606,33 @@ export function buildWorld(scene) {
   }
 
   // ---------------------------------------------------------------- structures
+  // A ladder against something, built in the parent's local space. (nx, nz) points out from the wall.
+  function ladder(parent, lx, lz, nx, nz, height) {
+    const g = new THREE.Group();
+    g.position.set(lx, 0, lz);
+    g.rotation.y = Math.atan2(nx, nz);
+    for (const side of [-0.28, 0.28]) {
+      const rail = box(0.06, height + 0.9, 0.06, M.metalDark);
+      rail.position.set(side, (height + 0.9) / 2, 0);
+      g.add(rail);
+    }
+    for (let y = 0.3; y < height + 0.5; y += 0.35) {
+      const rung = box(0.56, 0.04, 0.04, M.metalDark);
+      rung.position.set(0, y, 0);
+      rung.castShadow = false;
+      g.add(rung);
+    }
+    parent.add(g);
+    pendingLadders.push({ parent, lx, lz, nx, nz, height });
+  }
+
+  // Converts a point in a placed group's local XZ space to world space.
+  const toWorld = (g, lx, lz) => {
+    const c = Math.cos(g.rotation.y);
+    const s = Math.sin(g.rotation.y);
+    return { x: g.position.x + c * lx + s * lz, z: g.position.z - s * lx + c * lz };
+  };
+
   function waterTower(x, z) {
     const g = new THREE.Group();
     const lean = new THREE.Group();
@@ -559,11 +666,37 @@ export function buildWorld(scene) {
     label.position.y = 11.9;
     label.rotation.y = PI;
     lean.add(label);
-    lean.rotation.z = 0.06;
     g.add(lean);
+
+    // walkway around the tank, reached by a ladder
+    const deck = box(7, 0.15, 7, M.planks);
+    deck.position.y = 9.72;
+    deck.userData.overhead = true;
+    g.add(solid(deck));
+    proxy(g, 4.8, 3.6, 4.8, 0, 11.6, 0).userData.overhead = true;
+    const railSegs = [
+      [7, 0.1, 0, -3.45], [7, 0.1, 0, 3.45], [0.1, 7, -3.45, 0],
+      [0.1, 2.85, 3.45, -2.07], [0.1, 2.85, 3.45, 2.07],
+    ];
+    for (const [w, d, rx, rz] of railSegs) {
+      const rail = box(w, 0.08, d, M.rust);
+      rail.position.set(rx, 10.75, rz);
+      g.add(rail);
+      const mid = box(w, 0.06, d, M.rust);
+      mid.position.set(rx, 10.3, rz);
+      g.add(mid);
+      proxy(g, Math.max(w, 0.15), 1.0, Math.max(d, 0.15), rx, 10.3, rz).userData.overhead = true;
+    }
+    for (const [px, pz] of [[-3.45, -3.45], [3.45, -3.45], [-3.45, 3.45], [3.45, 3.45], [3.45, -0.65], [3.45, 0.65]]) {
+      const post = box(0.08, 1.0, 0.08, M.rust);
+      post.position.set(px, 10.3, pz);
+      g.add(post);
+    }
+    ladder(g, 3.6, 0, 1, 0, 9.8);
     place(g, x, z, 0.4);
     reserve(x, z, 5);
-    lootSpots.push({ x, z });
+    const top = toWorld(g, 0, -3);
+    lootSpots.push({ x: top.x, z: top.z, high: true });
   }
 
   function windmill(x, z) {
@@ -602,9 +735,14 @@ export function buildWorld(scene) {
     vane.position.set(0, 0.2, -1.6);
     head.add(vane);
     g.add(head);
+    const deck = box(2.7, 0.12, 2.7, M.planks);
+    deck.position.y = 9.0;
+    deck.userData.overhead = true;
+    g.add(solid(deck));
+    ladder(g, 1.42, 0, 1, 0, 9.06);
     place(g, x, z, 0.8);
     reserve(x, z, 3);
-    lootSpots.push({ x, z });
+    lootSpots.push({ x, z, high: true });
     updaters.push((dt, t) => {
       rotor.rotation.z += dt * (0.6 + Math.sin(t * 0.3) * 0.4);
     });
@@ -686,7 +824,7 @@ export function buildWorld(scene) {
     m.scale.set(rand(0.9, 1.4), rand(0.5, 0.8), rand(0.9, 1.3));
     m.rotation.set(rand(0, PI), rand(0, PI), rand(0, PI));
     m.position.set(x, heightAt(x, z) + r * 0.2, z);
-    scene.add(m);
+    root.add(m);
     if (r > 0.8) {
       solid(m, false);
       colliders.add(x, z, r * 0.8, r * 0.8, rand(0, PI), heightAt(x, z) + r * 0.75);
@@ -703,7 +841,7 @@ export function buildWorld(scene) {
     } else {
       m.position.set(x, heightAt(x, z) + 0.47, z);
     }
-    scene.add(solid(m, false));
+    root.add(solid(m, false));
     colliders.add(x, z, 0.42, 0.42, 0, heightAt(x, z) + (tipped ? 0.7 : 0.95));
     reserve(x, z, 0.8);
   }
@@ -713,7 +851,7 @@ export function buildWorld(scene) {
     const m = box(s, s, s, M.wood);
     m.position.set(x, heightAt(x, z) + s / 2 - 0.05, z);
     m.rotation.set(0, rand(0, PI), rand(-0.05, 0.05));
-    scene.add(solid(m));
+    root.add(solid(m));
     reserve(x, z, s);
   }
 
@@ -801,7 +939,7 @@ export function buildWorld(scene) {
         if (!p || rng() < 0.4) continue;
         for (const off of [-0.9, 0.9]) {
           const pts = [new THREE.Vector3(p.x, p.y, p.z + off), new THREE.Vector3(p.x + (a ? 4 : -4), heightAt(p.x, p.z) + 0.1, p.z + off + rand(-1, 1))];
-          scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+          root.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
         }
         continue;
       }
@@ -815,7 +953,7 @@ export function buildWorld(scene) {
             a.z + (b.z - a.z) * t + off
           ));
         }
-        scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+        root.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
       }
     }
   }
@@ -838,44 +976,441 @@ export function buildWorld(scene) {
     place(outer, x, z, rot);
   }
 
-  // ---------------------------------------------------------------- layout
-  // Town along the road
-  brokenHouse(-42, 38, 0, 8, 6, { graffiti: 'HELP' });
-  brokenHouse(-25, 37, 0, 7, 6);
-  brokenHouse(14, 38, 0, 9, 7, { wall: M.brick });
-  brokenHouse(33, 37, 0, 8, 6, { graffiti: 'RUN' });
-  brokenHouse(55, 39, 0, 8, 7);
-  brokenHouse(-30, 11, PI, 8, 6);
-  brokenHouse(28, 10, PI, 7, 6, { wall: M.woodWall });
-  // Farmstead
-  brokenHouse(-62, -28, 0.3, 9, 7, { wall: M.woodWall });
-  brokenHouse(-42, -52, -0.2, 14, 10, { h: 4.6, wall: M.barnRed, chimney: false });
-  fenceLine(-78, -12, -40, -12);
-  fenceLine(-78, -12, -82, -60);
-  fenceLine(-82, -60, -60, -70);
-  fenceLine(-28, -40, -26, -66);
-  for (let i = 0; i < 8; i++) hayBale(-58 + rand(-10, 10), -46 + rand(-8, 8));
-  windmill(-74, -48);
+  // ---------------------------------------------------------------- more props (snow base / forest)
+  function pineTree(x, z, { snowy = false, dead = false, scale = 1 } = {}) {
+    const g = new THREE.Group();
+    const h = rand(6, 10) * scale;
+    const trunk = cyl(0.14 * scale, 0.3 * scale, h * 0.5, M.tree, 7);
+    trunk.position.y = h * 0.25;
+    g.add(trunk);
+    if (!dead) {
+      const layers = 4;
+      for (let i = 0; i < layers; i++) {
+        const r = (1 - i / layers) * 2.2 * scale + 0.4;
+        const ch = h * 0.34;
+        const cone = meshOf(new THREE.ConeGeometry(r, ch, 7), i % 2 ? M.pine : M.pineDark);
+        cone.position.y = h * 0.3 + i * h * 0.17 + ch / 2;
+        cone.rotation.y = rand(0, PI);
+        g.add(cone);
+        if (snowy) {
+          const cap = meshOf(new THREE.ConeGeometry(r * 0.75, ch * 0.45, 7), M.snow);
+          cap.position.y = cone.position.y + ch * 0.28;
+          cap.rotation.y = cone.rotation.y;
+          g.add(cap);
+        }
+      }
+    } else {
+      const top = cyl(0.05, 0.14 * scale, h * 0.5, M.tree, 6);
+      top.position.y = h * 0.75;
+      g.add(top);
+      for (let i = 0; i < 6; i++) {
+        const pivot = new THREE.Group();
+        pivot.position.y = rand(h * 0.4, h * 0.9);
+        pivot.rotation.y = rand(0, PI * 2);
+        const bl = rand(0.8, 1.8);
+        const br = cyl(0.02, 0.06, bl, M.tree, 4);
+        br.rotation.z = -1.2;
+        br.position.set(Math.sin(1.2) * bl * 0.5, Math.cos(1.2) * bl * 0.5, 0);
+        pivot.add(br);
+        g.add(pivot);
+      }
+    }
+    proxy(g, 0.6 * scale, h, 0.6 * scale, 0, h / 2, 0);
+    place(g, x, z, rand(0, PI * 2), 0.1);
+    reserve(x, z, 1.6 * scale);
+  }
 
-  // Wrecks
-  planeWreck(48, -42, 0.55, 1, true);
-  planeWreck(-52, 74, -0.8, 0.55, false);
-  waterTower(22, 72);
-  gasStation(78, 8, -PI / 2);
+  function sandbags(x, z, rot, len = 4) {
+    const g = new THREE.Group();
+    const n = Math.round(len / 0.6);
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < n - (row === 2 ? 1 : 0); i++) {
+        const b = box(0.62, 0.3, 0.42, M.sandbag);
+        b.position.set(-len / 2 + 0.3 + i * 0.6 + (row % 2) * 0.3, 0.15 + row * 0.3, rand(-0.03, 0.03));
+        b.rotation.y = rand(-0.08, 0.08);
+        g.add(b);
+      }
+    }
+    proxy(g, len, 0.95, 0.5, 0, 0.475, 0);
+    g.children.forEach((c) => c.isMesh && c.visible && solid(c, false));
+    place(g, x, z, rot);
+    reserve(x, z, len / 2 + 0.5);
+  }
 
-  car(-8, 22.5, 0.05);
-  car(17, 26, 2.9, { flipped: true });
-  car(64, 23, 0.2);
-  car(-74, 25, -0.35);
-  car(6, -34, 1.2);
-  car(-18, 60, 2.2);
-  car(86, -28, 0.9, { flipped: true });
-  car(40, 55, -1.4);
+  // Tall lookout with a ladder up to a walled platform.
+  function watchtower(x, z, rot, { wood = M.darkWood, h = 6 } = {}) {
+    const g = new THREE.Group();
+    for (const [lx, lz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) {
+      const leg = box(0.22, h + 2.6, 0.22, wood);
+      leg.position.set(lx, (h + 2.6) / 2, lz);
+      g.add(solid(leg));
+    }
+    for (const y of [h * 0.33, h * 0.66]) {
+      const bx = box(3, 0.12, 0.12, wood);
+      bx.position.set(0, y, -1.4);
+      g.add(bx);
+      const bx2 = bx.clone();
+      bx2.position.z = 1.4;
+      g.add(bx2);
+    }
+    const deck = box(3.4, 0.16, 3.4, M.planks);
+    deck.position.y = h;
+    deck.userData.overhead = true;
+    g.add(solid(deck));
+    // low walls with a gap for the ladder (on +x)
+    const walls = [[3.4, 0.08, 0, -1.66], [3.4, 0.08, 0, 1.66], [0.08, 3.4, -1.66, 0], [0.08, 1.1, 1.66, -1.15], [0.08, 1.1, 1.66, 1.15]];
+    for (const [w, d, wx, wz] of walls) {
+      const wall = box(w, 1.0, d, wood);
+      wall.position.set(wx, h + 0.58, wz);
+      wall.userData.overhead = true;
+      g.add(solid(wall));
+    }
+    const roof = box(3.9, 0.15, 3.9, M.roof);
+    roof.position.y = h + 2.55;
+    roof.rotation.z = 0.06;
+    g.add(roof);
+    ladder(g, 1.95, 0, 1, 0, h + 0.08);
+    place(g, x, z, rot);
+    reserve(x, z, 3);
+    const top = toWorld(g, -0.6, 0);
+    lootSpots.push({ x: top.x, z: top.z, high: true });
+  }
 
-  roadSign(-95, 19, PI / 2, ['DUSTWATER', 'POP. 0']);
-  roadSign(95, 29, -PI / 2, ['NO SURVIVORS', 'TURN BACK']);
+  // Concrete bunker with a door, firing slits and a flat roof you can climb onto.
+  function bunker(x, z, rot, w = 8, d = 6) {
+    const g = new THREE.Group();
+    const H = 2.5;
+    const T = 0.45;
+    const seg = (len, cx, cz, alongX, door) => {
+      const parts = door ? [[-len / 2, -0.8], [0.8, len / 2]] : [[-len / 2, len / 2]];
+      for (const [a, b] of parts) {
+        const L = b - a;
+        const m = box(alongX ? L : T, H, alongX ? T : L, M.concrete);
+        m.position.set(alongX ? cx + (a + b) / 2 : cx, H / 2, alongX ? cz : cz + (a + b) / 2);
+        g.add(solid(m));
+      }
+      if (door) {
+        const lintel = box(alongX ? 1.6 : T, 0.5, alongX ? T : 1.6, M.concrete);
+        lintel.position.set(cx, H - 0.25, cz);
+        lintel.userData.overhead = true;
+        g.add(solid(lintel));
+      }
+    };
+    seg(w, 0, -d / 2, true, true);
+    seg(w, 0, d / 2, true, false);
+    seg(d - T, -w / 2, 0, false, false);
+    seg(d - T, w / 2, 0, false, false);
+    const roof = box(w + 0.6, 0.35, d + 0.6, M.concreteDark);
+    roof.position.y = H + 0.17;
+    roof.userData.overhead = true;
+    g.add(solid(roof));
+    const slit = box(w * 0.6, 0.18, 0.05, M.glass);
+    slit.position.set(0, H - 0.6, d / 2 + 0.23);
+    g.add(slit);
+    ladder(g, 0, d / 2 + 0.6, 0, 1, H + 0.35);
+    place(g, x, z, rot);
+    reserve(x, z, Math.hypot(w, d) / 2 + 1.5);
+    const top = toWorld(g, w / 4, 0);
+    lootSpots.push({ x: top.x, z: top.z, high: true });
+  }
 
-  powerLine(-110, 31, 110, 31);
+  function truck(x, z, rot) {
+    const g = new THREE.Group();
+    const cab = box(2.0, 1.6, 2.3, M.olive);
+    cab.position.set(2.2, 1.45, 0);
+    g.add(solid(cab, false));
+    const glass = box(0.05, 0.6, 1.9, M.glass);
+    glass.position.set(3.22, 1.7, 0);
+    g.add(glass);
+    const bed = box(4.4, 0.3, 2.4, M.olive);
+    bed.position.set(-1.1, 1.0, 0);
+    g.add(solid(bed, false));
+    const cover = box(4.2, 1.6, 2.35, M.sandbag);
+    cover.position.set(-1.1, 1.95, 0);
+    g.add(solid(cover, false));
+    for (const [wx, wz] of [[2.3, 1.1], [2.3, -1.1], [-0.5, 1.1], [-0.5, -1.1], [-2.3, 1.1], [-2.3, -1.1]]) {
+      const wheel = cyl(0.5, 0.5, 0.35, M.rubber, 12);
+      wheel.rotation.x = PI / 2;
+      wheel.position.set(wx, 0.5, wz);
+      g.add(wheel);
+    }
+    proxy(g, 2.0, 2.25, 2.3, 2.2, 1.12, 0);
+    proxy(g, 4.4, 2.75, 2.4, -1.1, 1.37, 0);
+    place(g, x, z, rot);
+    reserve(x, z, 4);
+  }
+
+  function container(x, z, rot, material) {
+    const g = new THREE.Group();
+    const c = box(6, 2.6, 2.4, material);
+    c.position.y = 1.3;
+    g.add(solid(c));
+    for (let i = -2.7; i <= 2.7; i += 0.45) {
+      const rib = box(0.06, 2.5, 2.46, material);
+      rib.position.set(i, 1.3, 0);
+      rib.castShadow = false;
+      g.add(rib);
+    }
+    place(g, x, z, rot);
+    reserve(x, z, 3.5);
+    // crate next to it so you can climb up
+    const side = toWorld(g, 1.5, 1.9);
+    crate(side.x, side.z);
+    const top = toWorld(g, 0, 0);
+    lootSpots.push({ x: top.x, z: top.z, high: true });
+  }
+
+  function heliWreck(x, z, rot) {
+    const g = new THREE.Group();
+    const body = meshOf(new THREE.SphereGeometry(1.6, 14, 10), M.olive);
+    body.scale.set(1.6, 1, 1);
+    body.position.y = 1.2;
+    body.rotation.z = 0.25;
+    g.add(solid(body, false));
+    const glassNose = meshOf(new THREE.SphereGeometry(1.1, 12, 8, 0, PI * 2, 0, PI / 2), M.glass);
+    glassNose.rotation.z = -PI / 2 - 0.3;
+    glassNose.position.set(1.9, 1.3, 0);
+    g.add(glassNose);
+    const boom = cyl(0.25, 0.5, 6, M.olive, 10);
+    boom.rotation.z = PI / 2 + 0.18;
+    boom.position.set(-4.2, 0.9, 0.3);
+    g.add(solid(boom, false));
+    const tailRotor = box(0.1, 1.8, 0.2, M.metalDark);
+    tailRotor.position.set(-7, 1.5, 0.55);
+    tailRotor.rotation.x = 0.8;
+    g.add(tailRotor);
+    for (const sz of [-1.1, 1.1]) {
+      const skid = cyl(0.06, 0.06, 4, M.metalDark, 6);
+      skid.rotation.z = PI / 2;
+      skid.position.set(0.3, 0.1, sz);
+      g.add(skid);
+    }
+    const mast = cyl(0.12, 0.12, 0.6, M.metalDark, 6);
+    mast.position.set(0, 2.6, 0);
+    g.add(mast);
+    // broken rotor blades: one bent on top, others thrown into the snow
+    const blade = box(5.5, 0.06, 0.4, M.metalDark);
+    blade.position.set(0.5, 2.85, 1.4);
+    blade.rotation.set(0.2, 0.4, -0.15);
+    g.add(blade);
+    for (let i = 0; i < 3; i++) {
+      const b = box(rand(2.5, 4.5), 0.06, 0.4, M.metalDark);
+      b.position.set(rand(-8, 8), 0.12, rand(-7, 7));
+      b.rotation.set(rand(-0.2, 0.2), rand(0, PI), rand(-0.2, 0.2));
+      g.add(b);
+    }
+    proxy(g, 5, 2.4, 3.0, 0.2, 1.2, 0);
+    proxy(g, 5.5, 1.2, 0.9, -4.3, 0.6, 0.3);
+    place(g, x, z, rot, 0.2);
+    conform(16, 14, 8, 8, x, z, rot, scorchMat, 0.06);
+    reserve(x, z, 9);
+    const local = new THREE.Vector3(0, 2, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+    smokeSources.push(new THREE.Vector3(x + local.x, heightAt(x, z) + 2, z + local.z));
+    lootSpots.push({ x: toWorld(g, 0, 3).x, z: toWorld(g, 0, 3).z });
+  }
+
+  function radioMast(x, z) {
+    const g = new THREE.Group();
+    const H = 22;
+    for (const [lx, lz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) {
+      const leg = box(0.1, H, 0.1, M.redPaint);
+      leg.position.set(lx * (1 - 0), H / 2, lz);
+      g.add(leg);
+    }
+    for (let y = 1; y < H; y += 1.6) {
+      const ring = box(1.3, 0.06, 1.3, M.metalDark);
+      ring.position.y = y;
+      ring.scale.y = 0.5;
+      g.add(ring);
+    }
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a1a }));
+    light.position.y = H + 0.3;
+    g.add(light);
+    updaters.push((dt, t) => {
+      light.visible = Math.sin(t * 3) > 0;
+    });
+    proxy(g, 1.4, H, 1.4, 0, H / 2, 0);
+    place(g, x, z, 0);
+    reserve(x, z, 2);
+  }
+
+  function fuelTank(x, z, rot) {
+    const g = new THREE.Group();
+    const tank = cyl(1.3, 1.3, 7, M.metal, 16);
+    tank.rotation.z = PI / 2;
+    tank.position.y = 1.8;
+    g.add(solid(tank, false));
+    for (const sx of [-2.5, 2.5]) {
+      const sup = box(0.3, 1.2, 2.2, M.concreteDark);
+      sup.position.set(sx, 0.6, 0);
+      g.add(sup);
+    }
+    const stripe = cyl(1.32, 1.32, 1, M.redPaint, 16);
+    stripe.rotation.z = PI / 2;
+    stripe.position.y = 1.8;
+    g.add(stripe);
+    proxy(g, 7, 3.1, 2.6, 0, 1.55, 0);
+    place(g, x, z, rot);
+    reserve(x, z, 4.5);
+  }
+
+  function frozenLake(x, z, r) {
+    const geo = new THREE.CircleGeometry(r, 40);
+    geo.rotateX(-PI / 2);
+    const m = new THREE.Mesh(geo, M.ice);
+    m.position.set(x, heightAt(x, z) + 0.3, z);
+    m.receiveShadow = true;
+    root.add(m);
+    reserve(x, z, r);
+    // cracks and a snowy rim
+    for (let i = 0; i < 10; i++) {
+      const a = rand(0, PI * 2);
+      const crack = new THREE.Mesh(new THREE.PlaneGeometry(rand(2, 6), 0.06), new THREE.MeshBasicMaterial({ color: 0x8aa8c0 }));
+      crack.rotation.set(-PI / 2, 0, a);
+      crack.position.set(x + Math.cos(a) * rand(0, r * 0.7), m.position.y + 0.01, z + Math.sin(a) * rand(0, r * 0.7));
+      root.add(crack);
+    }
+  }
+
+  function church(x, z, rot) {
+    brokenHouse(x, z, rot, 12, 8, { h: 5, wall: M.stone, chimney: false });
+    const g = new THREE.Group();
+    const tower = box(3, 11, 3, M.stone);
+    tower.position.y = 5.5;
+    g.add(solid(tower));
+    const spire = meshOf(new THREE.ConeGeometry(2.3, 5, 4), M.roof);
+    spire.position.y = 13.5;
+    spire.rotation.y = PI / 4;
+    g.add(spire);
+    const crossV = box(0.2, 1.4, 0.2, M.metalDark);
+    crossV.position.y = 16.6;
+    const crossH = box(0.8, 0.2, 0.2, M.metalDark);
+    crossH.position.y = 16.8;
+    crossH.rotation.z = 0.3; // hanging crooked
+    g.add(crossV, crossH);
+    const off = toWorldLocal(rot, 0, 5.6);
+    place(g, x + off.x, z + off.z, rot);
+  }
+  const toWorldLocal = (rot, lx, lz) => ({ x: Math.cos(rot) * lx + Math.sin(rot) * lz, z: -Math.sin(rot) * lx + Math.cos(rot) * lz });
+
+  function graveyard(x, z, rot, rows = 4, cols = 6) {
+    const g = new THREE.Group();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (rng() < 0.15) continue;
+        const gx = (c - (cols - 1) / 2) * 2.2 + rand(-0.2, 0.2);
+        const gz = (r - (rows - 1) / 2) * 2.6 + rand(-0.2, 0.2);
+        if (rng() < 0.6) {
+          const stone = box(0.6, rand(0.6, 1.0), 0.15, M.stone);
+          stone.position.set(gx, 0.4, gz);
+          stone.rotation.set(rand(-0.25, 0.25), rand(-0.2, 0.2), rand(-0.2, 0.2));
+          g.add(solid(stone, false));
+        } else {
+          const v = box(0.12, 1.1, 0.12, M.darkWood);
+          v.position.set(gx, 0.55, gz);
+          const h = box(0.6, 0.12, 0.12, M.darkWood);
+          h.position.set(gx, 0.8, gz);
+          const tilt = rand(-0.3, 0.3);
+          v.rotation.z = h.rotation.z = tilt;
+          g.add(v, h);
+        }
+        // dirt mound
+        const mound = box(0.9, 0.15, 1.8, M.darkWood);
+        mound.position.set(gx, 0.05, gz + 1.0);
+        mound.material = M.rock2;
+        g.add(mound);
+      }
+    }
+    place(g, x, z, rot);
+    reserve(x, z, Math.max(rows * 2.6, cols * 2.2) / 2 + 1);
+    const w = cols * 2.2 + 2;
+    const d = rows * 2.6 + 2;
+    const corners = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([a, b]) => {
+      const o = toWorldLocal(rot, a, b);
+      return [x + o.x, z + o.z];
+    });
+    for (let i = 0; i < 4; i++) if (i !== 0) fenceLine(...corners[i], ...corners[(i + 1) % 4]);
+  }
+
+  function swampPool(x, z, r) {
+    const geo = new THREE.CircleGeometry(r, 28);
+    geo.rotateX(-PI / 2);
+    const m = new THREE.Mesh(geo, M.toxic);
+    m.position.set(x, heightAt(x, z) + 0.06, z);
+    root.add(m);
+    hazards.push({ x, z, r: r * 0.9, dps: 8, kind: 'toxic' });
+    reserve(x, z, r);
+    const bubbles = [];
+    for (let i = 0; i < 8; i++) {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), M.toxic);
+      root.add(b);
+      bubbles.push({ b, t: rand(0, 2), a: rand(0, PI * 2), d: rand(0, r * 0.8) });
+    }
+    updaters.push((dt) => {
+      for (const o of bubbles) {
+        o.t += dt;
+        if (o.t > 2) {
+          o.t = 0;
+          o.a = rand(0, PI * 2);
+          o.d = rand(0, r * 0.8);
+        }
+        o.b.position.set(x + Math.cos(o.a) * o.d, m.position.y + o.t * 0.15, z + Math.sin(o.a) * o.d);
+        o.b.scale.setScalar(o.t < 1.7 ? 0.5 + o.t * 0.4 : 0.01);
+      }
+    });
+  }
+
+  function logPile(x, z, rot) {
+    const g = new THREE.Group();
+    let i = 0;
+    for (let row = 0; row < 3; row++) {
+      for (let c = 0; c < 4 - row; c++) {
+        const log = cyl(0.28, 0.28, 3.2, M.tree, 8);
+        log.rotation.x = PI / 2;
+        log.position.set(-0.85 + c * 0.58 + row * 0.29, 0.28 + row * 0.5, 0);
+        g.add(log);
+        i++;
+      }
+    }
+    proxy(g, 2.4, 1.4, 3.2, 0, 0.7, 0);
+    place(g, x, z, rot);
+    reserve(x, z, 2);
+  }
+
+  function fallenTree(x, z, rot) {
+    const g = new THREE.Group();
+    const len = rand(7, 11);
+    const trunk = cyl(0.3, 0.45, len, M.tree, 8);
+    trunk.rotation.z = PI / 2;
+    trunk.position.y = 0.4;
+    g.add(solid(trunk, false));
+    const roots = meshOf(new THREE.DodecahedronGeometry(0.9, 0), M.rock2);
+    roots.position.set(len / 2, 0.6, 0);
+    g.add(roots);
+    proxy(g, len, 0.85, 0.85, 0, 0.42, 0);
+    place(g, x, z, rot);
+    reserve(x, z, len / 2);
+  }
+
+  function campfire(x, z) {
+    const g = new THREE.Group();
+    for (let i = 0; i < 8; i++) {
+      const st = meshOf(new THREE.DodecahedronGeometry(0.18, 0), M.rock);
+      st.position.set(Math.cos((i / 8) * PI * 2) * 0.6, 0.08, Math.sin((i / 8) * PI * 2) * 0.6);
+      g.add(st);
+    }
+    const light = new THREE.PointLight(0xff8a3a, 6, 14, 2);
+    light.position.y = 0.8;
+    g.add(light);
+    place(g, x, z);
+    reserve(x, z, 1.5);
+    const base = new THREE.Vector3(x, heightAt(x, z) + 0.2, z);
+    updaters.push((dt, t) => {
+      light.intensity = 5 + Math.sin(t * 13) * 1 + Math.sin(t * 7.3) * 0.8;
+      if (fireFx && Math.random() < dt * 25) fireFx(base);
+    });
+  }
+  let fireFx = null;
 
   // Scatter clutter on free ground
   const scatter = (count, r, fn, minR = 14, maxR = ARENA_RADIUS + 20) => {
@@ -890,20 +1425,120 @@ export function buildWorld(scene) {
       placed++;
     }
   };
-  scatter(34, 1.5, deadTree);
-  scatter(40, 1.5, (x, z) => rock(x, z, rand(0.4, 2.0)));
-  scatter(22, 0.8, barrel);
-  scatter(14, 1, crate);
-  scatter(10, 3, (x, z) => car(x, z, rand(0, PI * 2), { flipped: rng() < 0.25 }), 25, ARENA_RADIUS);
-  // Far rocks beyond the arena so the edges don't look empty
-  scatter(30, 3, (x, z) => rock(x, z, rand(1.5, 4)), ARENA_RADIUS + 5, ARENA_RADIUS + 70);
 
-  // Scorched craters
-  for (let i = 0; i < 8; i++) {
-    const a = rand(0, PI * 2);
-    const d = rand(20, 100);
-    conform(rand(5, 9), rand(5, 9), 4, 4, Math.cos(a) * d, Math.sin(a) * d, rand(0, PI), scorchMat, 0.05);
-  }
+  // ---------------------------------------------------------------- layouts
+  const layouts = {
+    plains() {
+      // Town along the road
+      brokenHouse(-42, 38, 0, 8, 6, { graffiti: 'HELP' });
+      brokenHouse(-25, 37, 0, 7, 6);
+      brokenHouse(14, 38, 0, 9, 7, { wall: M.brick });
+      brokenHouse(33, 37, 0, 8, 6, { graffiti: 'RUN' });
+      brokenHouse(55, 39, 0, 8, 7);
+      brokenHouse(-30, 11, PI, 8, 6);
+      brokenHouse(28, 10, PI, 7, 6, { wall: M.woodWall });
+      // Farmstead
+      brokenHouse(-62, -28, 0.3, 9, 7, { wall: M.woodWall });
+      brokenHouse(-42, -52, -0.2, 14, 10, { h: 4.6, wall: M.barnRed, chimney: false });
+      fenceLine(-78, -12, -40, -12);
+      fenceLine(-78, -12, -82, -60);
+      fenceLine(-82, -60, -60, -70);
+      fenceLine(-28, -40, -26, -66);
+      for (let i = 0; i < 8; i++) hayBale(-58 + rand(-10, 10), -46 + rand(-8, 8));
+      windmill(-74, -48);
+      // Wrecks
+      planeWreck(48, -42, 0.55, 1, true);
+      planeWreck(-52, 74, -0.8, 0.55, false);
+      waterTower(22, 72);
+      gasStation(78, 8, -PI / 2);
+      car(-8, 22.5, 0.05);
+      car(17, 26, 2.9, { flipped: true });
+      car(64, 23, 0.2);
+      car(-74, 25, -0.35);
+      car(6, -34, 1.2);
+      car(-18, 60, 2.2);
+      car(86, -28, 0.9, { flipped: true });
+      car(40, 55, -1.4);
+      roadSign(-95, 19, PI / 2, ['DUSTWATER', 'POP. 0']);
+      roadSign(95, 29, -PI / 2, ['NO SURVIVORS', 'TURN BACK']);
+      powerLine(-110, 31, 110, 31);
+      scatter(34, 1.5, deadTree);
+      scatter(40, 1.5, (x, z) => rock(x, z, rand(0.4, 2.0)));
+      scatter(22, 0.8, barrel);
+      scatter(14, 1, crate);
+      scatter(10, 3, (x, z) => car(x, z, rand(0, PI * 2), { flipped: rng() < 0.25 }), 25, ARENA_RADIUS);
+      scatter(30, 3, (x, z) => rock(x, z, rand(1.5, 4)), ARENA_RADIUS + 5, ARENA_RADIUS + 70);
+      for (let i = 0; i < 8; i++) {
+        const a = rand(0, PI * 2);
+        const d = rand(20, 100);
+        conform(rand(5, 9), rand(5, 9), 4, 4, Math.cos(a) * d, Math.sin(a) * d, rand(0, PI), scorchMat, 0.05);
+      }
+    },
+
+    frost() {
+      // central compound
+      bunker(-24, -22, 0.2);
+      bunker(26, 20, PI + 0.1);
+      bunker(30, -34, -0.6, 7, 5);
+      brokenHouse(-30, 22, PI, 12, 6, { h: 3, wall: M.concrete, chimney: false, graffiti: 'EVAC' }); // barracks
+      brokenHouse(-50, 40, PI / 2, 10, 6, { h: 3, wall: M.concrete, chimney: false });
+      brokenHouse(44, 46, -PI / 2, 10, 6, { h: 3, wall: M.concreteDark, chimney: false });
+      watchtower(-44, -6, 0.4);
+      watchtower(44, -14, PI);
+      watchtower(4, 52, -PI / 2);
+      watchtower(-6, -60, PI / 2);
+      for (const [x, z, r, l] of [[-14, -8, 0.3, 4], [14, 6, -0.4, 4], [-8, 16, 1.2, 3.5], [10, -14, 1.9, 3.5], [-58, -2, PI / 2, 5], [56, -6, PI / 2, 5], [0, 30, 0, 5], [0, -32, 0, 5]]) sandbags(x, z, r, l);
+      truck(-16, 40, 0.3);
+      truck(36, -8, 1.8);
+      truck(-62, -40, -0.8);
+      container(16, -50, 0.2, M.containerA);
+      container(-36, 60, 1.4, M.containerB);
+      container(62, 34, -0.3, M.containerC);
+      container(-80, 30, 0.9, M.containerA);
+      heliWreck(-44, -64, 0.8);
+      radioMast(52, 66);
+      fuelTank(80, -30, 0.4);
+      fuelTank(84, -42, 0.4);
+      frozenLake(-80, -70, 20);
+      fenceLine(-100, -90, 100, -90);
+      fenceLine(100, -90, 100, 90);
+      fenceLine(-100, 90, 100, 90);
+      scatter(60, 2, (x, z) => pineTree(x, z, { snowy: true }), 20);
+      scatter(30, 1.5, (x, z) => rock(x, z, rand(0.5, 2.2)));
+      scatter(18, 0.8, barrel);
+      scatter(16, 1, crate);
+      scatter(40, 3, (x, z) => pineTree(x, z, { snowy: true, scale: 1.3 }), ARENA_RADIUS + 3, ARENA_RADIUS + 60);
+    },
+
+    forest() {
+      // cabins in clearings
+      brokenHouse(-36, 26, 0.4, 8, 6, { wall: M.woodWall });
+      brokenHouse(40, 30, -0.6, 8, 6, { wall: M.woodWall, graffiti: 'HIDE' });
+      brokenHouse(30, -40, 2.4, 7, 6, { wall: M.darkWood });
+      brokenHouse(-58, -40, 1.1, 9, 7, { wall: M.woodWall });
+      church(-8, 70, PI);
+      graveyard(24, 64, 0.1);
+      watchtower(60, 10, PI, { wood: M.wood, h: 7 });
+      watchtower(-46, -8, 0.2, { wood: M.wood, h: 7 });
+      swampPool(-20, -30, 6);
+      swampPool(-8, -44, 4);
+      swampPool(50, -60, 7);
+      swampPool(-78, 50, 5);
+      campfire(-24, 14);
+      campfire(26, -22);
+      for (const [x, z, r] of [[-12, 10, 0.4], [16, -10, 1.6], [-30, -6, 2.2], [8, 30, 0.9], [44, -20, 0.2], [-60, 18, 1.4]]) fallenTree(x, z, r);
+      for (const [x, z, r] of [[-40, 34, 0.3], [34, 38, 1.2], [-52, -50, 0.6]]) logPile(x, z, r);
+      car(-70, -20, 0.6);
+      car(70, -36, 2.1, { flipped: true });
+      truck(-14, -70, 1.1);
+      scatter(170, 2, (x, z) => pineTree(x, z, { dead: rng() < 0.3 }), 16);
+      scatter(30, 1.5, (x, z) => rock(x, z, rand(0.6, 2.4)));
+      scatter(14, 0.8, barrel);
+      scatter(10, 1, crate);
+      scatter(60, 3, (x, z) => pineTree(x, z, { scale: 1.4 }), ARENA_RADIUS + 3, ARENA_RADIUS + 60);
+    },
+  };
+  layouts[mapId]();
 
   // Dry grass tufts
   {
@@ -927,11 +1562,11 @@ export function buildWorld(scene) {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     geo.computeVertexNormals();
     const grassMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, side: THREE.DoubleSide });
-    const count = 7000;
+    const count = theme.grass.count;
     const inst = new THREE.InstancedMesh(geo, grassMat, count);
     const dummy = new THREE.Object3D();
     const col = new THREE.Color();
-    const shades = [0x9c8b52, 0xb39f62, 0x857a48, 0xa69062, 0x7a7444];
+    const shades = theme.grass.shades;
     for (let i = 0; i < count; i++) {
       const a = rng() * PI * 2;
       const d = Math.sqrt(rng()) * 180;
@@ -940,17 +1575,17 @@ export function buildWorld(scene) {
       dummy.position.set(x, heightAt(x, z) - 0.05, z);
       dummy.rotation.set(rand(-0.3, 0.3), rand(0, PI), rand(-0.3, 0.3));
       const s = rand(0.6, 1.6);
-      dummy.scale.set(s, s * rand(0.7, 1.4), s);
+      dummy.scale.set(s, s * rand(0.7, 1.4) * theme.grass.h, s);
       dummy.updateMatrix();
       inst.setMatrixAt(i, dummy.matrix);
       inst.setColorAt(i, col.setHex(pick(shades)));
     }
     inst.receiveShadow = true;
-    scene.add(inst);
+    root.add(inst);
   }
 
   // Tumbleweeds rolling with the wind
-  {
+  if (theme.tumbleweeds) {
     const tw = [];
     const twMat = new THREE.MeshStandardMaterial({ color: 0x8b6f45, wireframe: true });
     for (let i = 0; i < 7; i++) {
@@ -960,7 +1595,7 @@ export function buildWorld(scene) {
       const x = rand(-90, 90);
       const z = rand(-90, 90);
       m.position.set(x, heightAt(x, z) + r, z);
-      scene.add(m);
+      root.add(m);
       tw.push({ m, r, speed: rand(2.5, 5), phase: rand(0, 10) });
     }
     const wind = new THREE.Vector2(1, 0.35).normalize();
@@ -990,7 +1625,7 @@ export function buildWorld(scene) {
       for (let i = 0; i < 26; i++) {
         const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0x3a3632, transparent: true, depthWrite: false, opacity: 0 }));
         sp.position.copy(src);
-        scene.add(sp);
+        root.add(sp);
         puffs.push({ sp, src, age: (i / 26) * 7, life: 7 });
       }
     }
@@ -1019,14 +1654,15 @@ export function buildWorld(scene) {
     const arr = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) arr.set([rand(-30, 30), rand(0, 8), rand(-30, 30)], i * 3);
     geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xe8d6b0, size: 0.06, transparent: true, opacity: 0.6, depthWrite: false }));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: theme.motes, size: theme.fireflies ? 0.12 : 0.07, map: softDotTexture(), transparent: true, opacity: theme.fireflies ? 0.9 : 0.6, depthWrite: false }));
     pts.frustumCulled = false;
-    scene.add(pts);
+    root.add(pts);
     updaters.push((dt, t, p) => {
       for (let i = 0; i < n; i++) {
-        let x = arr[i * 3] + dt * 1.5;
-        let y = arr[i * 3 + 1] + Math.sin(t + i) * dt * 0.2;
-        let z = arr[i * 3 + 2] + dt * 0.5;
+        let x = arr[i * 3] + dt * (theme.fireflies ? Math.sin(t * 0.7 + i) * 0.6 : 1.5);
+        let y = arr[i * 3 + 1] + (theme.snowfall ? -dt * 0.8 : Math.sin(t + i) * dt * 0.2);
+        let z = arr[i * 3 + 2] + dt * (theme.fireflies ? Math.cos(t * 0.6 + i) * 0.6 : 0.5);
+        if (y < p.y - 1) y += 9;
         if (x - p.x > 30) x -= 60;
         if (x - p.x < -30) x += 60;
         if (z - p.z > 30) z -= 60;
@@ -1040,8 +1676,17 @@ export function buildWorld(scene) {
   }
 
   // ---------------------------------------------------------------- finalize
-  scene.updateMatrixWorld(true);
-  scene.traverse((o) => {
+  for (const l of pendingLadders) {
+    const g = l.parent;
+    const base = toWorld(g, l.lx, l.lz);
+    const c = Math.cos(g.rotation.y);
+    const s = Math.sin(g.rotation.y);
+    const nx = c * l.nx + s * l.nz;
+    const nz = -s * l.nx + c * l.nz;
+    ladders.push({ x: base.x, z: base.z, nx, nz, bottom: g.position.y, top: g.position.y + l.height });
+  }
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
     if (!o.isMesh) return;
     if (o.userData.collide) colliders.addFromMesh(o);
     if (o.userData.solid) solids.push(o);
@@ -1051,8 +1696,34 @@ export function buildWorld(scene) {
     colliders,
     solids,
     lootSpots,
+    ladders,
+    hazards,
+    mapId,
+    theme,
+    atmosphere: { skyTop: skyColorTop, skyHorizon: skyColorHorizon, hemi, sun, fill, sunDir },
     update(dt, t, playerPos) {
       for (const u of updaters) u(dt, t, playerPos);
+    },
+    // particle hooks for map effects (campfires)
+    setEffects(effects) {
+      fireFx = (p) => effects.burst(p, { count: 1, color: [0xff9a2a, 0xffd04a, 0xff5a10], speed: 0.5, size: 0.14, life: 0.7, grav: -3, up: 1.2, spread: 0.4 });
+    },
+    dispose() {
+      root.removeFromParent();
+      const seen = new Set();
+      root.traverse((o) => {
+        if (o.geometry && !seen.has(o.geometry)) {
+          seen.add(o.geometry);
+          o.geometry.dispose();
+        }
+        const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+        for (const m of mats) {
+          if (seen.has(m)) continue;
+          seen.add(m);
+          if (m.map) m.map.dispose();
+          m.dispose();
+        }
+      });
     },
   };
 }

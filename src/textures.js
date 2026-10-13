@@ -16,13 +16,19 @@ function finish(c, repeat = 1) {
   return t;
 }
 
-// Dry dirt and dead grass, tinted further by terrain vertex colours.
-export function groundTexture() {
+// Ground texture. The palette decides the look: dry dirt, snow, forest floor...
+export const GROUND_PALETTES = {
+  plains: { base: '#b39b74', blots: ['#a08560', '#c2aa80', '#8f7a52', '#9c8f5a', '#7f7448', '#c9b48c'], strokes: ['#8a7c45', '#6e6538'], specks: ['#5d5141', '#d8c8a8'] },
+  snow: { base: '#e6ebf0', blots: ['#d5dde6', '#f4f7fa', '#c9d3de', '#dfe6ee', '#bcc8d4', '#ffffff'], strokes: ['#c3ccd6', '#aeb9c6'], specks: ['#9aa6b4', '#ffffff'] },
+  forest: { base: '#4a4632', blots: ['#3c3a28', '#565236', '#2f3122', '#4f4a2e', '#3a4a2a', '#5a4a34'], strokes: ['#3f5a2a', '#2e4220'], specks: ['#2a241c', '#6a5e44'] },
+};
+
+export function groundTexture(palette = GROUND_PALETTES.plains) {
   const rng = mulberry32(7);
   const [c, g] = canvas(512);
-  g.fillStyle = '#b39b74';
+  g.fillStyle = palette.base;
   g.fillRect(0, 0, 512, 512);
-  const blot = ['#a08560', '#c2aa80', '#8f7a52', '#9c8f5a', '#7f7448', '#c9b48c'];
+  const blot = palette.blots;
   for (let i = 0; i < 900; i++) {
     g.globalAlpha = 0.08 + rng() * 0.15;
     g.fillStyle = blot[Math.floor(rng() * blot.length)];
@@ -34,7 +40,7 @@ export function groundTexture() {
   // grass strokes
   for (let i = 0; i < 2600; i++) {
     g.globalAlpha = 0.25 + rng() * 0.35;
-    g.strokeStyle = rng() < 0.5 ? '#8a7c45' : '#6e6538';
+    g.strokeStyle = rng() < 0.5 ? palette.strokes[0] : palette.strokes[1];
     g.lineWidth = 1;
     const x = rng() * 512;
     const y = rng() * 512;
@@ -46,7 +52,7 @@ export function groundTexture() {
   // pebbles
   for (let i = 0; i < 500; i++) {
     g.globalAlpha = 0.5;
-    g.fillStyle = rng() < 0.5 ? '#5d5141' : '#d8c8a8';
+    g.fillStyle = rng() < 0.5 ? palette.specks[0] : palette.specks[1];
     g.fillRect(rng() * 512, rng() * 512, 1 + rng() * 2, 1 + rng() * 2);
   }
   g.globalAlpha = 1;

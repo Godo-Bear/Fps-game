@@ -3,6 +3,12 @@ import { ARENA_RADIUS, heightAt } from './terrain.js';
 
 const EYE = 1.7;
 const HEIGHT = 1.8;
+const CROUCH_EYE = 1.1;
+const CROUCH_HEIGHT = 1.2;
+const SLIDE_EYE = 0.95;
+const SLIDE_HEIGHT = 1.0;
+const SLIDE_TIME = 0.85;
+const LADDER_SPEED = 3.2;
 const WALK = 6;
 const SPRINT = 9.5;
 const GRAVITY = 20;
@@ -39,14 +45,31 @@ export class Player {
     this.moving = false;
     this.climb = null;
     this.jumpHeld = false;
+    this.slideT = 0;
+    this.slideHeld = false;
+    this.crouching = false;
+    this.eye = EYE;
+    this.ladder = null;
+    this.dead = false;
+  }
+
+  get sliding() {
+    return this.slideT > 0;
+  }
+
+  get bodyHeight() {
+    return this.sliding ? SLIDE_HEIGHT : this.crouching ? CROUCH_HEIGHT : HEIGHT;
   }
 
   get climbing() {
-    return !!this.climb;
+    return !!this.climb || !!this.ladder;
   }
 
-  heal(amount, max) {
-    this.health = Math.min(max ?? Infinity, this.health + amount);
+  // Heals up to `cap`. Healing never lowers health that is already above the cap (overheal).
+  heal(amount, cap) {
+    if (cap === undefined) cap = Infinity;
+    if (this.health >= cap) return;
+    this.health = Math.min(cap, this.health + amount);
   }
 
   look(dx, dy, scale = 1) {
@@ -73,8 +96,36 @@ export class Player {
     return null;
   }
 
-  update(dt, colliders, stats, firing, audio, moveMul = 1) {
+  _ladderNear(ladders) {
+    const fx = -Math.sin(this.yaw);
+    const fz = -Math.cos(this.yaw);
+    for (const l of ladders) {
+      const lx = l.x + l.nx * 0.45;
+      const lz = l.z + l.nz * 0.45;
+      if (Math.hypot(this.pos.x - lx, this.pos.z - lz) > 0.8) continue;
+      if (this.pos.y < l.bottom - 0.3 || this.pos.y > l.top - 0.2) continue;
+      if (fx * -l.nx + fz * -l.nz < 0.2) continue; // must face the ladder
+      return l;
+    }
+    return null;
+  }
+
+  // Standing on top next to a ladder and backing onto it.
+  _ladderBelow(ladders) {
+    for (const l of ladders) {
+      if (Math.abs(this.pos.y - l.top) > 0.3) continue;
+      if (Math.hypot(this.pos.x - (l.x - l.nx * 0.5), this.pos.z - (l.z - l.nz * 0.5)) > 0.9) continue;
+      return l;
+    }
+    return null;
+  }
+
+  update(dt, colliders, stats, firing, audio, moveMul = 1, ladders = []) {
     const k = this.keys;
+    if (this.dead) {
+      this._updateCamera(dt, 0, 0);
+      return 0;
+    }
     const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
     const strafe = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
     const jump = k.has('Space');
@@ -100,8 +151,79 @@ export class Player {
       return 0;
     }
 
-    this.sprinting = (k.has('ShiftLeft') || k.has('ShiftRight')) && fwd > 0 && !firing;
-    const speed = (this.sprinting ? SPRINT : WALK) * stats.speedMul * moveMul;
+    // ---- ladders
+    if (this.ladder) {
+      const l = this.ladder;
+      this.pos.x = l.x + l.nx * 0.45;
+      this.pos.z = l.z + l.nz * 0.45;
+      this.vel.set(0, 0, 0);
+      const dir = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+      this.pos.y += dir * LADDER_SPEED * dt;
+      if (dir !== 0) {
+        this.bob += dt * 6;
+        this.stepT += dt * LADDER_SPEED;
+        if (this.stepT > 1.1) {
+          this.stepT = 0;
+          audio.click(0.5, 0.12);
+        }
+      }
+      if (jumpPressed) {
+        // let go and push off
+        this.ladder = null;
+        this.vel.set(l.nx * 4, 3, l.nz * 4);
+        this.onGround = false;
+      } else if (this.pos.y >= l.top - 0.05) {
+        this.ladder = null;
+        this.climb = { t: 0, from: this.pos.clone(), to: new THREE.Vector3(l.x - l.nx * 0.7, l.top, l.z - l.nz * 0.7) };
+      } else if (this.pos.y <= l.bottom) {
+        this.pos.y = l.bottom;
+        if (dir < 0) this.ladder = null;
+      }
+      this.sprinting = false;
+      this._updateCamera(dt, 0, 0);
+      return 0;
+    }
+    if (fwd > 0 && this.onGround) {
+      const l = this._ladderNear(ladders);
+      if (l) {
+        this.ladder = l;
+        this.slideT = 0;
+        return 0;
+      }
+    }
+    if (fwd < 0 && this.onGround) {
+      const l = this._ladderBelow(ladders);
+      if (l) {
+        this.ladder = l;
+        this.pos.y = l.top - 0.25;
+        return 0;
+      }
+    }
+
+    // ---- slide / crouch (C)
+    const crouchKey = k.has('KeyC');
+    const crouchPressed = crouchKey && !this.slideHeld;
+    this.slideHeld = crouchKey;
+    const wasSprinting = this.sprinting;
+    if (crouchPressed && this.onGround && wasSprinting && this.slideT <= 0) {
+      this.slideT = SLIDE_TIME;
+      const sp = Math.max(Math.hypot(this.vel.x, this.vel.z), 9) * 1.35;
+      const len = Math.hypot(this.vel.x, this.vel.z) || 1;
+      this.vel.x = (this.vel.x / len) * sp;
+      this.vel.z = (this.vel.z / len) * sp;
+      audio.slide?.();
+    }
+    if (this.slideT > 0) {
+      this.slideT -= dt;
+      if (!this.onGround) this.slideT = 0;
+    }
+    // can't stand up under something low
+    const ceiling = colliders.ceilingAt(this.pos.x, this.pos.z, this.radius, this.pos.y);
+    const blockedAbove = ceiling < this.pos.y + HEIGHT;
+    this.crouching = this.slideT <= 0 && (crouchKey || blockedAbove);
+
+    this.sprinting = (k.has('ShiftLeft') || k.has('ShiftRight')) && fwd > 0 && !firing && !this.crouching && this.slideT <= 0;
+    const speed = (this.sprinting ? SPRINT : WALK) * stats.speedMul * moveMul * (this.crouching ? 0.5 : 1);
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     let wx = -sin * fwd + cos * strafe;
@@ -111,10 +233,17 @@ export class Player {
       wx = (wx / wl) * speed;
       wz = (wz / wl) * speed;
     }
-    const accel = this.onGround ? 14 : 3;
-    const a = 1 - Math.exp(-accel * dt);
-    this.vel.x += (wx - this.vel.x) * a;
-    this.vel.z += (wz - this.vel.z) * a;
+    if (this.slideT > 0) {
+      // sliding: momentum carries you, a little steering
+      const f = Math.exp(-1.4 * dt);
+      this.vel.x = this.vel.x * f + wx * 0.02;
+      this.vel.z = this.vel.z * f + wz * 0.02;
+    } else {
+      const accel = this.onGround ? 14 : 3;
+      const a = 1 - Math.exp(-accel * dt);
+      this.vel.x += (wx - this.vel.x) * a;
+      this.vel.z += (wz - this.vel.z) * a;
+    }
 
     // Space while facing something climbable pulls you up; mid-air, holding forward grabs nearby ledges.
     if (fwd > 0 && (jumpPressed || (!this.onGround && jump))) {
@@ -122,15 +251,17 @@ export class Player {
       if (ledge && (this.onGround || ledge.y - this.pos.y < 1.4)) {
         this.climb = { t: 0, from: this.pos.clone(), to: new THREE.Vector3(ledge.x, ledge.y, ledge.z) };
         this.vel.set(0, 0, 0);
+        this.slideT = 0;
         audio.step();
         this._updateCamera(dt, 0, 0);
         return 0;
       }
     }
 
-    if (jumpPressed && this.onGround) {
+    if (jumpPressed && this.onGround && !blockedAbove) {
       this.vel.y = JUMP;
       this.onGround = false;
+      this.slideT = 0;
     }
     this.vel.y -= GRAVITY * dt;
 
@@ -138,7 +269,7 @@ export class Player {
     this.pos.z += this.vel.z * dt;
     this.pos.y += this.vel.y * dt;
 
-    colliders.resolve(this.pos, this.radius, this.pos.y, HEIGHT);
+    colliders.resolve(this.pos, this.radius, this.pos.y, this.bodyHeight);
     const r = Math.hypot(this.pos.x, this.pos.z);
     if (r > ARENA_RADIUS) {
       this.pos.x *= ARENA_RADIUS / r;
@@ -165,8 +296,9 @@ export class Player {
       }
     }
 
-    // regeneration
+    // regeneration (never overheals) and overheal slowly draining back to max
     if (stats.regen > 0) this.heal(stats.regen * dt, stats.maxHealth);
+    if (this.health > stats.maxHealth) this.health = Math.max(stats.maxHealth, this.health - 1.5 * dt);
 
     this._updateCamera(dt, hSpeed, 0);
     return hSpeed;
@@ -175,13 +307,15 @@ export class Player {
   _updateCamera(dt, hSpeed, dip) {
     this.recoil *= Math.exp(-dt * 10);
     this.shake = Math.max(0, this.shake - dt * 2.5);
-    const bobY = this.onGround ? Math.abs(Math.sin(this.bob)) * 0.05 * Math.min(1, hSpeed / 6) : 0;
-    this.camera.position.set(this.pos.x, this.pos.y + EYE + bobY - dip, this.pos.z);
+    const targetEye = this.dead ? 0.4 : this.sliding ? SLIDE_EYE : this.crouching ? CROUCH_EYE : EYE;
+    this.eye += (targetEye - this.eye) * Math.min(1, dt * 12);
+    const bobY = this.onGround && !this.sliding ? Math.abs(Math.sin(this.bob)) * 0.05 * Math.min(1, hSpeed / 6) : 0;
+    this.camera.position.set(this.pos.x, this.pos.y + this.eye + bobY - dip, this.pos.z);
     const sh = this.shake * this.shake;
     this.camera.rotation.set(
       this.pitch + this.recoil - dip * 0.8 + (Math.random() - 0.5) * sh * 0.06,
       this.yaw + (Math.random() - 0.5) * sh * 0.06,
-      Math.sin(this.bob * 0.5) * 0.004 * Math.min(1, hSpeed / 6)
+      Math.sin(this.bob * 0.5) * 0.004 * Math.min(1, hSpeed / 6) + (this.sliding ? 0.06 : 0) + (this.dead ? 0.5 : 0)
     );
   }
 }

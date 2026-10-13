@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dead Plains</title>
-    <meta name="description" content="Survive endless zombie waves in an abandoned wasteland. Pick a power-up after every wave." />
+    <meta name="description" content="Survive zombie waves or fight your friends online. Climb, slide, loot mutated guns." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧟</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -16,31 +16,45 @@
 
     <div id="hud" class="hidden">
       <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="reticle"></div>
       <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
       <div id="vignette"></div>
-      <div id="top-left">
-        <div id="wave-label">WAVE 1</div>
-        <div id="zombies-left">0 zombies left</div>
+      <div id="scope" class="hidden"><i></i><i></i><b></b></div>
+      <div id="dmg-numbers"></div>
+      <div id="edge-arrows"></div>
+      <div id="headshot-pop"></div>
+      <div id="solo-hud">
+        <div id="top-left">
+          <div id="wave-label">WAVE 1</div>
+          <div id="zombies-left">0 zombies left</div>
+        </div>
+        <div id="top-right-stats">
+          <div id="score">0</div>
+          <div id="kills">0 kills</div>
+        </div>
       </div>
-      <div id="top-right">
-        <div id="score">0</div>
-        <div id="kills">0 kills</div>
+      <div id="map-corner">
+        <canvas id="minimap" width="190" height="190"></canvas>
+        <div id="weather-label"></div>
+        <div id="killfeed"></div>
       </div>
+      <div id="mp-hud" class="hidden"></div>
       <div id="boss-bar" class="hidden">
         <div class="name">ABOMINATION</div>
         <div class="bar"><div id="boss-fill"></div></div>
       </div>
       <div id="banner"></div>
       <div id="subbanner"></div>
+      <div id="respawn" class="hidden"></div>
+      <div id="scoreboard" class="hidden"></div>
       <div id="bottom-left">
         <div id="health-row">
           <span class="plus">+</span>
-          <div class="bar"><div id="health-fill"></div></div>
+          <div class="bar"><div id="health-fill"></div><div id="over-fill"></div></div>
           <span id="health-text">100</span>
         </div>
         <div id="powerup-list"></div>
       </div>
-      <div id="scope" class="hidden"><i></i><i></i></div>
       <div id="bottom-right">
         <div id="slots"></div>
         <div id="weapon-name">AR-7 RIFLE</div>
@@ -50,30 +64,82 @@
     </div>
 
     <div id="menu" class="overlay">
-      <div class="panel">
+      <div class="panel wide">
+        <div id="account-card"></div>
         <h1>DEAD PLAINS</h1>
         <p class="tag">The town is gone. The dead are not.</p>
-        <button id="play-btn" class="btn">PLAY</button>
+        <div id="map-pick"></div>
+        <div class="menu-buttons">
+          <button id="play-btn" class="btn">PLAY SOLO</button>
+          <button id="mp-btn" class="btn alt">MULTIPLAYER</button>
+        </div>
         <div class="controls">
           <div><b>WASD</b> move</div>
           <div><b>Mouse</b> aim</div>
           <div><b>Click</b> shoot</div>
-          <div><b>Right click</b> zoom</div>
+          <div><b>Right click</b> zoom / scope</div>
           <div><b>R</b> reload</div>
           <div><b>Shift</b> sprint</div>
+          <div><b>C</b> crouch · slide while sprinting</div>
           <div><b>Space</b> jump / climb</div>
-          <div><b>1-7 / wheel</b> switch gun</div>
+          <div><b>W</b> at a ladder to climb</div>
+          <div><b>1-8 / wheel</b> switch gun</div>
           <div><b>Q</b> last gun</div>
-          <div><b>M</b> mute</div>
-          <div><b>Esc</b> pause</div>
+          <div><b>Tab</b> scores (online)</div>
         </div>
-        <div class="odds-line">Find guns around the map — look for the light beams. Climb onto cars, walls and wrecks with <b>Space</b>.</div>
+        <div class="odds-line">Loot guns under the light beams; <span style="color:#6dff2a">glowing mutated guns</span> have special powers. Climb cars, walls, wrecks and ladders.</div>
         <div class="odds-line">
           After each wave pick 1 of 3 power-ups:
           <span class="r-rare">Rare</span> · <span class="r-epic">Epic</span> · <span class="r-legendary">Legendary</span>
         </div>
         <div id="best"></div>
         <div id="mobile-note">Needs a keyboard and mouse.</div>
+      </div>
+    </div>
+
+    <div id="map-menu" class="overlay hidden"></div>
+
+    <div id="mp-menu" class="overlay hidden">
+      <div class="panel">
+        <h2>MULTIPLAYER</h2>
+        <p class="tag small">Make a room and send the code to your friends.</p>
+        <button id="mp-create" class="btn">CREATE ROOM</button>
+        <form id="mp-join-form" class="auth inline center">
+          <input id="mp-code" placeholder="ROOM CODE" maxlength="5" autocomplete="off" spellcheck="false" />
+          <button class="btn small">JOIN</button>
+        </form>
+        <div id="mp-error" class="msg"></div>
+        <p class="muted small">Modes: Free-for-all, Team Deathmatch, Capture Point, Capture the Flag. Up to 8 players.</p>
+        <button id="mp-back" class="btn ghost">BACK</button>
+      </div>
+    </div>
+
+    <div id="lobby" class="overlay hidden">
+      <div class="panel wide">
+        <div class="lobby-head">
+          <div>ROOM CODE</div>
+          <div id="lobby-code">-----</div>
+          <button id="lobby-copy" class="btn small ghost">COPY CODE</button>
+        </div>
+        <h4>Mode</h4>
+        <div id="lobby-modes" class="chips"></div>
+        <div id="lobby-desc" class="muted"></div>
+        <h4>Map</h4>
+        <div id="lobby-maps" class="chips"></div>
+        <div id="lobby-roster"></div>
+        <div id="lobby-wait" class="muted"></div>
+        <div class="menu-buttons">
+          <button id="lobby-start" class="btn">START MATCH</button>
+          <button id="lobby-leave" class="btn ghost">LEAVE</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="mp-end" class="overlay hidden">
+      <div class="panel">
+        <h1 id="mp-end-title">MATCH OVER</h1>
+        <div id="mp-end-table"></div>
+        <div id="mp-end-xp" class="muted"></div>
       </div>
     </div>
 
@@ -100,6 +166,14 @@
         <div id="final-stats"></div>
         <button id="again-btn" class="btn">PLAY AGAIN</button>
         <button id="menu-btn" class="btn ghost">MAIN MENU</button>
+      </div>
+    </div>
+
+    <div id="account-modal" class="overlay hidden">
+      <div class="modal">
+        <button class="close" data-close>✕</button>
+        <div id="account-tabs" class="tabs"></div>
+        <div id="account-body"></div>
       </div>
     </div>
 

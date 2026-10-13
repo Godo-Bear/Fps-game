@@ -78,12 +78,13 @@ export class Effects {
     this.flashLife = 0.12;
   }
 
-  tracer(from, to) {
+  tracer(from, to, color = 0xffd27a, width = 0.025) {
     const t = this.tracers.find((x) => x.life <= 0) || this.tracers[0];
+    t.m.material.color.setHex(color);
     const len = from.distanceTo(to);
     t.m.position.copy(from);
     t.m.lookAt(to);
-    t.m.scale.set(0.025, 0.025, len);
+    t.m.scale.set(width, width, len);
     t.m.visible = true;
     t.m.material.opacity = 0.8;
     t.life = 0.06;

@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { GUNS, buildGun, buildHands } from './guns.js';
+import { GUNS, MUTATIONS, buildGun, buildHands } from './guns.js';
 import { muzzleTexture } from './textures.js';
 
 const SCALE = 0.78;
 const REST = new THREE.Vector3(0.2, -0.21, -0.5);
 const SWITCH_TIME = 0.45;
 // Height of each gun's sights above its origin (gun units), used to line them up when aiming.
-const SIGHT_Y = { rifle: 0.083, smg: 0.075, shotgun: 0.066, revolver: 0.07, lmg: 0.12, sniper: 0.1, launcher: 0.14 };
+const SIGHT_Y = { rifle: 0.1, smg: 0.075, shotgun: 0.066, revolver: 0.07, lmg: 0.145, dmr: 0.095, sniper: 0.1, launcher: 0.14 };
 
 const ease = (t) => t * t * (3 - 2 * t);
 // Piecewise keyframes: [[time, value], ...] with smooth interpolation.
@@ -65,6 +65,20 @@ export class Weapon {
     this.boltT = 0;
     this.switchT = 0;
     this.pending = -1;
+    this.finish = null;
+  }
+
+  // Gun finish from the player's profile (hex colour or null for standard).
+  setFinish(color) {
+    if (this.finish === color) return;
+    this.finish = color;
+    for (const m of Object.values(this.models)) m.group.removeFromParent();
+    this.models = {};
+    if (this.slots.length) this._show(this.cur);
+  }
+
+  displayName(slot = this.slot) {
+    return slot.mut ? `${MUTATIONS[slot.mut].name} ${slot.def.name}` : slot.def.name;
   }
 
   // ---------------------------------------------------------------- inventory
@@ -80,13 +94,16 @@ export class Weapon {
   get scoped() {
     return !!this.def.scope && this.ads > 0.85;
   }
+  get mutation() {
+    return this.slot.mut || null;
+  }
 
   magSize(stats, def = this.def) {
     return Math.max(1, Math.round(def.mag * (1 + stats.magBonus / 30)));
   }
 
   damage(stats) {
-    return this.def.damage * stats.damageMul;
+    return this.def.damage * stats.damageMul * (this.slot.mut ? 1.2 : 1);
   }
 
   reset(stats) {
@@ -101,15 +118,22 @@ export class Weapon {
     this._show(0);
   }
 
-  // Picks up a gun. Returns 'new' for a new gun, 'ammo' if it was already owned.
-  give(id, stats) {
+  // Picks up a gun. Returns 'new', 'mutated' (an owned gun became mutated) or 'ammo'.
+  give(id, stats, mut = null) {
     const def = GUNS[id];
     const have = this.slots.findIndex((s) => s.def.id === id);
     if (have >= 0) {
-      this.slots[have].reserve += this.magSize(stats, def) * 2;
+      const slot = this.slots[have];
+      if (slot.reserve !== Infinity) slot.reserve += this.magSize(stats, def) * 2;
+      if (mut && slot.mut !== mut) {
+        slot.mut = mut;
+        if (have === this.cur) this._show(this.cur);
+        else this.equip(have);
+        return 'mutated';
+      }
       return 'ammo';
     }
-    this.slots.push({ def, ammo: this.magSize(stats, def), reserve: def.reserve });
+    this.slots.push({ def, ammo: this.magSize(stats, def), reserve: def.reserve, mut });
     this.equip(this.slots.length - 1);
     return 'new';
   }
@@ -137,9 +161,10 @@ export class Weapon {
     this.equip(this.last);
   }
 
-  _model(id) {
-    if (!this.models[id]) {
-      const gun = buildGun(id);
+  _model(id, mut = null) {
+    const key = `${id}|${mut || ''}`;
+    if (!this.models[key]) {
+      const gun = buildGun(id, { finish: this.finish, mutation: mut });
       const hands = buildHands(GUNS[id]);
       gun.group.add(hands.left, hands.right);
       gun.group.scale.setScalar(SCALE);
@@ -148,15 +173,15 @@ export class Weapon {
       gun.extraRest = gun.extra ? { p: gun.extra.position.clone(), r: gun.extra.rotation.clone() } : null;
       gun.group.visible = false;
       this.holder.add(gun.group);
-      this.models[id] = gun;
+      this.models[key] = gun;
     }
-    return this.models[id];
+    return this.models[key];
   }
 
   _show(i) {
     for (const m of Object.values(this.models)) m.group.visible = false;
     const def = this.slots[i].def;
-    const m = this._model(def.id);
+    const m = this._model(def.id, this.slots[i].mut);
     m.group.visible = true;
     m.group.add(this.muzzle);
     this.muzzle.position.set(0, m.muzzleY, m.muzzleZ);
@@ -276,7 +301,7 @@ export class Weapon {
   // ---------------------------------------------------------------- animation
   _animate(dt, { sprinting, moving, speed, aim }, stats) {
     const def = this.def;
-    const m = this._model(def.id);
+    const m = this._model(def.id, this.slot.mut);
     this.kick = Math.max(0, this.kick - dt * 9);
     this.flashT -= dt;
     this.boltT = Math.max(0, this.boltT - dt);

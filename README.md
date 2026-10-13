@@ -13,82 +13,98 @@ After every wave you survive, pick **one of three power-ups** to take into the n
 | WASD / arrows | Move |
 | Mouse | Aim |
 | Left click | Shoot (hold for full-auto guns) |
-| Right click | Zoom / aim down sights (the Longshot has a real scope) |
+| Right click | Zoom / aim down sights (red dot, holo sight, 4x and sniper scopes) |
 | R | Reload |
 | Shift | Sprint |
+| C | Crouch, or **slide** while sprinting |
 | Space | Jump, or climb onto whatever is in front of you |
-| 1–7 / mouse wheel | Switch gun |
+| W at a ladder | Climb it (S to go down, Space to jump off) |
+| 1–8 / mouse wheel | Switch gun |
 | Q | Previous gun |
+| Tab | Scoreboard (online) |
 | 1 / 2 / 3 | Pick a power-up card (between waves) |
 | M | Mute |
-| Esc | Pause |
 
-### Climbing
-Walk into something and press **Space** to pull yourself up onto it: cars (hood, then roof), crates, barrels,
-hay bales, rocks, broken walls and the airliner wreck (climb the wing, then the fuselage). Anything up to about
-2.3 m is climbable, and low rubble can just be walked over. Zombies can climb too, so a car roof buys you time, not safety.
+### Maps
+Pick one on the main menu (or the host picks it for an online room):
+- **Dead Plains**: ruined town, crashed airliner, water tower and windmill with ladders.
+- **Frostbite Outpost**: snowy military base with bunkers, watchtowers, trucks, containers, a downed helicopter and a frozen lake. Snow and blizzards.
+- **Blackwood Hollow**: dark forest at dusk with cabins, a ruined church, a graveyard, ranger towers and **toxic swamp pools that hurt**.
+
+Weather changes between waves: dust storms, rain, thunderstorms, snow, blizzards, fog.
+
+### Zombies
+- **Walker**, **Runner** (wave 2+), **Brute** (wave 4+), **Abomination** boss every 5th wave.
+- Mutations: **Crawler** (wave 3+, low and fast), **Bloater** (wave 4+, explodes when it dies or reaches you), **Spitter** (wave 5+, lobs acid from range).
+- From wave 6, any zombie can be **mutated**: glowing green, tougher, faster, worth double score, and sometimes drops a mutated gun.
+
+Every alive zombie has a small marker over its head, they show on the minimap, and arrows point to the last few.
+Headshot kills knock the head clean off. Damage numbers pop out of every hit.
+
+### Climbing, ladders, sliding
+Press **Space** facing something up to about 2.3 m high to pull yourself up: cars, crates, rocks, walls, wrecks, sandbags, bunker roofs.
+Ladders lead up the water tower, windmill and watchtowers. Zombies climb and use ladders too.
 
 ### Guns
-You start with the **AR-7 Rifle** (unlimited reserve ammo). Other guns lie around the map, marked by a tall
-light beam in their rarity colour; some sit on rooftops or on top of the plane wreck. Walk over one to pick it up.
-Picking up a gun you already carry gives you more ammo. Found guns have limited ammo and are dropped when empty.
-More guns appear after every wave.
+You start with the **AR-7 Rifle** (red dot sight, unlimited reserve). Others spawn under light beams around the map:
 
 | Gun | Rarity | Notes |
 | --- | --- | --- |
-| AR-7 Rifle | Starter | Full-auto, unlimited reserve |
-| Viper SMG | Rare | Very fast fire, low damage |
-| Boomstick | Rare | 9-pellet shotgun, loads shell by shell |
-| Hand Cannon | Epic | Revolver, huge damage, pierces one zombie |
-| Mule LMG | Epic | 100-round box, slows you down a little |
-| Longshot | Legendary | Scoped sniper, pierces 3 zombies |
-| Thumper | Legendary | Grenade launcher, lobbed explosive rounds |
+| Viper SMG | Rare | Very fast fire |
+| Boomstick | Rare | Shotgun, loads shell by shell |
+| Hand Cannon | Epic | Revolver, huge damage |
+| Mule LMG | Epic | 100 rounds, holo sight |
+| Marksman DMR | Epic | Semi-auto with a 4x scope |
+| Longshot | Legendary | Sniper with a full scope |
+| Thumper | Legendary | Grenade launcher |
 
-Gun spawn odds: Rare 60%, Epic 30%, Legendary 10% (`GUN_DROP_TABLE` in `src/guns.js`).
-Every gun has its own reload animation (mag swap, shell-by-shell, revolver speed-loader, bolt-action, drum).
+**Mutated guns** glow and get +20% damage plus a power: Toxic (poison), Inferno (fire that spreads),
+Shock (lightning chains to 2 zombies), Cryo (freeze, bonus damage to frozen), Vampiric (heal on hit) and Void (chance to erase a zombie).
+They spawn rarely on the map, from mutated zombies, and every boss drops one.
 
-### Zombies
-- **Walker**: slow and steady.
-- **Runner** (wave 2+): fast and fragile.
-- **Brute** (wave 4+): big, slow, hits hard.
-- **Abomination**: a boss every 5th wave. Aim for the head.
+### Power-ups and healing
+After each wave pick 1 of 3 power-ups. Each card rolls Rare 68% / Epic 26% / Legendary 6%.
+Each power-up has a stack limit shown on its card.
+Healing from medkits, lifesteal and clearing a wave can **overheal** you up to 50 above max health (blue bar).
+Overheal slowly drains, and the **Overcharge** power-up raises the cap.
 
-Zombies get tougher every wave. Medkits sometimes drop from kills, and clearing a wave heals 20 HP.
+### Accounts, friends and progress
+- Play as a guest (progress saved in your browser) or **create an account** to save it on the server.
+- Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).
+- **Friends**: add people by username, accept requests, see who's online with their level and best wave.
+- **Leaderboard** of best waves.
 
-### Power-up rarities
-Each of the three cards rolls its own rarity:
+### Multiplayer
+Main menu → **Multiplayer** → **Create room** and send your friends the 5-letter code, or join with a code.
+The host picks the mode and map, then starts. Up to 8 players.
 
-| Rarity | Chance per card |
+| Mode | Goal |
 | --- | --- |
-| Rare | 68% |
-| Epic | 26% |
-| Legendary | 6% |
-
-Higher rarities give bigger versions of the same bonus (damage, fire rate, mag size, reload speed, max HP,
-speed, regen, headshot damage, lifesteal, armor, crit chance). Epic unlocks **Cryo Rounds** and **Penetrator**.
-Legendary can also roll the exclusives: **Explosive Rounds**, **Second Wind** (cheat death once) and **Double Tap**.
-The odds live in `RARITY_ODDS` in `src/powerups.js`.
+| Free-for-all | First to 20 kills |
+| Team Deathmatch | Red vs Blue, first team to 30 kills |
+| Capture Point | Stand in the zone in the middle to hold it; first to 150 points |
+| Capture the Flag | Bring the enemy flag to yours; first to 3 captures |
 
 ## Running locally
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # the game at http://localhost:5173 (solo play)
+npm run cf:dev     # in a second terminal: the backend at :8787, for accounts and multiplayer
 npm run build      # production build in dist/
 ```
 
+The Vite dev server forwards `/api` to the local backend, so with both running everything works locally.
+
 ## Deploying to Cloudflare
 
-The game is a static site. `npm run build` writes it to `dist/`, and `wrangler.jsonc` tells Cloudflare to serve that folder.
+`wrangler.jsonc` builds the game and deploys a Worker that serves the game and runs the backend under `/api`.
+Accounts, friends and multiplayer rooms live in **Durable Objects** (`GameDB` and `Room`). Cloudflare creates them
+automatically on the first deploy; there's no database to set up. They're available on the Workers free plan.
 
 **Workers (Git integration / Workers Builds)**
 - Build command: none needed (`wrangler.jsonc` runs `npm run build` before deploying)
 - Deploy command: `npx wrangler deploy`
-
-**Pages (Git integration)**
-- Framework preset: `None` (or Vite)
-- Build command: `npm run build`
-- Build output directory: `dist`
 
 **From your machine**
 ```bash
@@ -96,22 +112,31 @@ npx wrangler login
 npm run deploy
 ```
 
-If your Cloudflare Worker is named something other than `fps-game`, change `name` in `wrangler.jsonc` to match.
+The Worker name in `wrangler.jsonc` is `fps-game`. Change it if your Worker is called something else.
 
 ## Project layout
 
 ```
 src/
-  main.js      game loop, waves, shooting, HUD, menus
-  world.js     the map: terrain, houses, plane wrecks, cars, props, sky, ambience
-  zombies.js   zombie types, AI and animation
-  weapon.js    guns in hand: inventory, firing, aiming, reload animations
-  guns.js      gun stats and 3D models
-  pickups.js   guns lying around the map
-  player.js    movement, jumping, climbing, collision
-  powerups.js  power-up definitions and rarity rolls
-  effects.js   blood, dust, tracers, explosions
-  audio.js     synthesised sound effects (no audio files)
-  terrain.js   height map and collision boxes
-  textures.js  procedurally drawn textures
+  main.js         game loop, solo waves, shooting, HUD, menus
+  world.js        the three maps: terrain, buildings, wrecks, ladders, props, sky
+  weather.js      weather presets, rain, snow, dust, lightning
+  zombies.js      zombie types, mutations, AI, climbing, spit, decapitation
+  weapon.js       guns in hand: inventory, firing, aiming, reload animations
+  guns.js         gun stats, mutations and 3D models
+  pickups.js      guns lying around the map
+  player.js       movement, jumping, climbing, ladders, sliding
+  powerups.js     power-up definitions, stack limits, rarity rolls
+  multiplayer.js  online rooms, lobby, other players, objectives, match HUD
+  account.js      login, profile, friends, leaderboard (client)
+  minimap.js      rotating minimap
+  effects.js      blood, dust, tracers, explosions
+  audio.js        synthesised sound effects (no audio files)
+  terrain.js      height map and collision boxes
+  textures.js     procedurally drawn textures
+shared/
+  cosmetics.js    levels and unlockables (client + server)
+  modes.js        game modes, maps, spawns (client + server)
+worker/
+  index.js        Cloudflare Worker: accounts/friends (GameDB) and multiplayer rooms (Room)
 ```

@@ -2,14 +2,27 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   // Must match the Worker's name in the Cloudflare dashboard.
   "name": "fps-game",
+  "main": "worker/index.js",
   "compatibility_date": "2026-06-01",
   // Builds the game before every `wrangler deploy`, so no separate build command is needed.
   "build": {
     "command": "npm run build"
   },
-  // Static site: Vite builds the game into ./dist and Cloudflare serves it as assets.
+  // The game itself is static files from ./dist; only /api/* (accounts, friends, multiplayer rooms) runs the Worker.
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // Durable Objects hold accounts/friends (GameDB) and live multiplayer rooms (Room).
+  // They are created automatically on deploy, no extra setup needed.
+  "durable_objects": {
+    "bindings": [
+      { "name": "DB", "class_name": "GameDB" },
+      { "name": "ROOMS", "class_name": "Room" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameDB", "Room"] }],
+  "observability": { "enabled": true }
 }

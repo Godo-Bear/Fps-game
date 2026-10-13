@@ -1,0 +1,57 @@
+// Account levels and the cosmetics they unlock. Shared by the game client and the server.
+
+export function levelFromXp(xp) {
+  return Math.floor(Math.sqrt(Math.max(0, xp) / 250)) + 1;
+}
+export function xpForLevel(level) {
+  return 250 * (level - 1) * (level - 1);
+}
+
+// Each list entry: [id, unlock level, label?]
+export const AVATARS = [
+  ['🧟', 1], ['💀', 1], ['🤠', 1], ['🪖', 1], ['🦊', 2], ['🐺', 3], ['👽', 4], ['🔥', 5],
+  ['⚡', 6], ['🎯', 7], ['🦅', 8], ['🐉', 10], ['👑', 12], ['☢️', 15],
+];
+export const NAME_COLORS = [
+  ['#e9d9b8', 1, 'Sand'], ['#ffffff', 1, 'White'], ['#7ec8ff', 1, 'Sky'], ['#8ee07a', 2, 'Moss'],
+  ['#ff9b5e', 3, 'Rust'], ['#ff5d73', 5, 'Blood'], ['#c08bff', 7, 'Toxic Violet'], ['#ffd34d', 10, 'Gold'],
+];
+export const TITLES = [
+  ['Survivor', 1], ['Scavenger', 2], ['Drifter', 3], ['Headhunter', 4], ['Wastelander', 6],
+  ['Zombie Slayer', 8], ['Plains Walker', 10], ['Legend of the Plains', 12], ['Undying', 15], ['Apex', 20],
+];
+export const CROSSHAIRS = [
+  ['#ffffff', 1, 'White'], ['#7dff7a', 1, 'Green'], ['#5ff2ff', 1, 'Cyan'], ['#ffe14d', 1, 'Yellow'],
+  ['#ff5df2', 2, 'Pink'], ['#ff4040', 3, 'Red'],
+];
+// Gun finishes tint every gun's metal parts.
+export const FINISHES = [
+  ['standard', 1, 'Standard', '#45484d'], ['desert', 3, 'Desert', '#a88d5f'], ['woodland', 5, 'Woodland', '#4f6340'],
+  ['arctic', 7, 'Arctic', '#d7dde2'], ['crimson', 9, 'Crimson', '#8e2a24'], ['gold', 12, 'Gold', '#d4a72c'],
+  ['toxic', 15, 'Toxic', '#5fd13a'],
+];
+
+export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', finish: 'standard' };
+
+const LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
+
+export function unlocked(kind, id, level) {
+  const row = LISTS[kind]?.find((r) => r[0] === id);
+  return !!row && row[1] <= level;
+}
+
+// Keeps only valid, unlocked choices.
+export function cleanProfile(input, level) {
+  const out = { ...DEFAULT_PROFILE };
+  if (input && typeof input === 'object') {
+    for (const kind of Object.keys(LISTS)) {
+      if (typeof input[kind] === 'string' && unlocked(kind, input[kind], level)) out[kind] = input[kind];
+    }
+  }
+  return out;
+}
+
+// XP earned for a finished game.
+export function xpForRun({ wave = 0, score = 0, kills = 0 }) {
+  return Math.round(Math.min(score, 200000) * 0.5 + wave * 60 + kills * 5);
+}

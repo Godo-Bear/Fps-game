@@ -13,13 +13,26 @@ export function mulberry32(seed) {
   };
 }
 
-// Gentle rolling plains.
+// Terrain shape per map. setTerrain() switches it before a map is built.
+const TERRAIN = {
+  plains: { a: 1, f: 1, ox: 0, oz: 0 },
+  frost: { a: 1.25, f: 1.15, ox: 40, oz: -25 },
+  forest: { a: 0.8, f: 1.4, ox: -70, oz: 55 },
+};
+let T = TERRAIN.plains;
+export function setTerrain(id) {
+  T = TERRAIN[id] || TERRAIN.plains;
+}
+
 export function heightAt(x, z) {
+  const X = x * T.f + T.ox;
+  const Z = z * T.f + T.oz;
   return (
-    Math.sin(x * 0.021) * 1.6 +
-    Math.cos(z * 0.018) * 1.4 +
-    Math.sin((x + z) * 0.047) * 0.55 +
-    Math.sin(x * 0.13 + z * 0.09) * 0.18
+    (Math.sin(X * 0.021) * 1.6 +
+      Math.cos(Z * 0.018) * 1.4 +
+      Math.sin((X + Z) * 0.047) * 0.55 +
+      Math.sin(X * 0.13 + Z * 0.09) * 0.18) *
+    T.a
   );
 }
 
@@ -146,6 +159,18 @@ export class Colliders {
       if (this._dist2(c, x, z) < 0.09) return null;
     }
     return best;
+  }
+
+  // Lowest ceiling (bottom of an overhead piece) above a body, used to stop you standing up under things.
+  ceilingAt(x, z, radius, feetY) {
+    let low = Infinity;
+    const r2 = radius * radius;
+    for (let i = 0; i < this.list.length; i++) {
+      const c = this.list[i];
+      if (c.bottom === -Infinity || c.bottom <= feetY + STEP_HEIGHT || c.bottom >= low) continue;
+      if (this._dist2(c, x, z) <= r2) low = c.bottom;
+    }
+    return low;
   }
 
   blocked(x, z, radius) {

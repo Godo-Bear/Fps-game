@@ -6,7 +6,7 @@ export const GUNS = {
   rifle: {
     id: 'rifle', name: 'AR-7 Rifle', tier: 'common', icon: '🔫',
     damage: 26, pellets: 1, fireRate: 9, mag: 30, reload: 1.9, reserve: Infinity,
-    spread: 0.006, auto: true, recoil: 0.011, kick: 0.5, zoomFov: 55, sound: 'rifle', reloadStyle: 'mag',
+    spread: 0.006, auto: true, recoil: 0.011, kick: 0.5, zoomFov: 50, sound: 'rifle', reloadStyle: 'mag', sight: 'reddot',
     hands: { grip: [0.005, -0.1, 0.11], fore: [-0.02, -0.06, -0.38] },
     ads: [0, -0.052, -0.36],
   },
@@ -34,14 +34,20 @@ export const GUNS = {
   lmg: {
     id: 'lmg', name: 'Mule LMG', tier: 'epic', icon: '🐂',
     damage: 24, pellets: 1, fireRate: 11, mag: 100, reload: 4, reserve: 300,
-    spread: 0.018, auto: true, recoil: 0.009, kick: 0.45, zoomFov: 56, sound: 'lmg', reloadStyle: 'box', moveMul: 0.85,
+    spread: 0.018, auto: true, recoil: 0.009, kick: 0.45, zoomFov: 52, sound: 'lmg', reloadStyle: 'box', moveMul: 0.85, sight: 'holo',
     hands: { grip: [0.005, -0.12, 0.12], fore: [-0.02, -0.08, -0.36] },
     ads: [0, -0.07, -0.36],
+  },
+  dmr: {
+    id: 'dmr', name: 'Marksman DMR', tier: 'epic', icon: '🔭',
+    damage: 72, pellets: 1, fireRate: 4, mag: 12, reload: 2.2, reserve: 72,
+    spread: 0.0015, hipSpread: 0.02, auto: false, recoil: 0.03, kick: 0.8, zoomFov: 30, scope: 'acog', sound: 'revolver', reloadStyle: 'mag', pierce: 1,
+    hands: { grip: [0.005, -0.1, 0.11], fore: [-0.02, -0.06, -0.36] },
   },
   sniper: {
     id: 'sniper', name: 'Longshot', tier: 'legendary', icon: '🎯',
     damage: 230, pellets: 1, fireRate: 0.9, mag: 5, reload: 2.6, reserve: 25,
-    spread: 0.0004, hipSpread: 0.035, auto: false, recoil: 0.08, kick: 1, zoomFov: 18, scope: true, sound: 'sniper', reloadStyle: 'bolt', pierce: 3,
+    spread: 0.0004, hipSpread: 0.035, auto: false, recoil: 0.08, kick: 1, zoomFov: 18, scope: 'sniper', sound: 'sniper', reloadStyle: 'bolt', pierce: 3,
     hands: { grip: [0.005, -0.1, 0.12], fore: [-0.02, -0.07, -0.4] },
     ads: [0, -0.09, -0.3],
   },
@@ -61,9 +67,21 @@ export const TIER_CSS = { common: '#cfc6b0', rare: 'var(--rare)', epic: 'var(--e
 // Chances when a weapon spawns on the map.
 export const GUN_DROP_TABLE = [
   { tier: 'legendary', chance: 0.1, guns: ['sniper', 'launcher'] },
-  { tier: 'epic', chance: 0.3, guns: ['revolver', 'lmg'] },
+  { tier: 'epic', chance: 0.3, guns: ['revolver', 'lmg', 'dmr'] },
   { tier: 'rare', chance: 0.6, guns: ['smg', 'shotgun'] },
 ];
+
+// Mutated guns: a glowing variant with +20% damage and a special power against zombies.
+export const MUTATIONS = {
+  toxic: { name: 'Toxic', color: 0x6dff2a, css: '#6dff2a', desc: 'Poisons zombies, dealing extra damage over time' },
+  inferno: { name: 'Inferno', color: 0xff7a1a, css: '#ff7a1a', desc: 'Sets zombies on fire; burning spreads when they die' },
+  shock: { name: 'Shock', color: 0x5ff2ff, css: '#5ff2ff', desc: 'Lightning arcs from each hit to 2 nearby zombies' },
+  frost: { name: 'Cryo', color: 0x9fd8ff, css: '#9fd8ff', desc: 'Freezes zombies to a crawl; +40% damage to frozen ones' },
+  vampire: { name: 'Vampiric', color: 0xff2a4a, css: '#ff2a4a', desc: 'Heals you for part of the damage you deal (can overheal)' },
+  void: { name: 'Void', color: 0xb04dff, css: '#b04dff', desc: 'Small chance to erase a zombie instantly (higher on headshots)' },
+};
+export const MUTATION_IDS = Object.keys(MUTATIONS);
+export const randomMutation = () => MUTATION_IDS[Math.floor(Math.random() * MUTATION_IDS.length)];
 
 export function rollGun(rand = Math.random) {
   let r = rand();
@@ -99,7 +117,36 @@ const C = (r1, r2, len, seg = 10) => new THREE.CylinderGeometry(r1, r2, len, seg
 const H = Math.PI / 2;
 
 // Builds a gun pointing down -Z. Returns the group plus the parts the reload animations move.
-export function buildGun(id) {
+// finish: hex colour for the metal parts; mutation: id from MUTATIONS (adds a glow).
+export function buildGun(id, { finish = null, mutation = null } = {}) {
+  const out = buildGunBase(id);
+  if (finish || mutation) {
+    const mut = mutation ? MUTATIONS[mutation] : null;
+    const swap = new Map();
+    out.group.traverse((o) => {
+      if (!o.isMesh || (o.material !== M.metal && o.material !== M.dark)) return;
+      if (!swap.has(o.material)) {
+        const m = o.material.clone();
+        if (finish) m.color.set(finish).multiplyScalar(o.material === M.dark ? 0.7 : 1);
+        if (mut) {
+          m.emissive.setHex(mut.color);
+          m.emissiveIntensity = 0.25;
+        }
+        swap.set(o.material, m);
+      }
+      o.material = swap.get(o.material);
+    });
+    if (mut) {
+      // glowing veins along the gun
+      const glow = new THREE.MeshBasicMaterial({ color: mut.color });
+      for (const side of [-1, 1]) part(out.group, B(0.006, 0.012, 0.32), glow, side * 0.042, 0.0, -0.08);
+      part(out.group, B(0.03, 0.03, 0.03), glow, 0, -0.03, -0.25);
+    }
+  }
+  return out;
+}
+
+function buildGunBase(id) {
   const g = new THREE.Group();
   const out = { group: g, mag: null, muzzleZ: -0.9, muzzleY: 0.02, extra: null };
   switch (id) {
@@ -109,7 +156,10 @@ export function buildGun(id) {
       part(g, C(0.017, 0.017, 0.42), M.metal, 0, 0.02, -0.66, H);
       part(g, C(0.026, 0.026, 0.08), M.metal, 0, 0.02, -0.86, H);
       part(g, B(0.02, 0.05, 0.02), M.metal, 0, 0.065, -0.8);
-      part(g, B(0.05, 0.035, 0.08), M.metal, 0, 0.065, 0.06);
+      // red dot sight
+      part(g, B(0.03, 0.02, 0.06), M.dark, 0, 0.06, 0.02);
+      part(g, new THREE.CylinderGeometry(0.024, 0.024, 0.07, 12, 1, true), M.dark, 0, 0.1, 0.02, H);
+      part(g, new THREE.RingGeometry(0.018, 0.024, 12), M.dark, 0, 0.1, -0.015);
       part(g, B(0.065, 0.11, 0.28), M.wood, 0, -0.04, 0.34, 0.12);
       part(g, B(0.05, 0.13, 0.06), M.wood, 0, -0.1, 0.1, -0.35);
       out.mag = part(g, B(0.05, 0.2, 0.09), M.bakelite, 0, -0.14, -0.08, 0.3);
@@ -159,13 +209,35 @@ export function buildGun(id) {
       part(g, B(0.1, 0.13, 0.5), M.dark, 0, 0, -0.02);
       part(g, C(0.035, 0.035, 0.42, 12), M.metal, 0, 0.02, -0.48, H);
       part(g, C(0.02, 0.02, 0.2), M.dark, 0, 0.02, -0.76, H);
-      part(g, B(0.03, 0.04, 0.2), M.dark, 0, 0.1, -0.05);
+      part(g, B(0.03, 0.04, 0.2), M.dark, 0, 0.09, -0.05);
+      // holographic sight: open frame with a glass window
+      part(g, B(0.07, 0.012, 0.08), M.dark, 0, 0.115, 0.02);
+      part(g, B(0.012, 0.06, 0.08), M.dark, 0.03, 0.145, 0.02);
+      part(g, B(0.012, 0.06, 0.08), M.dark, -0.03, 0.145, 0.02);
+      part(g, B(0.07, 0.012, 0.08), M.dark, 0, 0.178, 0.02);
       part(g, B(0.015, 0.2, 0.015), M.dark, 0.02, -0.06, -0.62, 1.2);
       part(g, B(0.015, 0.2, 0.015), M.dark, -0.02, -0.06, -0.62, 1.2);
       part(g, B(0.08, 0.12, 0.3), M.olive, 0, -0.02, 0.36, 0.1);
       part(g, B(0.05, 0.13, 0.06), M.olive, 0, -0.12, 0.12, -0.35);
       out.mag = part(g, B(0.14, 0.12, 0.14), M.olive, -0.1, -0.06, -0.06);
       out.muzzleZ = -0.88;
+      break;
+    }
+    case 'dmr': {
+      part(g, B(0.072, 0.095, 0.44), M.dark, 0, 0, 0);
+      part(g, C(0.017, 0.019, 0.5), M.dark, 0, 0.015, -0.48, H);
+      part(g, C(0.026, 0.026, 0.07), M.dark, 0, 0.015, -0.74, H);
+      part(g, B(0.075, 0.075, 0.3), M.tan, 0, -0.01, -0.32);
+      part(g, B(0.07, 0.11, 0.3), M.tan, 0, -0.035, 0.34, 0.12);
+      part(g, B(0.05, 0.13, 0.06), M.tan, 0, -0.1, 0.12, -0.35);
+      // 4x combat scope
+      part(g, B(0.03, 0.03, 0.12), M.dark, 0, 0.06, 0.0);
+      part(g, C(0.026, 0.026, 0.2, 12), M.dark, 0, 0.095, 0.0, H);
+      part(g, C(0.034, 0.026, 0.05, 12), M.dark, 0, 0.095, -0.12, H);
+      part(g, new THREE.CircleGeometry(0.03, 12), M.glass, 0, 0.095, -0.146);
+      out.mag = part(g, B(0.05, 0.16, 0.08), M.dark, 0, -0.12, -0.06, 0.15);
+      out.muzzleZ = -0.78;
+      out.muzzleY = 0.015;
       break;
     }
     case 'sniper': {

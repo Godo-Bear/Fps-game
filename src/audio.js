@@ -103,7 +103,7 @@ export class GameAudio {
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
     f.frequency.value = 380;
-    const g = ctx.createGain();
+    const g = (this.windGain = ctx.createGain());
     g.gain.value = 0.07;
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.09;
@@ -122,11 +122,12 @@ export class GameAudio {
   }
 
   // Gunshot: filtered noise crack plus a low thump, shaped per gun.
-  shot(kind = 'rifle', heavy = false) {
+  shot(kind = 'rifle', heavy = false, pos = null) {
     if (!this.ctx) return;
     const P = SHOTS[kind] || SHOTS.rifle;
     const ctx = this.ctx;
     const t = ctx.currentTime;
+    const out = pos ? this._panner(pos) : this.master;
     const n = this._noise();
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
@@ -134,7 +135,7 @@ export class GameAudio {
     f.frequency.exponentialRampToValueAtTime(P.end, t + P.dur);
     const g = ctx.createGain();
     this._env(g, t, P.vol * (heavy ? 1.2 : 1), 0.002, P.dur);
-    n.connect(f).connect(g).connect(this.master);
+    n.connect(f).connect(g).connect(out);
     n.start(t, Math.random());
     n.stop(t + P.dur + 0.1);
 
@@ -144,11 +145,11 @@ export class GameAudio {
     o.frequency.exponentialRampToValueAtTime(35, t + P.dur * 0.7);
     const og = ctx.createGain();
     this._env(og, t, P.boomVol, 0.002, P.dur * 0.7);
-    o.connect(og).connect(this.master);
+    o.connect(og).connect(out);
     o.start(t);
     o.stop(t + P.dur);
 
-    if (P.tail) {
+    if (P.tail && !pos) {
       // distant echo rolling across the plains
       const e = this._noise();
       const ef = ctx.createBiquadFilter();
@@ -333,6 +334,80 @@ export class GameAudio {
     n.connect(f).connect(g).connect(this.master);
     n.start(t, Math.random());
     n.stop(t + 0.12);
+  }
+
+  _burst({ type = 'lowpass', freq = 800, q = 1, vol = 0.4, attack = 0.005, decay = 0.2, delay = 0, pos = null, sweep = null }) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + delay;
+    const n = this._noise();
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.setValueAtTime(freq, t);
+    if (sweep) f.frequency.exponentialRampToValueAtTime(sweep, t + attack + decay);
+    f.Q.value = q;
+    const g = ctx.createGain();
+    this._env(g, t, vol, attack, decay);
+    n.connect(f).connect(g).connect(pos ? this._panner(pos) : this.master);
+    n.start(t, Math.random());
+    n.stop(t + attack + decay + 0.05);
+  }
+
+  slide() {
+    this._burst({ type: 'bandpass', freq: 600, q: 0.8, vol: 0.35, attack: 0.05, decay: 0.6, sweep: 250 });
+  }
+
+  splat() {
+    this._burst({ type: 'lowpass', freq: 1400, vol: 0.6, decay: 0.18, sweep: 300 });
+    this._notes([210, 120], { type: 'sine', gap: 0.03, vol: 0.25, len: 0.12 });
+  }
+
+  spit(pos) {
+    this._burst({ type: 'bandpass', freq: 1800, q: 2, vol: 0.7, attack: 0.01, decay: 0.25, sweep: 500, pos });
+  }
+
+  zap() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(1800, t);
+    o.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+    const g = ctx.createGain();
+    this._env(g, t, 0.15, 0.002, 0.15);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.2);
+  }
+
+  ignite() {
+    this._burst({ type: 'highpass', freq: 1200, vol: 0.25, attack: 0.02, decay: 0.3 });
+  }
+
+  thunder(delay = 0) {
+    this._burst({ type: 'lowpass', freq: 400, vol: 1.2, attack: 0.02, decay: 2.6, delay, sweep: 60 });
+    this._burst({ type: 'lowpass', freq: 1200, vol: 0.5, attack: 0.005, decay: 0.4, delay, sweep: 200 });
+  }
+
+  // Looping rain hiss; level 0..1
+  setRain(level) {
+    if (!this.ctx) return;
+    if (!this.rainGain) {
+      const n = this._noise(true);
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'highpass';
+      f.frequency.value = 1500;
+      this.rainGain = this.ctx.createGain();
+      this.rainGain.gain.value = 0;
+      n.connect(f).connect(this.rainGain).connect(this.master);
+      n.start();
+    }
+    this.rainGain.gain.setTargetAtTime(level * 0.16, this.ctx.currentTime, 0.8);
+  }
+
+  setWind(level) {
+    if (this.windGain) this.windGain.gain.setTargetAtTime(0.07 + level * 0.2, this.ctx.currentTime, 0.8);
   }
 
   _notes(freqs, { type = 'triangle', gap = 0.09, vol = 0.22, len = 0.35 } = {}) {
