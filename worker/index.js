@@ -5,7 +5,7 @@ import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery } from '../shared/mastery.js';
-import { ALL_EMOTES, EMOTES, canUseEmote, cleanQuick, cleanQuickText, slotOk, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
+import { cleanQuick, cleanQuickText, refundOldEmotes, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -247,6 +247,14 @@ export class GameDB extends DurableObject {
       .exec('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires > ?', await sha256(m[1]), Date.now())
       .toArray()[0];
     if (row) this.sql.exec('UPDATE users SET last_seen = ? WHERE id = ?', Date.now(), row.id);
+    if (row && /"emote/.test(row.items || '')) {
+      // emotes left the shop: give the coins back (once)
+      const items = this._items(row);
+      const refund = refundOldEmotes(items);
+      row.items = JSON.stringify(items);
+      row.coins = (row.coins || 0) + refund;
+      this.sql.exec('UPDATE users SET items = ?, coins = ? WHERE id = ?', row.items, row.coins, row.id);
+    }
     return row || null;
   }
 
@@ -398,13 +406,9 @@ export class GameDB extends DurableObject {
     }
     if (path === '/shop/loadout' && method === 'POST') {
       const items = this._items(me);
-      if (Array.isArray(body.quick) || Array.isArray(body.emotes)) {
-        // your quick chat phrases, and what goes in the Z menu
-        if (Array.isArray(body.quick)) items.quick = cleanQuick(body.quick);
-        if (Array.isArray(body.emotes)) {
-          if (body.emotes.length !== EMOTES.length || !body.emotes.every((v) => slotOk(v, items, !!me.admin))) return err("You don't own that emote");
-          items.emotes = body.emotes;
-        }
+      if (Array.isArray(body.quick)) {
+        // your quick chat wheel
+        items.quick = cleanQuick(body.quick);
         return saveItems(items, me.coins);
       }
       if (body.gun === null) delete items.loadout;
@@ -892,21 +896,15 @@ export class Room extends DurableObject {
         this._broadcast({ t: 'announce', name: p.name, text });
         break;
       }
-      case 'emote':
-        if (now - (p.lastEmote || 0) < 800) return;
-        if (typeof m.text === 'string') {
-          // custom quick chat: cleaned like normal chat
-          const text = cleanQuickText(m.text);
-          if (!text) return;
-          p.lastEmote = now;
-          this._broadcast({ t: 'emote', id: p.id, name: p.name, text });
-          break;
-        }
-        // shop emotes only for accounts that own them
-        if (!canUseEmote(m.i, p.items, p.admin)) return;
+      case 'emote': {
+        // quick chat wheel: cleaned like normal chat
+        if (now - (p.lastEmote || 0) < 800 || typeof m.text !== 'string') return;
+        const text = cleanQuickText(m.text);
+        if (!text) return;
         p.lastEmote = now;
-        this._broadcast({ t: 'emote', id: p.id, name: p.name, i: m.i });
+        this._broadcast({ t: 'emote', id: p.id, name: p.name, text });
         break;
+      }
       case 'chat': {
         // room chat: short messages, max ~1 per 0.7s each
         if (typeof m.text !== 'string') return;

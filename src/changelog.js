@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '3.9', date: '13 Oct 2026', title: 'Quick chat wheel',
+    items: [
+      'Emotes are gone: the wheel (Z) is now your quick chat, 8 phrases you can rewrite in Customise.',
+      'Anyone who bought emotes got their coins back.',
+      'Admin: reset your quick chat to the defaults.',
+    ],
+  },
+  {
     v: '3.8', date: '13 Oct 2026', title: 'Emote wheel',
     items: [
       'Emotes and quick chat are now a wheel: hold your aim towards one and click to send it.',

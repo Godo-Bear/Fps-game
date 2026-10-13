@@ -91,7 +91,7 @@ you log in). Dying ends that game and deletes its save.
   the fire button), and buttons for aim, jump, crouch/slide, reload, swap, knife, grenade, build and pause.
   In build mode fire places, R turns and swap changes what you're building.
 - **Controllers** (Xbox / PlayStation layout): left stick move (all the way forward sprints), right stick look,
-  RT fire, LT aim, A jump, B crouch/slide, X reload (hold to revive), Y swap gun, LB grenade, RB knife, R3 emotes, L3 sprint, D-pad up build,
+  RT fire, LT aim, A jump, B crouch/slide, X reload (hold to revive), Y swap gun, LB grenade, RB knife, R3 quick chat wheel, L3 sprint, D-pad up build,
   D-pad down last gun (turns things in build mode), D-pad left/right pick what to build, Start pause, Back scores.
   In menus the D-pad moves between buttons, A presses and B goes back; pick power-ups with left/up/right.
 
@@ -119,13 +119,12 @@ Your first new game starts with a short tutorial (move, shoot, aim, reload, jump
 that matches your controls. Skip it with **K** (tap it on touch, **Back** on a controller); turn it back on in
 **Settings**.
 
-### Parties, emotes, revives, spectating, kill cam
+### Parties, quick chat, revives, spectating, kill cam
 - **Parties:** invite friends from **Friends** (🎉 Invite). When the party leader creates or joins a room, everyone
   in the party follows them in. The home screen shows your party.
-- **Emotes:** press **Z** for the emote / quick chat **wheel**: move the mouse towards one and click to send it (or press 1-8).
-  Controller: R3 opens it, point with the right stick, A or RT sends. Touch: tap 😀, then tap one. They show above your head and in chat. 12 more
-  emotes are in the **Shop**; put the ones you buy into any of your 8 emote slots there.
-  You can also write up to 6 of your own **quick chat** phrases (Shop → Your quick chat) and put them in any slot.
+- **Quick chat wheel:** press **Z**, move the mouse towards a phrase and click to send it (or press 1-8). It shows above
+  your head and in chat. Write your own 8 phrases in **Customise**. Controller: R3 opens it, point with the right
+  stick, A or RT sends. Touch: tap 💬, then tap one.
 - **Co-op revives:** hold **E** (controller X) next to a downed squadmate for 3 seconds.
 - **Spectating:** while you're down in co-op you watch a squadmate (click for the next one).
 - **Kill cam:** in PvP, after you die the camera follows whoever got you until you respawn.
@@ -180,7 +179,7 @@ in multiplayer admins get an ADMIN badge and can kick players.
 Newer admin tools: max or reset all **gun mastery** (every skin unlocked), finish or reset **today's quests**,
 replay or skip the **tutorial**, spawn a **specific boss**, **infinite grenades**, **free building**, **unlimited builds**,
 **super turrets**, max / set **scrap**, refill / set **grenades**, remove all builds and zero scrap & grenades.
-Admin accounts also own every shop **emote**.
+Admins can also reset their quick chat wheel to the defaults.
 
 To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:
 it lives in a Cloudflare secret called `ADMIN_CODE` (case and extra spaces don't matter). Set it in the Cloudflare dashboard

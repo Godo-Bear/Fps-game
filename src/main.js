@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
-import { MAPS, MODES, SOLO_MAP, emoteSlots, slotText } from '../shared/modes.js';
+import { MAPS, MODES, SOLO_MAP, quickWheel } from '../shared/modes.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
@@ -2503,14 +2503,12 @@ function setEmotes(open) {
   }
   $('emotes').classList.toggle('hidden', !emoteMenu.open);
 }
-// slot: 0-7 in your emote menu (which emote is in each slot is up to you, see the Shop)
+// slot: 0-7 on your quick chat wheel (the phrases are yours to change in Customise)
 function sendEmote(slot) {
   setEmotes(false);
-  const v = emoteSlots(account.items, account.admin)[slot];
-  const text = slotText(v, account.items);
+  const text = quickWheel(account.items)[slot];
   if (!text) return;
-  // your own quick chat phrases go as text, emotes by number
-  if (game.mode === 'mp' && mp.inMatch) mp.send(typeof v === 'string' ? { t: 'emote', text } : { t: 'emote', i: v });
+  if (game.mode === 'mp' && mp.inMatch) mp.send({ t: 'emote', text });
   else addChat(account.name, text, account.profile.color);
 }
 function setWheelHighlight(i) {
@@ -2519,8 +2517,7 @@ function setWheelHighlight(i) {
   $('emotes').querySelectorAll('[data-emote]').forEach((b) => b.classList.toggle('hi', Number(b.dataset.emote) === i));
   const center = $('emotes').querySelector('.w-center');
   if (center) {
-    const v = i >= 0 ? emoteSlots(account.items, account.admin)[i] : null;
-    center.innerHTML = i >= 0 ? `<b>${esc(slotText(v, account.items))}</b><span>click to send</span>` : '<span>point at one,<br>then click</span>';
+    center.innerHTML = i >= 0 ? `<b>${esc(quickWheel(account.items)[i])}</b><span>click to send</span>` : '<span>💬 point at one,<br>then click</span>';
   }
 }
 // where the pointer is (x, y from the middle): the slot in that direction
@@ -2539,14 +2536,14 @@ function aimWheel(x, y) {
   setWheelHighlight(((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8);
 }
 function renderEmoteMenu() {
-  const slots = emoteSlots(account.items, account.admin);
+  const slots = quickWheel(account.items);
   const html =
     slots
       .map((v, slot) => {
         const a = (slot / 8) * Math.PI * 2;
         const x = Math.sin(a) * WHEEL_R;
         const y = -Math.cos(a) * WHEEL_R;
-        return `<button data-emote="${slot}" class="w-item ${typeof v === 'string' ? 'quick' : ''}" style="left:calc(50% + ${x.toFixed(1)}px);top:calc(50% + ${y.toFixed(1)}px)"><b>${slot + 1}</b>${typeof v === 'string' ? '💬 ' : ''}${esc(slotText(v, account.items))}</button>`;
+        return `<button data-emote="${slot}" class="w-item quick" style="left:calc(50% + ${x.toFixed(1)}px);top:calc(50% + ${y.toFixed(1)}px)"><b>${slot + 1}</b>${esc(v)}</button>`;
       })
       .join('') + '<div class="w-center"></div><div class="w-pointer"></div>';
   if ($('emotes').innerHTML !== html) {

@@ -1,6 +1,5 @@
 // Coins and the shop. Shared by the game client and the server so prices always match.
 import { AVATARS, CROSSHAIRS, FINISHES, NAME_COLORS, TITLES } from './cosmetics.js';
-import { EMOTES, SHOP_EMOTES, emoteItemId } from './modes.js';
 
 // Coins earned for a finished game (the server recomputes this from the reported run).
 export function coinsForRun({ mode, wave = 0, kills = 0, headshots = 0, won = false }) {
@@ -23,8 +22,6 @@ export const SHOP = [
   { id: 'gun_sniper', kind: 'gun', gun: 'sniper', name: 'Longshot', icon: '🎯', desc: 'Start solo runs with it', price: 1200 },
   { id: 'gun_launcher', kind: 'gun', gun: 'launcher', name: 'Thumper', icon: '🧨', desc: 'Start solo runs with it', price: 1200 },
   { id: 'revive', kind: 'consumable', name: 'Revive Token', icon: '👼', desc: 'Your next solo run starts with Second Wind', max: 5, price: 400 },
-  // emotes: buy once, then put them in your emote menu
-  ...SHOP_EMOTES.map(([text, price], k) => ({ id: emoteItemId(EMOTES.length + k), kind: 'emote', emote: EMOTES.length + k, name: text.slice(text.indexOf(' ') + 1), icon: text.split(' ')[0], desc: 'Emote', price })),
 ];
 
 // Any locked cosmetic can also be bought instead of levelling up for it.
@@ -42,7 +39,7 @@ export function priceOf(itemId, items = {}) {
   if (cos) return have ? null : cosmeticPrice(cos[1], cos[2]);
   const def = SHOP.find((s) => s.id === itemId);
   if (!def) return null;
-  if (def.kind === 'gun' || def.kind === 'emote') return have ? null : def.price;
+  if (def.kind === 'gun') return have ? null : def.price;
   if (have >= def.max) return null;
   if (def.kind === 'upgrade') return def.base * (have + 1);
   return def.price;

@@ -50,39 +50,29 @@ export const MAPS = {
   forest: { name: 'Blackwood Hollow', weathers: ['dusk', 'dusk', 'mist', 'rain', 'storm'] },
 };
 
-// Quick callouts (Z): shown above your head and in the chat.
-export const EMOTES = ['👋 Hi!', '👍 Nice!', '🆘 Help!', '📍 Over here!', '🔄 Reloading!', '😂 LOL', '🧟 Zombies!', '🤝 GG'];
-// More emotes from the shop: [text, price in coins]
-export const SHOP_EMOTES = [
-  ['🔥 On fire!', 150], ['💀 Too easy', 150], ['🏃 RUN!', 150], ['🎯 Headshot!', 200], ['🫡 Salute', 200], ['💤 Boring...', 200],
-  ['🧠 Big brain', 250], ['🤡 Clown', 250], ['🧟 Braaains...', 250], ['👑 Bow down', 300], ['🍗 Winner winner', 300], ['🚀 To the moon', 400],
-];
-export const ALL_EMOTES = [...EMOTES, ...SHOP_EMOTES.map((e) => e[0])];
-export const emoteItemId = (i) => `emote_${i}`; // i: index in ALL_EMOTES
-export const canUseEmote = (i, items, admin = false) =>
-  Number.isInteger(i) && i >= 0 && (i < EMOTES.length || (i < ALL_EMOTES.length && (admin || !!items?.[emoteItemId(i)])));
-// Custom quick chat: your own short phrases, which can go in any emote slot as 'c0'..'c5'.
-export const QUICK_MAX = 6;
+// Quick chat wheel (Z): 8 short phrases you can rewrite (Customise). Shown above your head and in chat.
+export const QUICK_MAX = 8;
 export const QUICK_LEN = 32;
+export const DEFAULT_QUICK = ['Hi!', 'Nice!', 'Help!', 'Over here!', 'Reloading!', 'Zombies!', 'Thanks!', 'GG'];
 export const cleanQuickText = (t) =>
   String(t ?? '')
     .replace(/[\u0000-\u001f\u007f<>]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, QUICK_LEN);
-// always QUICK_MAX entries ('' = empty), so slot references stay put
+// always QUICK_MAX entries ('' = use the default for that slot)
 export const cleanQuick = (list) => Array.from({ length: QUICK_MAX }, (_, i) => cleanQuickText(Array.isArray(list) ? list[i] : ''));
-export function slotOk(v, items, admin = false) {
-  if (typeof v === 'string') return /^c[0-5]$/.test(v) && !!cleanQuick(items?.quick)[Number(v[1])];
-  return canUseEmote(v, items, admin);
-}
-export function slotText(v, items) {
-  return typeof v === 'string' ? cleanQuick(items?.quick)[Number(v[1])] : ALL_EMOTES[v] || '';
-}
+// what's on the wheel: your phrase, or the default one for that slot
+export const quickWheel = (items) => cleanQuick(items?.quick).map((t, i) => t || DEFAULT_QUICK[i]);
 
-// The 8 things in your Z menu: emotes (numbers) or your quick chat phrases ('c0'..). Anything that's
-// no longer valid falls back to the normal emote for that slot.
-export function emoteSlots(items, admin = false) {
-  const s = Array.isArray(items?.emotes) ? items.emotes : [];
-  return EMOTES.map((_, i) => (slotOk(s[i], items, admin) ? s[i] : i));
+// Emotes used to be sold in the shop; anyone who bought one gets the coins back.
+export const OLD_EMOTE_PRICES = { emote_8: 150, emote_9: 150, emote_10: 150, emote_11: 200, emote_12: 200, emote_13: 200, emote_14: 250, emote_15: 250, emote_16: 250, emote_17: 300, emote_18: 300, emote_19: 400 };
+// Takes the old emote purchases out of an items object; returns the coins to give back.
+export function refundOldEmotes(items) {
+  let coins = 0;
+  for (const k of Object.keys(items || {})) {
+    if (k in OLD_EMOTE_PRICES) coins += items[k] ? OLD_EMOTE_PRICES[k] : 0;
+    if (k in OLD_EMOTE_PRICES || k === 'emotes') delete items[k];
+  }
+  return coins;
 }

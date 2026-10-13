@@ -1,6 +1,6 @@
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, TITLES, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
-import { ALL_EMOTES, QUICK_LEN, QUICK_MAX, canUseEmote, cleanQuick, emoteSlots, slotOk } from '../shared/modes.js';
+import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
 import { GUNS } from './guns.js';
@@ -45,6 +45,12 @@ export class Account {
     this.unreadListeners = [];
     try {
       this.guest = { ...emptyGuest(), ...JSON.parse(store.get(GUEST_KEY) || '{}') };
+      // emotes left the shop: give guests their coins back too
+      const refund = refundOldEmotes(this.guest.items);
+      if (refund) {
+        this.guest.coins = (this.guest.coins || 0) + refund;
+        store.set(GUEST_KEY, JSON.stringify(this.guest));
+      }
     } catch {
       this.guest = emptyGuest();
     }
@@ -372,19 +378,7 @@ export class Account {
     else if (g.items?.[`gun_${gun}`]) g.items.loadout = gun;
     this._saveGuest();
   }
-  // which 8 emotes are in your Z menu
-  async setEmoteSlots(slots) {
-    if (this.user) {
-      const { user } = await this._api('/shop/loadout', { method: 'POST', body: { emotes: slots } });
-      this.user = user;
-      this._changed();
-      return;
-    }
-    if (!slots.every((v) => slotOk(v, this.guest.items))) throw new Error("You don't own that emote");
-    this.guest.items = { ...this.guest.items, emotes: slots };
-    this._saveGuest();
-  }
-  // your own quick chat phrases (up to 6)
+  // your quick chat wheel (8 phrases)
   async setQuickChat(list) {
     if (this.user) {
       const { user } = await this._api('/shop/loadout', { method: 'POST', body: { quick: list } });
@@ -654,7 +648,23 @@ export class AccountUI {
       ${section('title', 'Title', TITLES, (id) => esc(id))}
       ${section('crosshair', 'Crosshair', CROSSHAIRS, (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
       ${section('finish', 'Gun finish', FINISHES, (id, label, color) => `<span class="swatch" style="background:${color}"></span>${label}`)}
+      <h4>Quick chat wheel <span class="muted small">(press Z in game · up to ${QUICK_LEN} letters each · leave one empty for the default)</span></h4>
+      <form id="quick-form" class="quick-chat">
+        ${cleanQuick(a.items.quick)
+          .map((t, i) => `<label><b>${i + 1}</b><input name="q${i}" maxlength="${QUICK_LEN}" placeholder="${esc(DEFAULT_QUICK[i])}" value="${esc(t)}" autocomplete="off" /></label>`)
+          .join('')}
+        <button class="btn small">SAVE QUICK CHAT</button>
+      </form>
       <div id="profile-msg" class="msg">${a.loggedIn ? 'Saved to your account.' : 'Guest: saved in this browser.'} Level up to unlock more.</div>`;
+    document.getElementById('quick-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const list = Array.from({ length: QUICK_MAX }, (_, i) => f.get(`q${i}`) || '');
+      a.setQuickChat(list).then(
+        () => (document.getElementById('profile-msg').textContent = 'Quick chat saved: press Z in game.'),
+        (err) => (document.getElementById('profile-msg').textContent = err.message),
+      );
+    });
     this.body.querySelectorAll('.pick-row').forEach((row) => {
       row.addEventListener('click', async (e) => {
         const b = e.target.closest('.pick');
@@ -684,9 +694,6 @@ export class AccountUI {
         if (!have) button = `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
         else if (items.loadout === def.gun) button = '<button class="btn small ghost" data-unequip="1">EQUIPPED ✓</button>';
         else button = `<button class="btn small ghost" data-equip="${def.gun}">EQUIP</button>`;
-      } else if (def.kind === 'emote') {
-        status = `<div class="emote-preview">${esc(ALL_EMOTES[def.emote])}</div>`;
-        button = have || a.admin ? '<span class="maxed">OWNED ✓</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
       } else {
         status = `<div class="owned-count">You have ${have}</div>`;
         button = price === null ? '<span class="maxed">MAX</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
@@ -716,26 +723,6 @@ export class AccountUI {
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>
       <h4>Items</h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
-      <h4>Emotes <span class="muted small">(press Z in game)</span></h4>
-      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'emote').map(card).join('')}</div>
-      <h4>Your quick chat <span class="muted small">(write your own, up to ${QUICK_LEN} letters each)</span></h4>
-      <form id="quick-form" class="quick-chat">
-        ${cleanQuick(items.quick)
-          .map((t, i) => `<input name="q${i}" maxlength="${QUICK_LEN}" placeholder="Quick chat ${i + 1}, e.g. Cover me!" value="${esc(t)}" autocomplete="off" />`)
-          .join('')}
-        <button class="btn small">SAVE QUICK CHAT</button>
-      </form>
-      <h4>Your emote menu <span class="muted small">(press Z in game: put emotes or your quick chat in any slot)</span></h4>
-      <div class="emote-slots">${emoteSlots(items, a.admin)
-        .map((cur, slot) => {
-          const emotes = ALL_EMOTES.map((e, i) => (canUseEmote(i, items, a.admin) ? `<option value="${i}" ${i === cur ? 'selected' : ''}>${esc(e)}</option>` : '')).join('');
-          const quick = cleanQuick(items.quick)
-            .map((t, i) => (t ? `<option value="c${i}" ${cur === `c${i}` ? 'selected' : ''}>💬 ${esc(t)}</option>` : ''))
-            .join('');
-          return `<label><b>${slot + 1}</b><select data-slot="${slot}">${emotes}${quick ? `<optgroup label="Your quick chat">${quick}</optgroup>` : ''}</select></label>`;
-        })
-        .join('')}</div>
-      ${a.loggedIn ? '' : '<p class="muted small">Bought emotes show to other players online only when you\'re logged in.</p>'}
       <h4>Cosmetics <span class="muted small">(skip the level requirement)</span></h4>
       <div class="cos-list">${cosmetics || '<p class="muted">You own every cosmetic!</p>'}</div>
       ${a.loggedIn ? '' : '<p class="muted small">Guest: coins and purchases are saved in this browser. Log in to keep them on your account.</p>'}`;
@@ -750,19 +737,6 @@ export class AccountUI {
         }
       })
     );
-    this.body.querySelectorAll('select[data-slot]').forEach((sel) =>
-      sel.addEventListener('change', () => {
-        const slots = emoteSlots(a.items, a.admin);
-        slots[Number(sel.dataset.slot)] = /^c\d$/.test(sel.value) ? sel.value : Number(sel.value);
-        a.setEmoteSlots(slots).then(() => msg('Emote menu saved'), (e) => msg(e.message));
-      }),
-    );
-    document.getElementById('quick-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
-      const list = Array.from({ length: QUICK_MAX }, (_, i) => f.get(`q${i}`) || '');
-      a.setQuickChat(list).then(() => msg('Quick chat saved: put it in your emote menu below'), (err) => msg(err.message));
-    });
     this.body.querySelectorAll('[data-equip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(b.dataset.equip).catch((e) => msg(e.message))));
     this.body.querySelectorAll('[data-unequip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(null).catch((e) => msg(e.message))));
   }
@@ -808,6 +782,7 @@ export class AccountUI {
         <button class="btn small" data-acc="quests-complete">📜 FINISH TODAY'S QUESTS</button>
         <button class="btn small ghost" data-acc="quests-reset">RESET TODAY'S QUESTS</button>
         <button class="btn small ghost" data-run="tutorial">REPLAY THE TUTORIAL</button>
+        <button class="btn small ghost" id="admin-quick-reset">RESET MY QUICK CHAT</button>
       </div>
       <h4>Solo cheats ${mp ? '<span class="muted">(off in multiplayer)</span>' : ''}</h4>
       <div class="admin-grid">
@@ -869,6 +844,7 @@ export class AccountUI {
       msg(act.announce(input.value));
       input.value = '';
     });
+    document.getElementById('admin-quick-reset').onclick = () => a.setQuickChat([]).then(() => msg('Quick chat back to the defaults.'), (e) => msg(e.message));
     const bbtn = document.getElementById('admin-boss-btn');
     if (bbtn) bbtn.onclick = () => msg(act.run('boss', document.getElementById('admin-boss').value));
     this.body.querySelectorAll('[data-acc]').forEach((b) =>

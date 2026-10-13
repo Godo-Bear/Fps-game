@@ -24,7 +24,7 @@ const BUTTONS = [
   ['chat', '💬', 'key:KeyT'],
   ['scores', '☰', 'hold:Tab'],
   ['revive', '✚', 'hold:KeyE'],
-  ['emote', '😀', 'key:KeyZ'],
+  ['emote', '💬', 'key:KeyZ'],
 ];
 
 export class Controls {

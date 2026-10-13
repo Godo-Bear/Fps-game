@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ALL_EMOTES, MAPS, MODES, MP_MAPS, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
+import { MAPS, MODES, MP_MAPS, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 
@@ -395,8 +395,9 @@ export class Multiplayer {
         this.ctx.onChat(`📢 ${m.name}`, m.text, '#ffd34d', true);
         break;
       case 'emote':
-        this.avatars.get(m.id)?.say(typeof m.text === 'string' ? `💬 ${m.text}` : ALL_EMOTES[m.i] || '');
-        this.ctx.onChat(m.name, typeof m.text === 'string' ? m.text : ALL_EMOTES[m.i] || '', this.teams ? TEAM_CSS[this._team(m.id)] : '#ffd38a', false);
+        if (typeof m.text !== 'string') break;
+        this.avatars.get(m.id)?.say(`💬 ${m.text}`);
+        this.ctx.onChat(m.name, m.text, this.teams ? TEAM_CSS[this._team(m.id)] : '#ffd38a', false);
         break;
       case 'fx':
         if (this.ctx.onFx) this.ctx.onFx(m);
