@@ -88,6 +88,11 @@ their account, so they work on any device. Dying ends the run and deletes the sa
 A small chat sits in the top left. Online, press **T** or **Enter** to talk to everyone in the room (lobby and matches).
 In solo it shows game events.
 
+In Free-for-all, Team Deathmatch and Co-op you keep the guns you found when you respawn. In Capture Point and
+Capture the Flag you start again with the rifle. Online, your health comes back after 5 seconds without getting hit,
+and health packs around the map heal 40 HP (they come back 30 seconds later).
+Press Esc for the pause menu with **Resume** and **Exit**.
+
 ### Accounts, friends and progress
 - Play as a guest (progress saved in your browser) or **create an account** to save it on the server.
 - Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).
@@ -100,6 +105,7 @@ The host picks the mode and map, then starts. Up to 8 players.
 
 | Mode | Goal |
 | --- | --- |
+| Co-op Survival | Everyone on one team against the zombie waves. Go down and you're back next wave; if the whole squad goes down, the run is over |
 | Free-for-all | First to 20 kills |
 | Team Deathmatch | Red vs Blue, first team to 30 kills |
 | Capture Point | Stand in the zone in the middle to hold it; first to 150 points |

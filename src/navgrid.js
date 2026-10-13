@@ -71,20 +71,24 @@ export class NavGrid {
     return i >= 0 && this.dist[i] !== UNREACHED;
   }
 
-  // Breadth-first flood from the target out over the walkable cells.
-  update(tx, tz) {
-    let start = this.index(tx, tz);
-    if (start < 0) return;
-    if (start === this.target) return;
-    this.target = start;
+  // Breadth-first flood out over the walkable cells from one or more targets (co-op: every player),
+  // so each zombie heads for whoever is closest by path.
+  update(points) {
+    const starts = [...new Set(points.map((p) => this.index(p.x, p.z)).filter((i) => i >= 0))].sort((a, b) => a - b);
+    if (!starts.length) return;
+    const key = starts.join(',');
+    if (key === this.target) return;
+    this.target = key;
     const { n, blocked, dist, queue } = this;
     dist.fill(UNREACHED);
-    // The target may be on top of something (a car roof): start from it anyway
+    // A target may be on top of something (a car roof): start from it anyway
     // so zombies gather right next to it and climb up.
     let head = 0;
     let tail = 0;
-    dist[start] = 0;
-    queue[tail++] = start;
+    for (const s of starts) {
+      dist[s] = 0;
+      queue[tail++] = s;
+    }
     while (head < tail) {
       const i = queue[head++];
       const d = dist[i] + 1;

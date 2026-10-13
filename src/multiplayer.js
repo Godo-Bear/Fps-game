@@ -286,6 +286,12 @@ export class Multiplayer {
     if (this.connected) this.ws.send(JSON.stringify(m));
   }
 
+  // co-op: pass a message to 'host', 'all' or one player id (through the server)
+  relay(to, d) {
+    if (to === 'me' || to === undefined) return;
+    this.send({ t: 'relay', to, d });
+  }
+
   leave(silent = false) {
     if (this.ws) {
       const ws = this.ws;
@@ -362,6 +368,12 @@ export class Multiplayer {
         this.ctx.audio.shot(GUNS[m.g]?.sound || 'rifle', false, o);
         break;
       }
+      case 'relay':
+        this.ctx.onRelay(m.from, m.d);
+        break;
+      case 'healed':
+        this.ctx.onMyHp(m.hp);
+        break;
       case 'chat':
         this.ctx.onChat(m.name, m.text, this.teams ? TEAM_CSS[m.team] : '#ffd38a', m.admin);
         break;
@@ -433,6 +445,7 @@ export class Multiplayer {
       seen.add(id);
       if (id === this.myId) {
         this.myHp = hp;
+        this.ctx.onMyHp(hp); // health regen and heals come from the server in PvP
         continue;
       }
       let a = this.avatars.get(id);
@@ -475,6 +488,7 @@ export class Multiplayer {
 
   // Can I damage this player?
   isEnemy(id) {
+    if (this.mode === 'coop') return false;
     if (!this.teams) return true;
     return this._team(id) !== this.myTeam;
   }
@@ -623,7 +637,7 @@ export class Multiplayer {
       const enemy = this.isEnemy(a.id);
       // enemies only show briefly after they shoot
       if (enemy && now - a.lastShot > 2000) continue;
-      out.push({ x: a.pos.x, z: a.pos.z, color: enemy ? '#ff4040' : TEAM_CSS[a.info.team] || '#5ea2ff', r: 3 });
+      out.push({ x: a.pos.x, z: a.pos.z, color: enemy ? '#ff4040' : this.mode === 'coop' ? '#5ea2ff' : TEAM_CSS[a.info.team] || '#5ea2ff', r: 3 });
     }
     if (this.mode === 'koth') out.push({ x: POINT.x, z: POINT.z, color: this.snap?.pt?.owner ? TEAM_CSS[this.snap.pt.owner] : '#ffffff', r: POINT.radius, shape: 'ring' });
     if (this.mode === 'ctf' && this.snap?.fl) {
@@ -645,7 +659,10 @@ export class Multiplayer {
     const left = s.left ?? 0;
     const time = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     let html = '';
-    if (this.teams) {
+    if (this.mode === 'coop') {
+      const up = s.ps.filter((r) => r[9]).length;
+      html = `<div class="mp-obj">CO-OP SURVIVAL · ${up}/${s.ps.length} of the squad standing</div>`;
+    } else if (this.teams) {
       html = `<div class="mp-score"><span class="red">${s.sc.red}</span><span class="time">${time}</span><span class="blue">${s.sc.blue}</span></div>`;
       const mode = MODES[this.mode];
       const limit = mode.killLimit ?? mode.scoreLimit;
@@ -693,7 +710,8 @@ export class Multiplayer {
     this.inMatch = false;
     let title;
     let won = false;
-    if (m.winner === 'draw') title = 'DRAW';
+    if (m.winner === 'coop') title = `RUN OVER · WAVE ${m.wave}`;
+    else if (m.winner === 'draw') title = 'DRAW';
     else if (this.teams) {
       won = m.winner === this.myTeam;
       title = `${String(m.winner).toUpperCase()} TEAM WINS`;
@@ -707,7 +725,7 @@ export class Multiplayer {
     $('mp-end-table').innerHTML = `<table class="board"><tr><th>Player</th><th>Kills</th><th>Deaths</th><th>Score</th></tr>${rows
       .map((r) => `<tr class="${r.id === this.myId ? 'me' : ''}"><td style="color:${this.teams ? TEAM_CSS[r.team] : '#e9d9b8'}">${esc(r.name)}</td><td>${r.kills}</td><td>${r.deaths}</td><td>${r.score}</td></tr>`)
       .join('')}</table>`;
-    this.ctx.onEnd({ won, kills: this.myStats.kills, headshots: this.myStats.headshots });
+    this.ctx.onEnd({ won, kills: this.myStats.kills, headshots: this.myStats.headshots, coop: m.winner === 'coop', wave: m.wave || 0 });
   }
 
   // ---------------------------------------------------------------- lobby screen
@@ -747,7 +765,7 @@ export class Multiplayer {
         )
         .join('');
     } else {
-      roster = `<div class="team ffa"><h4>PLAYERS</h4>${l.players.map(player).join('')}</div>`;
+      roster = `<div class="team ffa"><h4>${mode.coop ? 'SQUAD' : 'PLAYERS'}</h4>${l.players.map(player).join('')}</div>`;
     }
     $('lobby-code').textContent = l.code;
     $('lobby-modes').innerHTML = Object.values(MODES)

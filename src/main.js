@@ -108,7 +108,13 @@ function loadMap(id) {
   if (weather) weather.dispose();
   world = buildWorld(scene, id);
   world.setEffects(effects);
-  if (!zombies) zombies = new ZombieManager(scene, world, effects, audio);
+  if (!zombies) {
+    zombies = new ZombieManager(scene, world, effects, audio);
+    // co-op host: show the acid to everyone else too
+    zombies.onGlob = (f, v) => {
+      if (isCoop() && mp.isHost()) mp.relay('all', { k: 'glob', f: [f.x, f.y, f.z], v: [v.x, v.y, v.z] });
+    };
+  }
   zombies.world = world;
   zombies.nav = new NavGrid(world.colliders);
   zombies.navT = 0;
@@ -169,6 +175,18 @@ function beginWave() {
   if (game.wave === 3) sub += ' · Mutations detected';
   banner(`WAVE ${game.wave}`, sub, game.cfg.boss ? 'red' : '', 2.6);
   audio.waveStart();
+  if (isCoop()) {
+    // squad mates who went down come back for the new wave
+    mp.send({ t: 'coopwave', wave: game.wave });
+    mp.relay('all', { k: 'wave', wave: game.wave, sub, boss: game.cfg.boss ? 1 : 0, weather: weather.id });
+    if (player.dead) coopRevive();
+  }
+}
+
+// Zombies spawn around a random living player.
+function spawnAnchor() {
+  const t = zombieTargets();
+  return t.length ? t[Math.floor(Math.random() * t.length)].pos : player.pos;
 }
 
 function updateWave(dt) {
@@ -185,12 +203,12 @@ function updateWave(dt) {
     game.spawnT -= dt;
     const alive = zombies.aliveCount;
     if (game.spawnT <= 0 && game.toSpawn > 0 && alive < cfg.maxAlive) {
-      zombies.spawn(pickType(game.wave), game.wave, player.pos, Math.random() < mutatedChance(game.wave));
+      zombies.spawn(pickType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave));
       game.toSpawn--;
       game.spawnT = cfg.interval * (0.5 + Math.random());
     }
     if (game.bossToSpawn > 0 && cfg.total - game.toSpawn >= cfg.total * 0.3) {
-      zombies.spawn('boss', game.wave, player.pos, game.wave >= 10);
+      zombies.spawn('boss', game.wave, spawnAnchor(), game.wave >= 10);
       game.bossToSpawn--;
       banner('ABOMINATION', 'Aim for the head', 'red', 2.2);
     }
@@ -200,6 +218,11 @@ function updateWave(dt) {
       const bonus = 50 * game.wave;
       game.score += bonus;
       player.heal(20, overhealCap());
+      if (isCoop()) {
+        mp.relay('all', { k: 'cleared', wave: game.wave });
+        coop.ready = new Set();
+        coop.pickT = 25;
+      }
       const before = pickups.items.length;
       pickups.topUp(Math.min(9, 4 + Math.floor(game.wave / 2)), player.pos, 0.08 + game.wave * 0.01);
       const dropped = pickups.items.length > before ? ' · new guns dropped' : '';
@@ -210,8 +233,28 @@ function updateWave(dt) {
   }
   if (game.phase === 'cleared') {
     game.timer -= dt;
-    if (game.timer <= 0) openChoice();
+    if (game.timer <= 0) {
+      if (isCoop()) game.phase = 'picking';
+      if (!player.dead) openChoice();
+      else if (isCoop()) coop.ready.add('me');
+    }
+    return;
   }
+  // co-op: wait (up to 25s) for everyone to pick a power-up
+  if (game.phase === 'picking') {
+    coop.pickT -= dt;
+    const alive = [...mp.avatars.values()].filter((a) => a.alive).length + (player.dead ? 0 : 1);
+    if (coop.ready.size >= alive || coop.pickT <= 0) {
+      game.phase = 'countdown';
+      game.timer = 5;
+    }
+  }
+}
+
+function coopRevive() {
+  player.dead = false;
+  player.health = stats.maxHealth;
+  $('respawn').classList.add('hidden');
 }
 
 const overhealCap = () => stats.maxHealth + stats.overheal;
@@ -237,7 +280,13 @@ function terrainHit(origin, dir, far) {
   return Infinity;
 }
 
-const targets = () => (game.mode === 'mp' ? mp.parts : zombies.parts).concat(world.solids);
+// Co-op: everyone vs the zombies. The host's game runs the zombies and waves; the others mirror them.
+const isCoop = () => game.mode === 'mp' && mp.inMatch && mp.mode === 'coop';
+const zombieGame = () => game.mode === 'solo' || isCoop();
+const simHost = () => game.mode === 'solo' || (isCoop() && mp.isHost());
+const coop = { remaining: 0, ready: new Set(), pickT: 0, snapT: 0, scoreT: 0 };
+
+const targets = () => (zombieGame() ? zombies.parts : mp.parts).concat(world.solids);
 
 function fireShot(moving, speed) {
   const def = weapon.def;
@@ -339,12 +388,35 @@ function hitZombie(z, head, point, dir, distance = 0) {
   const def = weapon.def;
   const mut = weapon.mutation;
   let dmg = baseHitDamage(distance);
-  if (cheats.onehit) dmg = Math.max(dmg, z.hp + 1);
+  if (cheats.onehit && cheatsOn()) dmg = Math.max(dmg, z.hp + 1);
   const crit = Math.random() < stats.critChance;
   if (head) dmg *= stats.headshotMul;
   if (crit) dmg *= 2.5;
+  if (mut === 'vampire') player.heal(Math.min(8, dmg * 0.06), overhealCap());
+  if (!simHost()) {
+    // co-op guest: show the hit, let the host apply it
+    effects.blood(point, dir, head ? 1.8 : def.pellets > 1 ? 0.5 : 1);
+    z.flashT = 0.08;
+    mp.relay('host', { k: 'zhit', id: z.id, dmg: Math.round(dmg), head, mut, slow: stats.slow });
+    if (!hitSoundPlayed) {
+      audio.hit(head || crit);
+      hitSoundPlayed = true;
+    }
+    showHit(head || crit ? 'head' : '');
+    damageNumber(point, dmg, head ? 'head' : crit ? 'crit' : '');
+    return;
+  }
+  applyZombieHit(z, dmg, { head, crit, mut, dir, point, slow: stats.slow, shooter: 'me', pellets: def.pellets });
+}
+
+// Damage a zombie on the machine that runs them (solo, or the co-op host), with mutated-gun powers.
+function applyZombieHit(z, dmg, { head = false, crit = false, mut = null, dir = null, point = null, slow = 0, shooter = 'me', pellets = 1 }) {
+  if (!z.alive) return;
   if (mut === 'frost' && z.slowT > 0) dmg *= 1.4;
-  effects.blood(point, dir, head ? 1.8 : def.pellets > 1 ? 0.5 : 1);
+  if (!point) point = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
+  if (shooter !== 'me') effects.blood(point, dir, head ? 1.8 : 1);
+  else effects.blood(point, dir, head ? 1.8 : pellets > 1 ? 0.5 : 1);
+  z.lastHit = shooter;
 
   // mutated gun powers
   let voided = false;
@@ -359,18 +431,30 @@ function hitZombie(z, head, point, dir, distance = 0) {
     zombies.addDot(z, 'fire', 9, 3);
     if (Math.random() < 0.3) audio.ignite();
   }
-  if (mut === 'vampire') player.heal(Math.min(8, dmg * 0.06), overhealCap());
 
-  const killed = zombies.damage(z, dmg, { slow: mut === 'frost' ? 0.6 : stats.slow, headshot: head, dir });
+  const killed = zombies.damage(z, dmg, { slow: mut === 'frost' ? 0.6 : slow, headshot: head, dir });
   if (mut === 'shock') chainLightning(z, point, dmg * 0.5);
-  if (!killed && z.typeId !== 'boss') zombies.knockback(z, player.pos, (z.typeId === 'brute' ? 0.02 : 0.06) * (def.pellets > 1 ? 0.5 : 1));
-  if (!hitSoundPlayed) {
-    audio.hit(head || crit);
-    hitSoundPlayed = true;
+  if (!killed && z.typeId !== 'boss' && shooter === 'me') zombies.knockback(z, player.pos, (z.typeId === 'brute' ? 0.02 : 0.06) * (pellets > 1 ? 0.5 : 1));
+  if (shooter === 'me') {
+    if (!hitSoundPlayed) {
+      audio.hit(head || crit);
+      hitSoundPlayed = true;
+    }
+    showHit(killed ? 'kill' : head || crit ? 'head' : '');
+    damageNumber(point, dmg, voided ? 'void' : head ? 'head' : crit ? 'crit' : '');
   }
-  showHit(killed ? 'kill' : head || crit ? 'head' : '');
-  damageNumber(point, dmg, voided ? 'void' : head ? 'head' : crit ? 'crit' : '');
-  if (killed) onKill(z, head);
+  if (killed) killedBy(z, head, shooter, mut);
+}
+
+// Who gets the kill: us, or (co-op) a guest whose bullet it was.
+function killedBy(z, head, shooter, mut) {
+  worldKill(z, mut);
+  if (shooter === 'me' || shooter === undefined) onKill(z, head);
+  else
+    mp.relay(shooter, {
+      k: 'kill', type: z.typeId, mut: z.mutated ? 1 : 0, head: !!head,
+      x: Math.round(z.root.position.x * 10) / 10, y: Math.round(z.root.position.y * 10) / 10, z: Math.round(z.root.position.z * 10) / 10,
+    });
 }
 
 function chainLightning(from, point, dmg) {
@@ -384,7 +468,8 @@ function chainLightning(from, point, dmg) {
     const to = new THREE.Vector3(o.root.position.x, o.centerY, o.root.position.z);
     effects.tracer(point, to, 0x5ff2ff, 0.05);
     effects.sparks(to);
-    if (zombies.damage(o, dmg, { slow: 0.3 })) onKill(o, false);
+    o.lastHit = from.lastHit;
+    if (zombies.damage(o, dmg, { slow: 0.3 })) killedBy(o, false, from.lastHit, null);
   }
   if (near.length) audio.zap();
 }
@@ -396,18 +481,25 @@ function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false } = {
     audio.explosion(point);
     explosionSoundT = 0.09;
   }
-  if (hurtsPlayer && game.mode === 'solo') {
+  if (hurtsPlayer && zombieGame()) {
     const d = point.distanceTo(new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z));
     if (d < radius) onPlayerHit(null, 30 * (1 - (d / radius) * 0.6), 'blast');
+    if (isCoop() && simHost()) mp.relay('all', { k: 'boom', x: point.x, y: point.y, z: point.z, r: radius });
   }
-  if (game.mode !== 'solo') return;
+  if (!zombieGame()) return;
   for (const z of zombies.list) {
     if (!z.alive) continue;
     const p = z.root.position;
     const d = Math.hypot(p.x - point.x, z.centerY - point.y, p.z - point.z);
     if (d > radius + z.radius) continue;
     const fall = 1 - Math.min(1, d / (radius + z.radius)) * 0.5;
-    if (zombies.damage(z, dmg * fall, { slow: stats.slow })) onKill(z, false);
+    if (!simHost()) {
+      mp.relay('host', { k: 'zhit', id: z.id, dmg: Math.round(dmg * fall), head: false, mut: null, slow: stats.slow });
+      showHit('');
+      continue;
+    }
+    z.lastHit = 'me';
+    if (zombies.damage(z, dmg * fall, { slow: stats.slow })) killedBy(z, false, 'me', null);
     else showHit('');
   }
 }
@@ -491,34 +583,46 @@ function onPickGun(id, mut) {
   return true;
 }
 
+// What a kill does to the world (runs where the zombies are simulated).
+function worldKill(z, mut) {
+  const center = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
+  effects.blood(center, null, 2.5);
+  if (z.type.bloated) bloaterBurst(z);
+  if (mut === 'inferno') {
+    // burning spreads to whoever is close
+    for (const o of zombies.list) if (o.alive && o.root.position.distanceTo(z.root.position) < 3.5) zombies.addDot(o, 'fire', 9, 3);
+  }
+}
+
+// Your reward for a kill: score, healing, drops. In co-op the host tells you about your kills.
 function onKill(z, head) {
+  rewardKill({ type: z.typeId, mut: z.mutated, head, x: z.root.position.x, y: z.root.position.y, z: z.root.position.z });
+}
+function rewardKill({ type, mut, head, x, y, z }) {
+  const T = ZOMBIE_TYPES[type] || ZOMBIE_TYPES.walker;
   game.kills++;
   if (head) {
     game.headshots++;
     headshotPop();
   }
-  game.score += Math.round(z.type.score * (head ? 1.5 : 1) * (z.mutated ? 2 : 1) * (1 + game.wave * 0.1));
+  game.score += Math.round(T.score * (head ? 1.5 : 1) * (mut ? 2 : 1) * (1 + game.wave * 0.1));
   if (stats.healOnKill) player.heal(stats.healOnKill, overhealCap());
   audio.kill();
-  const center = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
-  effects.blood(center, null, 2.5);
-  if (z.type.bloated) bloaterBurst(z);
-  if (weapon.mutation === 'inferno') {
-    // burning spreads to whoever is close
-    for (const o of zombies.list) if (o.alive && o.root.position.distanceTo(z.root.position) < 3.5) zombies.addDot(o, 'fire', 9, 3);
-  }
-  const medChance = ({ walker: 0.05, runner: 0.05, crawler: 0.05, spitter: 0.1, bloater: 0.15, brute: 0.35, boss: 1 }[z.typeId] ?? 0.05) * (1 + 0.35 * scavengerLevel());
-  if (Math.random() < medChance) dropMedkit(z.root.position);
+  showHit('kill');
+  const pos = { x, y, z };
+  const medChance = ({ walker: 0.05, runner: 0.05, crawler: 0.05, spitter: 0.1, bloater: 0.15, brute: 0.35, boss: 1 }[type] ?? 0.05) * (1 + 0.35 * scavengerLevel());
+  if (Math.random() < medChance) dropMedkit(pos);
   // mutated zombies sometimes drop a mutated gun; bosses always do
-  if ((z.mutated && Math.random() < 0.15) || z.typeId === 'boss') {
-    pickups.spawn(rollGun(), { x: z.root.position.x, z: z.root.position.z }, randomMutation());
+  if ((mut && Math.random() < 0.15) || type === 'boss') {
+    pickups.spawn(rollGun(), { x, z }, randomMutation());
     subBanner('A mutated gun dropped!', 2);
   }
 }
 
 function onPlayerHit(z, dmg, kind) {
-  if (game.state !== 'playing' || game.mode !== 'solo') return;
-  if (cheats.god) return;
+  if (!zombieGame() || player.dead) return;
+  if (game.state !== 'playing' && !isCoop()) return;
+  if (cheats.god && cheatsOn()) return;
   player.health -= dmg * (1 - stats.armor);
   vignette = Math.min(1, vignette + (kind === 'acid' ? 0.3 : 0.6));
   if (kind === 'acid') $('vignette').classList.add('acid');
@@ -543,23 +647,47 @@ function onPlayerHit(z, dmg, kind) {
     banner('SECOND WIND', 'You cheated death', 'gold', 2);
     return;
   }
-  gameOver();
+  if (isCoop()) coopDown();
+  else gameOver();
+}
+
+// Co-op: you're down until the next wave (or the run ends if everyone is).
+function coopDown() {
+  player.dead = true;
+  player.health = 0;
+  trigger = false;
+  aim = false;
+  mp.send({ t: 'down' });
+  const el = $('respawn');
+  el.classList.remove('hidden');
+  el.innerHTML = "You're <b>down</b>!<br/><span>You'll be back when the next wave starts. Your squad has to survive.</span>";
 }
 
 const zombieHooks = {
-  hitPlayer: (z, dmg, kind) => onPlayerHit(z, dmg, kind),
+  hitPlayer: (z, dmg, kind, target) => {
+    if (!target || target.id === 'me') onPlayerHit(z, dmg, kind);
+    else mp.relay(target.id, { k: 'ouch', dmg: Math.round(dmg), kind: kind || 'melee' });
+  },
   explode: (z) => {
     zombies.damage(z, 1e9);
     bloaterBurst(z);
   },
-  dotKill: (z) => onKill(z, false),
+  dotKill: (z) => killedBy(z, false, z.lastHit, null),
 };
+
+// Everyone the zombies can go after (co-op host: every living player).
+function zombieTargets() {
+  const list = player.dead ? [] : [{ id: 'me', pos: player.pos }];
+  if (isCoop()) for (const a of mp.avatars.values()) if (a.alive) list.push({ id: a.id, pos: a.pos });
+  return list;
+}
 
 // ---------------------------------------------------------------- medkits
 const medGeo = new THREE.BoxGeometry(0.55, 0.32, 0.4);
 const medMat = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.6, emissive: 0x222222 });
 const crossMat = new THREE.MeshBasicMaterial({ color: 0xd42a1f });
-function dropMedkit(pos) {
+// pack = a health pack that sits on the map and respawns (multiplayer)
+function dropMedkit(pos, pack = false) {
   const g = new THREE.Group();
   g.add(new THREE.Mesh(medGeo, medMat));
   const c1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.33, 0.09), crossMat);
@@ -569,16 +697,42 @@ function dropMedkit(pos) {
   g.position.set(pos.x, floor + 0.5, pos.z);
   g.userData.base = floor;
   scene.add(g);
-  medkits.push({ g, t: 0 });
+  medkits.push({ g, t: 0, pack, away: 0 });
 }
+function spawnHealthPacks() {
+  const spots = [...world.lootSpots].sort(() => Math.random() - 0.5).slice(0, 8);
+  for (const s of spots) dropMedkit({ x: s.x + 1.8, y: heightAt(s.x, s.z) + 2, z: s.z + 1.2 }, true);
+}
+let healCooldown = 0;
 function updateMedkits(dt) {
+  healCooldown -= dt;
   for (let i = medkits.length - 1; i >= 0; i--) {
     const m = medkits[i];
     m.t += dt;
     m.g.rotation.y += dt * 2;
     m.g.position.y = m.g.userData.base + 0.5 + Math.sin(m.t * 3) * 0.1;
-    m.g.visible = m.t < 20 || Math.sin(m.t * 20) > 0;
     const d = Math.hypot(m.g.position.x - player.pos.x, m.g.position.z - player.pos.z);
+    if (m.pack) {
+      // map health pack: heal, then come back 30 seconds later
+      if (m.away > 0) {
+        m.away -= dt;
+        m.g.visible = m.away <= 0;
+        continue;
+      }
+      const near = d < 1.6 && Math.abs(m.g.userData.base - player.pos.y) < 1.5 && !player.dead;
+      const pvp = game.mode === 'mp' && !isCoop();
+      if (near && healCooldown <= 0 && player.health < (pvp ? 100 : overhealCap())) {
+        if (pvp) mp.send({ t: 'heal', amount: 40 });
+        else player.heal(40, overhealCap());
+        healCooldown = 8;
+        audio.pickup();
+        subBanner('+40 HP', 1);
+        m.away = 30;
+        m.g.visible = false;
+      }
+      continue;
+    }
+    m.g.visible = m.t < 20 || Math.sin(m.t * 20) > 0;
     // medkits can overheal you past max health, up to the overheal cap
     const take = d < 1.6 && Math.abs(m.g.userData.base - player.pos.y) < 1.5 && player.health < overhealCap();
     if (take || m.t > 25) {
@@ -648,6 +802,13 @@ function choose(i) {
   }
   renderOwned();
   audio.powerup(o.rarity);
+  if (isCoop()) {
+    if (mp.isHost()) coop.ready.add('me');
+    else mp.relay('host', { k: 'ready' });
+    pauseFor('READY?', 'Click to drop back in · waiting for your squad to pick');
+    lock();
+    return;
+  }
   game.phase = 'countdown';
   game.timer = 6;
   persistRun();
@@ -807,7 +968,7 @@ const markerTex = (() => {
 })();
 const markers = [];
 function updateZombieMarkers() {
-  const list = game.mode === 'solo' && zombies ? zombies.list.filter((z) => z.alive) : [];
+  const list = zombieGame() && zombies ? zombies.list.filter((z) => z.alive) : [];
   while (markers.length < list.length) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: markerTex, depthTest: false, transparent: true, sizeAttenuation: false }));
     s.renderOrder = 6;
@@ -827,7 +988,7 @@ function updateZombieMarkers() {
   });
   // arrows at the screen edge for the last 5 zombies
   const arrows = $('edge-arrows');
-  const remaining = game.mode === 'solo' && game.phase === 'active' ? game.toSpawn + game.bossToSpawn : 99;
+  const remaining = zombieGame() && game.phase === 'active' ? (simHost() ? game.toSpawn + game.bossToSpawn : Math.max(0, coop.remaining - list.length)) : 99;
   let html = '';
   if (remaining === 0 && list.length <= 5 && game.state === 'playing') {
     for (const z of list) {
@@ -851,7 +1012,7 @@ function showOnly(id) {
   for (const o of OVERLAYS) $(o).classList.toggle('hidden', o !== id);
   $('hud').classList.toggle('hidden', ['menu', 'mp-menu', 'lobby', 'map-menu'].includes(id));
   $('crosshair').classList.toggle('hidden', id !== null);
-  $('solo-hud').classList.toggle('hidden', game.mode !== 'solo');
+  $('solo-hud').classList.toggle('hidden', !zombieGame());
   if (game.mode !== 'mp') $('mp-hud').classList.add('hidden');
 }
 
@@ -861,7 +1022,8 @@ function pauseFor(title, text) {
   aim = false;
   $('pause-title').textContent = title;
   $('pause').querySelector('p').textContent = text;
-  $('quit-btn').textContent = game.mode === 'mp' ? 'LEAVE MATCH' : 'QUIT TO MENU';
+  $('quit-btn').textContent = game.mode === 'mp' ? 'EXIT MATCH' : 'EXIT TO MENU';
+  $('resume-btn').textContent = title === 'PAUSED' ? 'RESUME' : 'PLAY';
   showOnly('pause');
 }
 
@@ -873,9 +1035,9 @@ function setText(id, v) {
 }
 
 function updateHud(dt) {
-  if (game.mode === 'solo') {
+  if (zombieGame()) {
     setText('wave-label', game.wave > 0 ? `WAVE ${game.wave}` : 'GET READY');
-    const remaining = game.phase === 'active' ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : 0;
+    const remaining = game.phase !== 'active' ? 0 : simHost() ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : coop.remaining;
     setText('zombies-left', game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : 'Wave cleared');
     setText('score', String(game.score));
     setText('kills', `${game.kills} kills`);
@@ -884,7 +1046,7 @@ function updateHud(dt) {
   setText('weather-label', weather ? weather.name : '');
   const hp = Math.max(0, Math.ceil(player.health));
   setText('health-text', `${hp}`);
-  const max = game.mode === 'solo' ? stats.maxHealth : 100;
+  const max = zombieGame() ? stats.maxHealth : 100;
   $('health-fill').style.width = `${Math.max(0, Math.min(1, player.health / max) * 100)}%`;
   const over = Math.max(0, player.health - max);
   $('over-fill').style.width = `${Math.min(100, (over / Math.max(1, stats.overheal)) * 100)}%`;
@@ -912,7 +1074,7 @@ function updateHud(dt) {
   $('reticle').className = sight ? `show ${sight}` : '';
   $('crosshair').style.opacity = String(Math.max(0, 1 - weapon.ads * 1.6));
 
-  const boss = game.mode === 'solo' ? zombies.boss : null;
+  const boss = zombieGame() ? zombies.boss : null;
   $('boss-bar').classList.toggle('hidden', !boss);
   if (boss) $('boss-fill').style.width = `${(boss.hp / boss.maxHp) * 100}%`;
 
@@ -932,15 +1094,14 @@ function updateHud(dt) {
 
   // minimap
   const marks = [];
-  if (game.mode === 'solo') {
+  if (game.mode === 'mp') marks.push(...mp.minimapMarkers());
+  if (zombieGame()) {
     for (const z of zombies.list) {
       if (!z.alive) continue;
       marks.push({ x: z.root.position.x, z: z.root.position.z, color: z.typeId === 'boss' ? '#c86bff' : z.mutated ? '#6dff2a' : '#ff4a3a', r: z.typeId === 'boss' ? 4 : 2.2 });
     }
-    for (const m of medkits) marks.push({ x: m.g.position.x, z: m.g.position.z, color: '#ffffff', r: 2.2 });
-  } else {
-    marks.push(...mp.minimapMarkers());
   }
+  for (const m of medkits) if (m.g.visible || m.pack) marks.push({ x: m.g.position.x, z: m.g.position.z, color: '#ffffff', r: 2.2 });
   for (const i of pickups.items) marks.push({ x: i.root.position.x, z: i.root.position.z, color: i.mut ? MUTATIONS[i.mut].css : { rare: '#3d8bff', epic: '#b04dff', legendary: '#ffb020' }[GUNS[i.id].tier], r: 3, shape: 'diamond' });
   minimap.draw(player, marks);
 }
@@ -1179,6 +1340,7 @@ const mp = new Multiplayer({
     loadMap(map);
     if (weatherId && WEATHER[weatherId]) weather.set(weatherId, true);
     zombies.clear();
+    zombies.nextId = 0;
     stats = baseStats();
     owned.clear();
     renderOwned();
@@ -1187,7 +1349,16 @@ const mp = new Multiplayer({
     pickups.clear();
     pickups.topUp(7, null, 0.08);
     clearProjectiles();
+    clearMedkits();
     player.reset(100);
+    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0 });
+    coop.remaining = 0;
+    if (mode === 'coop') {
+      applyShop(); // shop upgrades count in co-op (it's you vs the zombies)
+      player.health = stats.maxHealth;
+    } else {
+      spawnHealthPacks();
+    }
     player.dead = true; // until the server spawns us
     $('mp-end').classList.add('hidden');
     pauseFor(MODES[mode].name.toUpperCase(), `${MAPS[map].name} · ${MODES[mode].desc} Click to play. Hold Tab for scores.`);
@@ -1197,9 +1368,12 @@ const mp = new Multiplayer({
     player.reset(100);
     player.pos.set(x, heightAt(x, z), z);
     player.yaw = yaw;
-    player.health = hp;
     player.dead = false;
-    weapon.reset(stats);
+    if (mp.mode === 'coop') player.health = stats.maxHealth;
+    else player.health = hp;
+    // deathmatch and co-op: keep the guns you found (fresh mags); objective modes start you over
+    if (['ffa', 'tdm', 'coop'].includes(mp.mode)) weapon.refillMags(stats);
+    else weapon.reset(stats);
     $('respawn').classList.add('hidden');
     player.update(0, world.colliders, stats, false, audio, 1, world.ladders);
   },
@@ -1225,6 +1399,12 @@ const mp = new Multiplayer({
       if (s) s.textContent = `Respawning in ${n}`;
     }, 1000);
   },
+  onRelay(from, d) {
+    if (d && typeof d === 'object') onCoopRelay(from, d);
+  },
+  onMyHp(hp) {
+    if (mp.mode !== 'coop' && !player.dead) player.health = hp;
+  },
   onChat(name, text, color, admin) {
     addChat(name, text, color, admin);
   },
@@ -1242,7 +1422,10 @@ const mp = new Multiplayer({
     $('respawn').classList.add('hidden');
     showOnly('mp-end');
     $('mp-end-xp').textContent = 'Saving progress…';
-    const r = await account.recordRun({ mode: 'pvp', kills: result.kills, headshots: result.headshots, won: result.won });
+    const run = result.coop
+      ? { mode: 'solo', wave: result.wave, score: game.score, kills: game.kills, headshots: game.headshots }
+      : { mode: 'pvp', kills: result.kills, headshots: result.headshots, won: result.won };
+    const r = await account.recordRun(run);
     $('mp-end-xp').innerHTML = r.error ? '' : `+${r.gained} XP · +${r.coins || 0} 🪙${r.levelAfter > r.levelBefore ? ` · <b class="lvlup">LEVEL UP! Level ${r.levelAfter}</b>` : ''} · back to the lobby in a moment…`;
   },
 });
@@ -1284,6 +1467,7 @@ $('quit-btn').addEventListener('click', (e) => {
   if (game.mode === 'mp') mp.leave();
   else toMenu();
 });
+$('mpend-exit').addEventListener('click', () => mp.leave());
 $('pause').addEventListener('click', () => {
   audio.init();
   lock();
@@ -1535,10 +1719,21 @@ function update(dt) {
   if (weapon.ammo === 0 && weapon.slot.reserve > 0 && weapon.reloading <= 0 && !trigger) weapon.startReload(stats);
   updateProjectiles(dt);
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
-  if (game.mode === 'solo') {
-    if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, player, zombieHooks);
-    updateMedkits(dt);
-    updateWave(dt);
+  if (!isCoop()) worldTick(dt);
+  else updateMedkits(dt); // co-op runs worldTick from the frame loop, even while paused
+  explosionSoundT -= dt;
+}
+
+// Zombies, waves, medkits and hazards. In co-op this keeps running while you're in a menu.
+function worldTick(dt) {
+  if (zombieGame()) {
+    if (simHost()) {
+      if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, isCoop() ? zombieTargets() : player, zombieHooks);
+      updateWave(dt);
+    } else {
+      zombies.updatePuppets(dt);
+    }
+    if (game.mode === 'solo') updateMedkits(dt);
     // toxic pools
     hazardT -= dt;
     if (hazardT <= 0) {
@@ -1549,9 +1744,85 @@ function update(dt) {
         }
       }
     }
+  } else if (game.mode === 'mp') {
+    updateMedkits(dt); // health packs
   }
-  explosionSoundT -= dt;
+  if (isCoop()) {
+    // host: share the zombies ~10x a second; everyone: share their score now and then
+    coop.snapT -= dt;
+    if (mp.isHost() && coop.snapT <= 0) {
+      coop.snapT = 0.1;
+      const remaining = game.phase === 'active' ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : 0;
+      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.timer), z: zombies.snapshot() });
+    }
+    coop.scoreT -= dt;
+    if (coop.scoreT <= 0) {
+      coop.scoreT = 2;
+      mp.send({ t: 'score', kills: game.kills, score: game.score });
+    }
+  }
 }
+
+// Messages from other players in a co-op run.
+function onCoopRelay(from, d) {
+  switch (d.k) {
+    case 'zs': // zombie snapshot from the host
+      if (mp.isHost()) return;
+      zombies.applySnapshot(d.z || []);
+      game.wave = d.w | 0;
+      coop.remaining = d.r | 0;
+      game.phase = d.p === 'picking' ? 'cleared' : d.p;
+      game.timer = d.t || 0;
+      break;
+    case 'zhit': {
+      // a guest shot one of our zombies
+      if (!mp.isHost()) return;
+      const z = zombies.list.find((o) => o.id === d.id);
+      if (!z || !z.alive) return;
+      const dmg = Math.max(0, Math.min(5000, Number(d.dmg) || 0));
+      applyZombieHit(z, dmg, { head: !!d.head, mut: MUTATIONS[d.mut] ? d.mut : null, slow: Math.min(0.75, Number(d.slow) || 0), shooter: from });
+      break;
+    }
+    case 'kill':
+      rewardKill({ type: d.type, mut: !!d.mut, head: !!d.head, x: d.x, y: d.y, z: d.z });
+      break;
+    case 'ouch':
+      onPlayerHit(null, Math.max(0, Math.min(200, Number(d.dmg) || 0)), d.kind);
+      break;
+    case 'boom': {
+      const p = new THREE.Vector3(d.x, d.y, d.z);
+      effects.explosion(p, (d.r || 4.5) / 2.6);
+      effects.burst(p, { count: 30, color: [0x8dff4a, 0x5ac020, 0xc8ff6a], speed: 6, size: 0.16, life: 0.7, grav: 4, up: 1.2 });
+      audio.explosion(p);
+      const dist = p.distanceTo(new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z));
+      if (dist < (d.r || 4.5)) onPlayerHit(null, 30 * (1 - (dist / (d.r || 4.5)) * 0.6), 'blast');
+      break;
+    }
+    case 'glob':
+      if (!mp.isHost()) zombies.addGlob(new THREE.Vector3(...d.f), new THREE.Vector3(...d.v), 0);
+      break;
+    case 'wave':
+      if (mp.isHost()) return;
+      game.wave = d.wave;
+      banner(`WAVE ${d.wave}`, d.sub, d.boss ? 'red' : '', 2.6);
+      audio.waveStart();
+      if (d.weather && WEATHER[d.weather] && weather.id !== d.weather) weather.set(d.weather);
+      break;
+    case 'cleared':
+      if (mp.isHost()) return;
+      player.heal(20, overhealCap());
+      banner(`WAVE ${d.wave} CLEARED`, '+20 HP · pick a power-up', 'gold', 2.3);
+      audio.waveCleared();
+      setTimeout(() => {
+        if (isCoop() && !player.dead) openChoice();
+      }, 2400);
+      break;
+    case 'ready':
+      if (mp.isHost()) coop.ready.add(from);
+      break;
+  }
+}
+
 
 function menuCamera() {
   const a = time * 0.04;
@@ -1571,6 +1842,7 @@ function frame(now) {
     // the match keeps running while the menu is up
     player.update(dt, world.colliders, stats, false, audio, 1, world.ladders);
   }
+  if (isCoop() && ['playing', 'paused', 'choosing'].includes(game.state)) worldTick(dt);
   if (game.mode === 'mp') mp.update(dt, time);
   const fov = game.state === 'menu' ? 75 : 75 + (weapon.def.zoomFov - 75) * weapon.ads;
   if (Math.abs(camera.fov - fov) > 0.01) {
@@ -1607,7 +1879,10 @@ if (import.meta.env.DEV) {
   // Handy for poking at the game from the console / automated smoke tests.
   window.__game = {
     tick: (n = 1, dt = 1 / 60) => {
-      for (let i = 0; i < n; i++) update(dt);
+      for (let i = 0; i < n; i++) {
+        update(dt);
+        if (isCoop()) worldTick(dt);
+      }
     },
     input: (o) => {
       if ('trigger' in o) trigger = o.trigger;

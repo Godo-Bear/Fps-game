@@ -33,6 +33,8 @@ export const ZOMBIE_TYPES = {
   },
 };
 
+const TYPE_IDS = Object.keys(ZOMBIE_TYPES);
+
 // Damage-over-time effects from mutated guns.
 const DOT_TINT = { toxic: 0x2a6a10, fire: 0x8a3a00 };
 
@@ -222,6 +224,7 @@ export class ZombieManager {
     this.heads = [];
     this.groanBudget = 0;
     this.nav = null; // NavGrid for the current map
+    this.nextId = 0;
     this.navT = 0;
     this._dir = { x: 0, z: 0 };
   }
@@ -276,6 +279,7 @@ export class ZombieManager {
     }
     z.root.position.set(x, heightAt(x, zz) - 2 * z.scale, zz);
     z.root.rotation.y = Math.atan2(playerPos.x - x, playerPos.z - zz);
+    z.id = ++this.nextId;
     this.scene.add(z.root);
     this.list.push(z);
     this._rebuildParts();
@@ -386,27 +390,46 @@ export class ZombieManager {
     const time = Math.max(0.6, flat / 16);
     const g = 14;
     const vel = new THREE.Vector3((to.x - from.x) / time, (to.y - from.y) / time + 0.5 * g * time, (to.z - from.z) / time);
+    this.addGlob(from, vel, z.damage);
+    if (this.onGlob) this.onGlob(from, vel);
+  }
+
+  // dmg 0 = just for show (co-op clients see the host's acid)
+  addGlob(from, vel, dmg = 0) {
     const mesh = new THREE.Mesh(GEO.glob, globMat);
     mesh.position.copy(from);
     this.scene.add(mesh);
-    this.globs.push({ mesh, vel, g, dmg: z.damage, life: 4 });
+    this.globs.push({ mesh, vel: vel.clone(), g: 14, dmg, life: 4 });
     this.audio.spit?.(from);
   }
 
-  // hooks: hitPlayer(z, dmg), explode(z), dotKill(z)
-  update(dt, player, hooks) {
-    const pp = player.pos;
+  // targets: the local Player, or (co-op host) [{ id, pos }] for every living player.
+  // hooks: hitPlayer(z, dmg, kind, target), explode(z), dotKill(z)
+  update(dt, targets, hooks) {
+    const tg = (Array.isArray(targets) ? targets : [{ id: 0, pos: targets.pos }]).filter((t) => t && t.pos);
+    let pp = tg[0]?.pos;
     this.groanBudget = Math.max(0, this.groanBudget - dt);
     let removed = false;
     let partsDirty = false;
-    // refresh the route map towards the player a few times a second
+    // refresh the route map towards the players a few times a second
     this.navT -= dt;
-    if (this.nav && this.navT <= 0) {
+    if (this.nav && this.navT <= 0 && tg.length) {
       this.navT = 0.25;
-      this.nav.update(pp.x, pp.z);
+      this.nav.update(tg.map((t) => t.pos));
     }
 
     for (const z of this.list) {
+      // chase whoever is nearest
+      let best = Infinity;
+      for (const t of tg) {
+        const d = (t.pos.x - z.root.position.x) ** 2 + (t.pos.z - z.root.position.z) ** 2;
+        if (d < best) {
+          best = d;
+          pp = t.pos;
+          z.target = t;
+        }
+      }
+      if (!pp) break;
       const T = z.type;
       const rp = z.root.position;
       const ground = heightAt(rp.x, rp.z);
@@ -633,7 +656,7 @@ export class ZombieManager {
           if (T.bloated) {
             hooks.explode(z);
           } else if (pdist < T.range + 0.5 && dy < reach * z.scale && dy > -1.8) {
-            hooks.hitPlayer(z, z.damage);
+            hooks.hitPlayer(z, z.damage, 'melee', z.target);
           }
           z.attackCd = T.cooldown;
         }
@@ -685,7 +708,7 @@ export class ZombieManager {
     }
     if (partsDirty) this._rebuildParts();
 
-    this._updateGlobs(dt, player, hooks);
+    this._updateGlobs(dt, tg, hooks);
     this._updateHeads(dt);
 
     if (removed) {
@@ -701,8 +724,7 @@ export class ZombieManager {
     }
   }
 
-  _updateGlobs(dt, player, hooks) {
-    const pp = player.pos;
+  _updateGlobs(dt, targets, hooks) {
     for (let i = this.globs.length - 1; i >= 0; i--) {
       const g = this.globs[i];
       g.life -= dt;
@@ -710,10 +732,11 @@ export class ZombieManager {
       g.mesh.position.addScaledVector(g.vel, dt);
       const p = g.mesh.position;
       if (Math.random() < 0.5) this.effects.burst(p, { count: 1, color: [0x8dff4a, 0x5ac020], speed: 0.3, size: 0.08, life: 0.4, grav: 2 });
-      const dPlayer = Math.hypot(p.x - pp.x, p.y - (pp.y + 1), p.z - pp.z);
+      let hit = null;
+      for (const t of targets) if (Math.hypot(p.x - t.pos.x, p.y - (t.pos.y + 1), p.z - t.pos.z) < 0.9) hit = t;
       const groundY = heightAt(p.x, p.z);
-      if (dPlayer < 0.9 || p.y <= groundY || g.life <= 0) {
-        if (dPlayer < 0.9) hooks.hitPlayer(null, g.dmg, 'acid');
+      if (hit || p.y <= groundY || g.life <= 0) {
+        if (hit && g.dmg > 0) hooks.hitPlayer(null, g.dmg, 'acid', hit);
         this.effects.burst(new THREE.Vector3(p.x, Math.max(p.y, groundY + 0.1), p.z), { count: 14, color: [0x8dff4a, 0x5ac020, 0xc8ff6a], speed: 2.5, size: 0.1, life: 0.5, up: 1.5 });
         const puddle = new THREE.Mesh(
           puddleGeo,
@@ -731,9 +754,13 @@ export class ZombieManager {
       pd.t -= dt;
       pd.tick -= dt;
       pd.mesh.material.opacity = Math.min(0.55, pd.t * 0.3);
-      if (pd.tick <= 0 && Math.hypot(pp.x - pd.mesh.position.x, pp.z - pd.mesh.position.z) < 1.6 && Math.abs(pp.y - pd.mesh.position.y) < 0.6) {
-        pd.tick = 0.5;
-        hooks.hitPlayer(null, 4, 'acid');
+      if (pd.tick <= 0) {
+        for (const t of targets) {
+          if (Math.hypot(t.pos.x - pd.mesh.position.x, t.pos.z - pd.mesh.position.z) < 1.6 && Math.abs(t.pos.y - pd.mesh.position.y) < 0.6) {
+            pd.tick = 0.5;
+            hooks.hitPlayer(null, 4, 'acid', t);
+          }
+        }
       }
       if (pd.t <= 0) {
         this.scene.remove(pd.mesh);
@@ -767,6 +794,128 @@ export class ZombieManager {
         this.scene.remove(m);
         this.heads.splice(i, 1);
       }
+    }
+  }
+
+  // ---------------------------------------------------------------- co-op: the host sends, everyone else mirrors
+  // One row per zombie: [id, type, mutated, x, y, z, yaw, state(0 rising,1 alive,2 dead), headless, hp 0..1, moving]
+  snapshot() {
+    const r = (v) => Math.round(v * 100) / 100;
+    return this.list.map((z) => [
+      z.id, TYPE_IDS.indexOf(z.typeId), z.mutated ? 1 : 0,
+      r(z.root.position.x), r(z.root.position.y), r(z.root.position.z), r(z.root.rotation.y),
+      z.state === 'rising' ? 0 : z.state === 'alive' ? 1 : 2, z.head.parent ? 0 : 1,
+      Math.round(Math.max(0, z.hp / z.maxHp) * 100) / 100, z.climb ? 1 : 0,
+    ]);
+  }
+
+  applySnapshot(rows) {
+    const seen = new Set();
+    let dirty = false;
+    const byId = new Map(this.list.map((z) => [z.id, z]));
+    for (const row of rows) {
+      const [id, ti, mut, x, y, zz, yaw, state, headless, hp] = row;
+      const typeId = TYPE_IDS[ti];
+      if (!typeId) continue;
+      seen.add(id);
+      let z = byId.get(id);
+      if (!z) {
+        if (state === 2) continue; // died before we ever saw it
+        z = new Zombie(typeId, 1, !!mut);
+        z.id = id;
+        z.puppet = true;
+        z.state = 'alive';
+        z.root.position.set(x, y, zz);
+        z.root.rotation.y = yaw;
+        z.net = new THREE.Vector3(x, y, zz);
+        this.scene.add(z.root);
+        this.list.push(z);
+        dirty = true;
+      }
+      z.net.set(x, y, zz);
+      z.netYaw = yaw;
+      z.hp = hp * z.maxHp;
+      z.netClimb = row[10];
+      if (state === 2 && z.alive) {
+        this.damage(z, 1e9, { headshot: !!headless });
+        dirty = true;
+      }
+    }
+    for (const z of this.list) {
+      if (!seen.has(z.id) && z.alive) {
+        z.remove = true; // gone on the host
+        dirty = true;
+      }
+    }
+    if (dirty) {
+      this.list = this.list.filter((z) => {
+        if (z.remove) {
+          this.scene.remove(z.root);
+          z.dispose();
+          return false;
+        }
+        return true;
+      });
+      this._rebuildParts();
+    }
+  }
+
+  // Animates the mirrored zombies between snapshots.
+  updatePuppets(dt) {
+    let removed = false;
+    for (const z of this.list) {
+      z.flashT -= dt;
+      z.skinMat.emissive.setHex(z.flashT > 0 ? 0x992222 : z.baseEmissive);
+      if (z.state === 'dead') {
+        z.deadT += dt;
+        const k = Math.min(1, z.deadT / 0.45);
+        z.body.rotation.x = -k * k * (Math.PI / 2) * 0.95 * (z.type.crawl ? 0.2 : 1);
+        z.root.position.y = z.deathY - Math.max(0, z.deadT - 1.6) * 0.5;
+        if (z.neckSpray > 0) {
+          z.neckSpray -= dt;
+          const neck = new THREE.Vector3();
+          z.upper.localToWorld(neck.set(0, 0.8, 0));
+          this.effects.burst(neck, { count: 2, color: [0x9b1010, 0x6a0505], speed: 2.2, size: 0.07, life: 0.6, up: 2.5, spread: 0.4 });
+        }
+        if (z.deadT > 3.5) {
+          z.remove = true;
+          removed = true;
+        }
+        continue;
+      }
+      const rp = z.root.position;
+      const bx = rp.x;
+      const bz = rp.z;
+      rp.lerp(z.net, Math.min(1, dt * 10));
+      let d = (z.netYaw ?? z.root.rotation.y) - z.root.rotation.y;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      z.root.rotation.y += d * Math.min(1, dt * 10);
+      const speed = Math.hypot(rp.x - bx, rp.z - bz) / Math.max(dt, 1e-3);
+      if (speed > 0.3) z.phase += dt * speed * 2.6 / z.scale;
+      const sw = speed > 0.3 ? Math.sin(z.phase) : 0;
+      if (z.type.crawl) {
+        z.armL.rotation.x = -1.6 + sw * 0.7;
+        z.armR.rotation.x = -1.6 - sw * 0.7;
+      } else if (z.netClimb) {
+        z.armL.rotation.x = z.armR.rotation.x = -2.6 + Math.sin(z.phase * 3) * 0.3;
+      } else {
+        z.legL.rotation.x = sw * 0.6;
+        z.legR.rotation.x = -sw * 0.6;
+        z.armL.rotation.x = -1.35 + Math.sin(z.phase * 0.5 + 1) * 0.12;
+        z.armR.rotation.x = z.armDroop ? -0.2 + sw * 0.2 : z.armL.rotation.x + 0.1;
+      }
+    }
+    this._updateGlobs(dt, [], {});
+    this._updateHeads(dt);
+    if (removed) {
+      this.list = this.list.filter((z) => {
+        if (z.remove) {
+          this.scene.remove(z.root);
+          z.dispose();
+          return false;
+        }
+        return true;
+      });
     }
   }
 }
