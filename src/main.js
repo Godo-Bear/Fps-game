@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
-import { MAPS, MODES } from '../shared/modes.js';
+import { MAPS, MODES, SOLO_MAP } from '../shared/modes.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
 import { Effects } from './effects.js';
@@ -14,7 +14,7 @@ import { POWERUPS, RARITY_ODDS, RARITY_RANK, baseStats, rollOffer } from './powe
 import { heightAt } from './terrain.js';
 import { Weapon } from './weapon.js';
 import { WEATHER, Weather } from './weather.js';
-import { MAP_IDS, THEMES, buildWorld } from './world.js';
+import { buildWorld } from './world.js';
 import { ZOMBIE_TYPES, ZombieManager } from './zombies.js';
 
 // ---------------------------------------------------------------- setup
@@ -60,7 +60,7 @@ const game = {
   mode: 'solo', // solo | mp
   state: 'menu', // menu | mpmenu | lobby | playing | paused | choosing | gameover | mpend
   phase: 'countdown', // countdown | active | cleared
-  map: loadPref('deadplains.map', 'plains'),
+  map: SOLO_MAP, // solo is always Dead Plains; the other maps are multiplayer-only
   wave: 0,
   kills: 0,
   headshots: 0,
@@ -73,7 +73,6 @@ const game = {
   offer: [],
   best: Number(loadPref('deadplains.best', 0)),
 };
-if (!THEMES[game.map]) game.map = 'plains';
 
 let trigger = false;
 let pressed = false; // a fresh left click this frame (semi-auto guns)
@@ -650,7 +649,8 @@ function choose(i) {
   audio.powerup(o.rarity);
   game.phase = 'countdown';
   game.timer = 6;
-  pauseFor('READY?', 'Click to drop back in');
+  persistRun();
+  pauseFor('READY?', 'Click to drop back in · progress saved');
   lock();
 }
 
@@ -676,7 +676,59 @@ $('cards').addEventListener('click', (e) => {
 // ---------------------------------------------------------------- UI helpers
 let bannerTimer = 0;
 let subTimer = 0;
+// ---------------------------------------------------------------- chat (top left)
+const chatLines = [];
+function addChat(name, text, color = '#ffd38a', admin = false) {
+  const div = document.createElement('div');
+  if (name) {
+    const b = document.createElement('b');
+    b.style.color = color;
+    b.textContent = `${admin ? '⭐' : ''}${name}:`;
+    div.append(b, document.createTextNode(text));
+  } else {
+    div.className = 'sys';
+    div.textContent = text;
+  }
+  $('chat-log').appendChild(div);
+  chatLines.push({ div, t: performance.now() });
+  while (chatLines.length > 8) chatLines.shift().div.remove();
+}
+function chatOpen() {
+  return !$('chat-input').classList.contains('hidden');
+}
+function openChat() {
+  if (game.mode !== 'mp' || !mp.lobby) return;
+  player.keys.clear();
+  trigger = false;
+  aim = false;
+  $('chat').classList.add('open');
+  $('chat-input').classList.remove('hidden');
+  $('chat-input').focus();
+}
+function closeChat() {
+  $('chat').classList.remove('open');
+  $('chat-input').classList.add('hidden');
+  $('chat-input').value = '';
+  $('chat-input').blur();
+}
+$('chat-input').addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'Enter') {
+    const text = e.target.value.trim();
+    if (text) mp.send({ t: 'chat', text });
+    closeChat();
+  } else if (e.key === 'Escape') closeChat();
+});
+function updateChat() {
+  const now = performance.now();
+  for (const l of chatLines) l.div.classList.toggle('old', now - l.t > 9000);
+  const show = (game.mode === 'mp' && !!mp.lobby) || (game.mode === 'solo' && !['menu', 'mpmenu'].includes(game.state));
+  $('chat').classList.toggle('hidden', !show);
+  $('chat-hint').textContent = game.mode === 'mp' && !chatOpen() ? 'T or Enter to chat' : '';
+}
+
 function banner(text, sub, cls = '', dur = 2) {
+  if (text) addChat(null, sub ? `${text} · ${sub}` : text);
   const b = $('banner');
   b.textContent = text;
   b.className = 'show ' + cls;
@@ -909,9 +961,98 @@ function applyProfile() {
 }
 account.onChange(applyProfile);
 
-function startGame() {
+// ---------------------------------------------------------------- saved runs (solo)
+// The run is saved after every wave (once you pick a power-up). Continuing starts the next wave.
+// It's kept in this browser and, when logged in, on your account. Dying ends the run.
+const SAVE_KEY = 'deadplains.save';
+let pendingSave = null;
+
+function runSnapshot() {
+  return {
+    v: 1,
+    id: game.runId,
+    t: Date.now(),
+    wave: game.wave,
+    score: game.score,
+    kills: game.kills,
+    headshots: game.headshots,
+    stats: { ...stats },
+    owned: [...owned].map(([id, o]) => [id, o.count, o.rarity]),
+    guns: weapon.slots.map((s) => [s.def.id, s.ammo, s.reserve === Infinity ? -1 : s.reserve, s.mut || null]),
+    health: Math.round(player.health),
+    weather: weather.id,
+  };
+}
+
+function persistRun() {
+  if (game.mode !== 'solo') return;
+  const data = runSnapshot();
+  savePref(SAVE_KEY, JSON.stringify(data));
+  if (account.loggedIn) account.putSave(data).catch(() => {});
+  pendingSave = data;
+  renderContinue();
+}
+
+function clearRun() {
+  // only wipe the save if it belongs to the run that just ended
+  if (pendingSave && pendingSave.id !== game.runId) return;
+  try {
+    localStorage.removeItem(SAVE_KEY);
+  } catch {
+    /* storage blocked */
+  }
+  if (account.loggedIn) account.putSave(null).catch(() => {});
+  pendingSave = null;
+  renderContinue();
+}
+
+async function refreshSave() {
+  let local = null;
+  try {
+    local = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+  } catch {
+    local = null;
+  }
+  let remote = null;
+  if (account.loggedIn) remote = await account.getSave().catch(() => null);
+  const valid = (s) => s && s.v === 1 && Number.isFinite(s.wave) && Array.isArray(s.guns);
+  const all = [local, remote].filter(valid).sort((a, b) => b.t - a.t);
+  pendingSave = all[0] || null;
+  renderContinue();
+}
+
+function renderContinue() {
+  const b = $('continue-btn');
+  b.classList.toggle('hidden', !pendingSave);
+  if (pendingSave) b.textContent = `CONTINUE · WAVE ${pendingSave.wave + 1}`;
+}
+
+function restoreRun(save) {
+  stats = { ...baseStats(), ...save.stats };
+  owned.clear();
+  for (const [id, count, rarity] of save.owned || []) {
+    const def = POWERUPS.find((p) => p.id === id);
+    if (def) owned.set(id, { def, count, rarity });
+  }
+  renderOwned();
+  const slots = (save.guns || [])
+    .filter(([id]) => GUNS[id])
+    .map(([id, ammo, reserve, mut]) => ({ def: GUNS[id], ammo: Math.max(0, ammo | 0), reserve: reserve < 0 ? Infinity : reserve, mut: MUTATIONS[mut] ? mut : null }));
+  if (!slots.length || slots[0].def.id !== 'rifle') slots.unshift({ def: GUNS.rifle, ammo: weapon.magSize(stats, GUNS.rifle), reserve: Infinity, mut: null });
+  weapon.slots = slots;
+  weapon.cur = 0;
+  weapon.last = 0;
+  weapon.refreshModels();
+  player.health = Math.max(1, Math.min(save.health || stats.maxHealth, stats.maxHealth + stats.overheal));
+  if (WEATHER[save.weather] && world.theme.weathers.includes(save.weather)) weather.set(save.weather, true);
+  Object.assign(game, { wave: save.wave, score: save.score | 0, kills: save.kills | 0, headshots: save.headshots | 0, runId: save.id });
+}
+
+function startGame(save = null) {
   audio.init();
   game.mode = 'solo';
+  $('chat-log').innerHTML = '';
+  chatLines.length = 0;
   loadMap(game.map);
   zombies.clear();
   clearMedkits();
@@ -926,15 +1067,17 @@ function startGame() {
   pickups.clear();
   pickups.topUp(5, player.pos, 0.06);
   weather.set(world.theme.weather, true);
-  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0 });
+  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
+  if (save) restoreRun(save);
   $('banner').className = '';
   $('subbanner').className = '';
-  pauseFor('READY?', `${world.theme.name} · the first wave comes in 5 seconds`);
+  pauseFor('READY?', save ? `Continuing · wave ${game.wave + 1} starts in 5 seconds` : `${world.theme.name} · the first wave comes in 5 seconds`);
   lock();
 }
 
 async function gameOver() {
   game.state = 'gameover';
+  clearRun();
   trigger = false;
   aim = false;
   if (document.pointerLockElement) document.exitPointerLock();
@@ -967,6 +1110,9 @@ function toMenu() {
   game.state = 'menu';
   game.mode = 'solo';
   if (document.pointerLockElement) document.exitPointerLock();
+  loadMap(game.map); // back to the solo map behind the menu
+  $('chat-log').innerHTML = '';
+  chatLines.length = 0;
   zombies.clear();
   clearMedkits();
   clearProjectiles();
@@ -1050,6 +1196,9 @@ const mp = new Multiplayer({
       if (s) s.textContent = `Respawning in ${n}`;
     }, 1000);
   },
+  onChat(name, text, color, admin) {
+    addChat(name, text, color, admin);
+  },
   onKillConfirmed(victim, head) {
     audio.kill();
     showHit('kill');
@@ -1070,22 +1219,11 @@ const mp = new Multiplayer({
 });
 
 // ---------------------------------------------------------------- menus
-function renderMapPicker() {
-  $('map-pick').innerHTML = MAP_IDS.map(
-    (id) => `<button class="map-card ${id === game.map ? 'on' : ''}" data-map="${id}"><b>${THEMES[id].name}</b><span>${THEMES[id].desc}</span></button>`
-  ).join('');
-}
-$('map-pick').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-map]');
-  if (!b) return;
-  game.map = b.dataset.map;
-  savePref('deadplains.map', game.map);
-  renderMapPicker();
-  loadMap(game.map);
-});
 
-$('play-btn').addEventListener('click', startGame);
-$('again-btn').addEventListener('click', startGame);
+$('play-btn').addEventListener('click', () => startGame());
+$('continue-btn').addEventListener('click', () => pendingSave && startGame(pendingSave));
+$('again-btn').addEventListener('click', () => startGame());
+account.onChange(() => refreshSave());
 $('menu-btn').addEventListener('click', toMenu);
 $('mp-btn').addEventListener('click', () => {
   audio.init();
@@ -1159,6 +1297,11 @@ document.addEventListener(
 );
 document.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
+  if ((e.code === 'KeyT' || e.code === 'Enter') && game.mode === 'mp' && ['playing', 'lobby', 'paused', 'mpend'].includes(game.state) && !chatOpen()) {
+    e.preventDefault();
+    openChat();
+    return;
+  }
   if (game.state === 'choosing' && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
     choose(Number(e.code.slice(-1)) - 1);
     return;
@@ -1381,6 +1524,7 @@ function frame(now) {
   effects.update(dt);
   updateDamageNumbers(dt);
   updateZombieMarkers();
+  updateChat();
 
   camera.getWorldDirection(_fwd);
   audio.setListener(camera.position, _fwd);
@@ -1391,7 +1535,6 @@ function frame(now) {
 }
 
 loadMap(game.map);
-renderMapPicker();
 renderBest();
 applyProfile();
 showOnly('menu');
@@ -1421,6 +1564,9 @@ if (import.meta.env.DEV) {
     get weather() {
       return weather;
     },
-    game, player, weapon, mp, account, stats: () => stats, startGame, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
+    get pendingSave() {
+      return pendingSave;
+    },
+    game, player, weapon, mp, account, stats: () => stats, refreshSave, startGame, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

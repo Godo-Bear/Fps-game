@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAPS, MODES, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
+import { MAPS, MODES, MP_MAPS, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 
@@ -362,7 +362,11 @@ export class Multiplayer {
         this.ctx.audio.shot(GUNS[m.g]?.sound || 'rifle', false, o);
         break;
       }
+      case 'chat':
+        this.ctx.onChat(m.name, m.text, this.teams ? TEAM_CSS[m.team] : '#ffd38a', m.admin);
+        break;
       case 'msg':
+        this.ctx.onChat(null, m.text);
         this._addFeed(`<span class="sys" style="color:${m.team ? TEAM_CSS[m.team] : '#e9d9b8'}">${esc(m.text)}</span>`);
         if (m.big) this.ctx.banner(m.text.toUpperCase().slice(0, 30), '', m.team === this.myTeam ? 'gold' : 'red', 2);
         break;
@@ -749,7 +753,7 @@ export class Multiplayer {
     $('lobby-modes').innerHTML = Object.values(MODES)
       .map((m) => `<button data-mode="${m.id}" class="chipbtn ${m.id === l.mode ? 'on' : ''}" ${host ? '' : 'disabled'} title="${esc(m.desc)}">${m.name}</button>`)
       .join('');
-    $('lobby-maps').innerHTML = Object.entries(MAPS)
+    $('lobby-maps').innerHTML = MP_MAPS.map((id) => [id, MAPS[id]])
       .map(([id, m]) => `<button data-map="${id}" class="chipbtn ${id === l.map ? 'on' : ''}" ${host ? '' : 'disabled'}>${m.name}</button>`)
       .join('');
     $('lobby-desc').textContent = mode.desc;

@@ -141,6 +141,17 @@ export class Account {
     this._dropSession();
   }
 
+  // Saved solo run on the server (logged-in players only).
+  async getSave() {
+    if (!this.user) return null;
+    const { save } = await this._api('/save');
+    return save;
+  }
+  async putSave(save) {
+    if (!this.user) return;
+    await this._api('/save', { method: 'PUT', body: { save } });
+  }
+
   async claimAdmin(code) {
     const { user } = await this._api('/admin/claim', { method: 'POST', body: { code } });
     this.user = user;

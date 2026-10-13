@@ -30,6 +30,10 @@ export function makeRoomCode() {
   return s;
 }
 
+// Solo play always uses this map; the others are for multiplayer.
+export const SOLO_MAP = 'plains';
+export const MP_MAPS = ['frost', 'forest'];
+
 // Maps. Every map keeps the spawns, flags and capture point above clear, so all modes work everywhere.
 export const MAPS = {
   plains: { name: 'Dead Plains', weathers: ['clear', 'clear', 'overcast', 'dust', 'rain', 'storm'] },

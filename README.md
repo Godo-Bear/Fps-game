@@ -22,11 +22,12 @@ After every wave you survive, pick **one of three power-ups** to take into the n
 | 1–8 / mouse wheel | Switch gun |
 | Q | Previous gun |
 | Tab | Scoreboard (online) |
+| T / Enter | Chat (online) |
 | 1 / 2 / 3 | Pick a power-up card (between waves) |
 | M | Mute |
 
 ### Maps
-Pick one on the main menu (or the host picks it for an online room):
+Solo games are always on Dead Plains. The other two are multiplayer maps; the host picks one in the room lobby:
 - **Dead Plains**: ruined town, crashed airliner, water tower and windmill with ladders.
 - **Frostbite Outpost**: snowy military base with bunkers, watchtowers, trucks, containers, a downed helicopter and a frozen lake. Snow and blizzards.
 - **Blackwood Hollow**: dark forest at dusk with cabins, a ruined church, a graveyard, ranger towers and **toxic swamp pools that hurt**.
@@ -67,6 +68,15 @@ After each wave pick 1 of 3 power-ups. Each card rolls Rare 68% / Epic 26% / Leg
 Each power-up has a stack limit shown on its card.
 Healing from medkits, lifesteal and clearing a wave can **overheal** you up to 50 above max health (blue bar).
 Overheal slowly drains, and the **Overcharge** power-up raises the cap.
+
+### Saving your run
+Solo runs are saved after every wave (once you pick a power-up). The main menu shows **Continue · Wave N**
+to pick up where you left off; quitting mid-wave restarts that wave. Logged-in players' saves are also stored on
+their account, so they work on any device. Dying ends the run and deletes the save.
+
+### Chat
+A small chat sits in the top left. Online, press **T** or **Enter** to talk to everyone in the room (lobby and matches).
+In solo it shows game events.
 
 ### Accounts, friends and progress
 - Play as a guest (progress saved in your browser) or **create an account** to save it on the server.

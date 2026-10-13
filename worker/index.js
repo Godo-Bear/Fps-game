@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanProfile, levelFromXp, xpForRun } from '../shared/cosmetics.js';
-import { FFA_SPAWNS, FLAG_BASES, MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
+import { FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -71,6 +71,12 @@ export class GameDB extends DurableObject {
     // added later: admin accounts
     try {
       this.sql.exec('ALTER TABLE users ADD COLUMN admin INTEGER NOT NULL DEFAULT 0');
+    } catch {
+      /* column already exists */
+    }
+    // added later: the saved solo run (so you can continue on any device)
+    try {
+      this.sql.exec('ALTER TABLE users ADD COLUMN save TEXT');
     } catch {
       /* column already exists */
     }
@@ -147,7 +153,7 @@ export class GameDB extends DurableObject {
     let body = {};
     if (method === 'POST' || method === 'PUT') {
       const text = await request.text();
-      if (text.length > 4096) return err('Request too large', 413);
+      if (text.length > 8192) return err('Request too large', 413);
       try {
         body = text ? JSON.parse(text) : {};
       } catch {
@@ -251,6 +257,27 @@ export class GameDB extends DurableObject {
       return json({ user: this._publicUser(user, true) });
     }
 
+    if (path === '/save' && method === 'GET') {
+      let save = null;
+      try {
+        save = me.save ? JSON.parse(me.save) : null;
+      } catch {
+        save = null;
+      }
+      return json({ save });
+    }
+    if (path === '/save' && method === 'PUT') {
+      if (body.save === null) {
+        this.sql.exec('UPDATE users SET save = NULL WHERE id = ?', me.id);
+        return json({ ok: true });
+      }
+      if (typeof body.save !== 'object' || Array.isArray(body.save)) return err('Bad save');
+      const text = JSON.stringify(body.save);
+      if (text.length > 6000) return err('Save too large', 413);
+      this.sql.exec('UPDATE users SET save = ? WHERE id = ?', text, me.id);
+      return json({ ok: true });
+    }
+
     if (path === '/friends' && method === 'GET') {
       const rows = this.sql
         .exec(
@@ -318,7 +345,7 @@ export class Room extends DurableObject {
     this.nextId = 1;
     this.hostId = 0;
     this.mode = 'tdm';
-    this.map = 'plains';
+    this.map = MP_MAPS[0];
     this.phase = 'lobby'; // lobby | playing | ended
     this.match = null;
     this.interval = null;
@@ -446,7 +473,7 @@ export class Room extends DurableObject {
         }
         break;
       case 'map':
-        if (p.id === this.hostId && this.phase === 'lobby' && MAPS[m.map]) {
+        if (p.id === this.hostId && this.phase === 'lobby' && MP_MAPS.includes(m.map)) {
           this.map = m.map;
           this._broadcast(this._lobby());
         }
@@ -491,6 +518,15 @@ export class Room extends DurableObject {
       case 'hit':
         this._hit(p, m);
         break;
+      case 'chat': {
+        // room chat: short messages, max ~1 per 0.7s each
+        if (typeof m.text !== 'string') return;
+        const text = m.text.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 120);
+        if (!text || now - (p.lastChat || 0) < 700) return;
+        p.lastChat = now;
+        this._broadcast({ t: 'chat', id: p.id, name: p.name, team: p.team, admin: !!p.admin, text });
+        break;
+      }
       case 'ping':
         this._send(p, { t: 'pong', at: m.at });
         break;
