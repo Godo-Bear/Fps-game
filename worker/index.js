@@ -3,6 +3,7 @@ import { cleanProfile, levelFromXp, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dayNumber, questView } from '../shared/quests.js';
+import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
 import { FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
@@ -698,6 +699,43 @@ export class Room extends DurableObject {
         for (const o of this.players.values()) if (o !== p && o.joined) o.ws.send(msg);
         break;
       }
+      // ---- barricades and turrets
+      case 'build': {
+        if (this.phase !== 'playing' || !p.alive) return;
+        const def = STRUCTURES[m.kind];
+        if (!def || ![m.x, m.z, m.rot].every(Number.isFinite)) return;
+        if (now - (p.lastBuild || 0) < 400) return;
+        const all = this.match.structures;
+        const mine = [...all.values()].filter((o) => o.owner === p.id && o.kind === m.kind).length;
+        if (mine >= def.max) return this._send(p, { t: 'msg', text: `You can only have ${def.max} ${def.name.toLowerCase()}s` });
+        if (all.size >= MAX_STRUCTURES) return this._send(p, { t: 'msg', text: 'This room has too many things built' });
+        if (Math.hypot(m.x - p.pos[0], m.z - p.pos[2]) > BUILD_REACH + 2 || Math.hypot(m.x, m.z) > 112) return;
+        p.lastBuild = now;
+        const st = { id: this.match.nextStructure++, kind: m.kind, owner: p.id, team: p.team, x: Math.round(m.x * 100) / 100, z: Math.round(m.z * 100) / 100, rot: m.rot % (Math.PI * 2), hp: def.hp };
+        all.set(st.id, st);
+        this._broadcast({ t: 'built', s: st });
+        break;
+      }
+      case 'sdmg': {
+        // co-op: the host's zombies (and blasts) wreck things; PvP: enemies shoot each other's stuff
+        if (this.phase !== 'playing') return;
+        const st = this.match.structures.get(m.id);
+        const dmg = Number(m.dmg);
+        if (!st || !Number.isFinite(dmg) || dmg <= 0 || dmg > MAX_HIT) return;
+        if (this._coop) {
+          if (p.id !== this.hostId) return;
+        } else {
+          if (st.owner === p.id || (MODES[this.mode].teams && st.team === p.team)) return;
+          if (now - p.hits[1] > 1000) p.hits = [0, now];
+          if (++p.hits[0] > 45) return;
+        }
+        st.hp -= dmg;
+        if (st.hp <= 0) {
+          this.match.structures.delete(st.id);
+          this._broadcast({ t: 'sgone', id: st.id, by: p.id });
+        } else this._broadcast({ t: 'shp', id: st.id, hp: Math.round(st.hp) });
+        break;
+      }
       case 'chat': {
         // room chat: short messages, max ~1 per 0.7s each
         if (typeof m.text !== 'string') return;
@@ -770,6 +808,13 @@ export class Room extends DurableObject {
       return;
     }
     this._broadcast({ t: 'left', id: p.id });
+    if (this.match?.structures) {
+      for (const st of [...this.match.structures.values()]) {
+        if (st.owner !== p.id) continue;
+        this.match.structures.delete(st.id);
+        this._broadcast({ t: 'sgone', id: st.id });
+      }
+    }
     // co-op runs on the host's machine, so the run ends if the host leaves
     if (this._coop && this.phase === 'playing' && p.id === this.hostId) {
       this._broadcast({ t: 'msg', text: 'The host left, the run is over' });
@@ -793,7 +838,10 @@ export class Room extends DurableObject {
 
   // ---------------------------------------------------------------- match flow
   _matchStart() {
-    return { t: 'start', mode: this.mode, map: this.map, weather: this.match.weather, endsAt: this.match.endsAt, now: Date.now() };
+    return {
+      t: 'start', mode: this.mode, map: this.map, weather: this.match.weather, endsAt: this.match.endsAt, now: Date.now(),
+      structures: [...this.match.structures.values()],
+    };
   }
 
   _startMatch() {
@@ -809,6 +857,8 @@ export class Room extends DurableObject {
         red: { state: 'home', pos: [...FLAG_BASES.red], carrier: 0, droppedAt: 0 },
         blue: { state: 'home', pos: [...FLAG_BASES.blue], carrier: 0, droppedAt: 0 },
       },
+      structures: new Map(), // barricades and turrets: id -> { id, kind, owner, team, x, z, rot, hp }
+      nextStructure: 1,
       last: Date.now(),
     };
     for (const p of this.players.values()) {

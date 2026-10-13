@@ -345,6 +345,16 @@ export class Multiplayer {
         this._renderFeed();
         this.ctx.onMatchStart(m.map, m.mode, m.weather);
         this._buildObjectives();
+        this.ctx.onStructures?.(m.structures);
+        break;
+      case 'built':
+        this.ctx.onBuilt?.(m.s);
+        break;
+      case 'shp':
+        this.ctx.onStructureHp?.(m.id, m.hp);
+        break;
+      case 'sgone':
+        this.ctx.onStructureGone?.(m.id, m.by);
         break;
       case 'fx':
         if (this.ctx.onFx) this.ctx.onFx(m);

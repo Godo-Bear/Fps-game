@@ -6,6 +6,8 @@ import { coinsForRun } from '../shared/shop.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
 import { DefendPoints } from './defend.js';
+import { Structures } from './structures.js';
+import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
 import { Effects } from './effects.js';
 import { GUNS, MUTATIONS, TIER_CSS, randomMutation, rollGun } from './guns.js';
 import { Minimap } from './minimap.js';
@@ -45,6 +47,7 @@ const weapon = new Weapon(camera, audio);
 weapon.resize(camera.aspect);
 const account = new Account();
 const accountUI = new AccountUI(account);
+const structures = new Structures(scene); // barricades and turrets
 
 let world = null;
 let zombies = null;
@@ -123,6 +126,8 @@ function loadMap(id) {
     };
   }
   zombies.world = world;
+  zombies.structures = structures;
+  structures.setColliders(world.colliders);
   zombies.nav = new NavGrid(world.colliders);
   zombies.navT = 0;
   zombies.clear();
@@ -302,7 +307,7 @@ const simHost = () => game.mode === 'solo' || (isCoop() && mp.isHost());
 const coop = { remaining: 0, ready: new Set(), pickT: 0, snapT: 0, scoreT: 0 };
 const defend = new DefendPoints(scene);
 
-const targets = () => (zombieGame() ? zombies.parts : mp.parts).concat(world.solids);
+const targets = () => (zombieGame() ? zombies.parts : mp.parts).concat(world.solids, structures.meshes);
 
 function fireShot(moving, speed) {
   const def = weapon.def;
@@ -362,6 +367,8 @@ function traceBullet(origin, dir, primary) {
       impact = true;
       effects.dust(end);
       effects.sparks(end);
+      // shooting the other side's barricades and turrets (PvP)
+      if (ud.structure && primary && !ud.structure.ally) structureDamage(ud.structure, baseHitDamage(h.distance));
       break;
     }
   }
@@ -505,6 +512,12 @@ function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false, src 
     if (isCoop() && simHost()) mp.relay('all', { k: 'boom', x: point.x, y: point.y, z: point.z, r: radius });
   }
   if (!zombieGame()) return;
+  if (hurtsPlayer && simHost()) {
+    for (const st of [...structures.list]) {
+      const d = st.pos.distanceTo(point);
+      if (d < radius + 1) structureDamage(st, 150 * (1 - (d / (radius + 1)) * 0.5));
+    }
+  }
   for (const z of zombies.list) {
     if (!z.alive) continue;
     const p = z.root.position;
@@ -610,6 +623,163 @@ function flushQuests() {
   account.questProgress(delta).catch(() => {
     for (const [k, n] of Object.entries(delta)) questAdd(k, n); // try again next time
   });
+}
+
+// ---------------------------------------------------------------- building (B): barricades and turrets
+// Paid for with scrap (kills, cleared waves). Solo builds right away; online the room server
+// keeps the list so everyone sees the same things, and the owner's game runs their turrets.
+const build = { on: false, kind: 'barricade', rot: 0, x: 0, z: 0, yaw: 0, valid: false, why: '' };
+let localStructureId = 1;
+const myOwner = () => (game.mode === 'mp' ? mp.myId : 'me');
+const freeBuild = () => cheatsOn() && cheats.ammo;
+
+function setBuild(on) {
+  build.on = on && !player.dead;
+  if (!build.on) structures.hideGhost();
+  trigger = false;
+  aim = false;
+  $('build-hud').classList.toggle('hidden', !build.on);
+  if (build.on) audio.click(0.8, 0.2);
+}
+
+const _foot = { x: 0, z: 0, hx: 0, hz: 0, cos: 1, sin: 0 };
+function updateBuildGhost() {
+  const def = STRUCTURES[build.kind];
+  const dist = build.kind === 'turret' ? 2.6 : 3.2;
+  build.x = player.pos.x - Math.sin(player.yaw) * dist;
+  build.z = player.pos.z - Math.cos(player.yaw) * dist;
+  build.yaw = player.yaw + build.rot;
+  build.why = '';
+  const cos = Math.cos(build.yaw);
+  const sin = Math.sin(build.yaw);
+  // try a few points across the footprint: ground has to be open and fairly flat
+  const g0 = heightAt(build.x, build.z);
+  let ok = Math.hypot(build.x, build.z) < 108;
+  for (const t of [-1, -0.5, 0, 0.5, 1]) {
+    for (const u of [-1, 1]) {
+      const lx = t * def.hx;
+      const lz = u * def.hz;
+      const x = build.x + cos * lx + sin * lz;
+      const z = build.z - sin * lx + cos * lz;
+      const gy = heightAt(x, z);
+      if (Math.abs(gy - g0) > 0.8 || world.colliders.resolve({ x, z }, 0.08, gy, 1.8)) ok = false;
+    }
+  }
+  Object.assign(_foot, { x: build.x, z: build.z, hx: def.hx, hz: def.hz, cos, sin });
+  if (world.colliders._dist2(_foot, player.pos.x, player.pos.z) < 0.5 * 0.5) ok = false;
+  if (!ok) build.why = "Can't build there";
+  else if (structures.count(build.kind, myOwner()) >= def.max) build.why = `You can only have ${def.max} ${def.name.toLowerCase()}s`;
+  else if (game.scrap < def.cost && !freeBuild()) build.why = `Need ${def.cost} scrap`;
+  build.valid = !build.why;
+  structures.showGhost(build.kind, build.x, build.z, build.yaw, build.valid);
+  const opt = (k) => {
+    const d = STRUCTURES[k];
+    return `<span class="${build.kind === k ? 'on' : ''}"><b>${d.key}</b> ${d.icon} ${d.name} · 🔩${d.cost} <small>(${structures.count(k, myOwner())}/${d.max})</small></span>`;
+  };
+  const html = `<div class="b-title">BUILD MODE · 🔩 ${game.scrap} scrap</div><div class="b-opts">${opt('barricade')}${opt('turret')}</div>
+    <div class="b-help">${build.why ? `<b class="bad">${build.why}</b>` : 'Click to place'} · R turn · B or right-click to stop</div>`;
+  if (last.buildHtml !== html) {
+    last.buildHtml = html;
+    $('build-hud').innerHTML = html;
+  }
+}
+
+function placeStructure() {
+  if (!build.valid) {
+    subBanner(build.why || "Can't build there", 1.2);
+    audio.empty();
+    return;
+  }
+  const def = STRUCTURES[build.kind];
+  if (!freeBuild()) game.scrap -= def.cost;
+  questAdd('built');
+  audio.click(0.5, 0.5);
+  const rot = Math.round(build.yaw * 100) / 100;
+  if (game.mode === 'mp') mp.send({ t: 'build', kind: build.kind, x: build.x, z: build.z, rot });
+  else structures.add({ id: localStructureId++, kind: build.kind, x: build.x, z: build.z, rot, owner: 'me', ally: true });
+}
+
+// Damage a barricade or turret. Online the server keeps score (co-op: the host's zombies; PvP: enemies).
+function structureDamage(st, dmg) {
+  if (!st || st.hp <= 0) return;
+  if (game.mode === 'mp') {
+    mp.send({ t: 'sdmg', id: st.id, dmg: Math.round(dmg) });
+    return;
+  }
+  structures.setHp(st.id, st.hp - dmg);
+  if (st.hp <= 0) {
+    structures.remove(st.id, effects);
+    audio.explosion(st.pos);
+    subBanner(`${st.def.name} destroyed`, 1.4);
+  }
+}
+
+// online: what the room server says
+const allyOf = (owner, team) => owner === mp.myId || isCoop() || (mp.teams && team === mp.myTeam);
+function addServerStructure(st) {
+  structures.add({ ...st, ally: allyOf(st.owner, st.team) });
+}
+
+// Turrets: each player's game aims and fires their own turrets; everyone else's just show the shots.
+const _tm = new THREE.Vector3();
+const _tt = new THREE.Vector3();
+function updateTurrets(dt) {
+  for (const st of structures.list) {
+    if (st.kind !== 'turret') continue;
+    const def = st.def;
+    st.cd -= dt;
+    st.scan = (st.scan || 0) - dt;
+    if (st.scan <= 0) {
+      // look for something to shoot a few times a second
+      st.scan = 0.2;
+      st.target = null;
+      let best = def.range * def.range;
+      const consider = (pos, y, t) => {
+        const d2 = (pos.x - st.x) ** 2 + (pos.z - st.z) ** 2;
+        if (d2 >= best) return;
+        _tt.set(pos.x, y, pos.z);
+        raycaster.set(st.pos, _tt.clone().sub(st.pos).normalize());
+        raycaster.far = Math.sqrt(d2);
+        if (raycaster.intersectObjects(world.solids, false).length) return;
+        best = d2;
+        st.target = t;
+      };
+      if (zombieGame()) {
+        for (const z of zombies.list) if (z.alive && z.state !== 'rising') consider(z.root.position, z.centerY, { z });
+      } else if (game.mode === 'mp') {
+        // PvP: enemies of whoever owns it
+        const enemyOf = (id, team) => (mp.teams ? team !== st.team : id !== st.owner);
+        for (const a of mp.avatars.values()) if (a.alive && a.id !== st.owner && enemyOf(a.id, mp._team(a.id))) consider(a.pos, a.pos.y + 1.1, { p: a.id });
+        if (!player.dead && mp.myId !== st.owner && enemyOf(mp.myId, mp.myTeam)) consider(player.pos, player.pos.y + 1.1, { me: true });
+      }
+    }
+    const t = st.target;
+    if (!t) continue;
+    const tp = t.z ? t.z.root.position : t.p !== undefined ? mp.avatars.get(t.p)?.pos : player.pos;
+    if (!tp || (t.z && !t.z.alive)) {
+      st.target = null;
+      continue;
+    }
+    const ty = t.z ? t.z.centerY : tp.y + 1.1;
+    st.aim = Math.atan2(-(tp.x - st.x), -(tp.z - st.z));
+    if (st.cd > 0) continue;
+    st.cd = 1 / def.rate;
+    st.model.muzzle.getWorldPosition(_tm);
+    _tt.set(tp.x + (Math.random() - 0.5) * 0.3, ty + (Math.random() - 0.5) * 0.3, tp.z + (Math.random() - 0.5) * 0.3);
+    effects.tracer(_tm, _tt, 0xffd27a);
+    audio.shot('smg', false, st.pos);
+    if (st.owner !== myOwner()) continue; // someone else's: just the show
+    if (t.z) {
+      if (!simHost()) {
+        mp.relay('host', { k: 'zhit', id: t.z.id, dmg: def.damage, head: false, mut: null, slow: 0, src: 'turret' });
+      } else {
+        hitSoundPlayed = true; // no hit sound spam from turrets
+        applyZombieHit(t.z, def.damage, { point: _tt.clone(), shooter: 'me', src: 'turret' });
+      }
+    } else if (t.p !== undefined) {
+      mp.reportHit(t.p, def.pvpDamage, false);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- knife
@@ -786,6 +956,7 @@ function grenadeBlast(at) {
         const d = Math.hypot(a.pos.x - at.x, a.pos.y + 1 - at.y, a.pos.z - at.z);
         if (d < radius) mp.reportHit(a.id, 150 * (1 - (d / radius) * 0.7), false);
       }
+      for (const st of [...structures.list]) if (!st.ally && st.pos.distanceTo(at) < radius) structureDamage(st, 120);
     }
   }
 }
@@ -878,6 +1049,7 @@ function onPlayerHit(z, dmg, kind) {
 
 // Co-op: you're down until the next wave (or the run ends if everyone is).
 function coopDown() {
+  setBuild(false);
   player.dead = true;
   player.health = 0;
   trigger = false;
@@ -899,6 +1071,7 @@ const zombieHooks = {
     bloaterBurst(z);
   },
   dotKill: (z) => killedBy(z, false, z.lastHit, null),
+  hitStructure: (z, st, dmg) => structureDamage(st, dmg),
 };
 
 // Everyone the zombies can go after (co-op host: every living player).
@@ -1284,7 +1457,7 @@ function updateHud(dt) {
   $('ammo').classList.toggle('hidden', !!slot.def.melee);
   setText('ammo-mag', String(slot.ammo));
   setText('ammo-max', slot.reserve === Infinity ? '∞' : String(slot.reserve));
-  setText('grenade-count', `💣 ${game.grenades}`);
+  setText('grenade-count', `💣 ${game.grenades} · 🔩 ${game.scrap}`);
   setText('weapon-name', weapon.displayName().toUpperCase());
   $('weapon-name').style.color = slot.mut ? MUTATIONS[slot.mut].css : TIER_CSS[slot.def.tier];
   $('ammo').classList.toggle('low', slot.ammo <= weapon.magSize(stats) * 0.2);
@@ -1394,6 +1567,7 @@ function runSnapshot() {
     weather: weather.id,
     grenades: game.grenades,
     scrap: game.scrap,
+    built: structures.list.map((st) => [st.kind, Math.round(st.x * 10) / 10, Math.round(st.z * 10) / 10, Math.round(st.rot * 100) / 100, Math.round(st.hp)]),
   };
 }
 
@@ -1552,6 +1726,9 @@ function restoreRun(save) {
   weapon.refreshModels();
   game.grenades = Math.max(0, Math.min(maxGrenades(), save.grenades ?? 2));
   game.scrap = Math.max(0, Math.min(999, save.scrap | 0));
+  for (const [kind, x, z, rot, hp] of Array.isArray(save.built) ? save.built.slice(0, 20) : []) {
+    if (STRUCTURES[kind] && [x, z, rot, hp].every(Number.isFinite)) structures.add({ id: localStructureId++, kind, x, z, rot, hp: Math.min(hp, STRUCTURES[kind].hp), owner: 'me', ally: true });
+  }
   player.health = Math.max(1, Math.min(save.health || stats.maxHealth, stats.maxHealth + stats.overheal));
   if (WEATHER[save.weather] && world.theme.weathers.includes(save.weather)) weather.set(save.weather, true);
   Object.assign(game, { wave: save.wave, score: save.score | 0, kills: save.kills | 0, headshots: save.headshots | 0, runId: save.id, runName: saveName(save) });
@@ -1605,7 +1782,9 @@ function startGame(save = null, name = null) {
   pickups.clear();
   pickups.topUp(5, player.pos, 0.06);
   weather.set(world.theme.weather, true);
-  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: 10, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
+  structures.clear();
+  setBuild(false);
+  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
   game.runName = cleanSaveName(name || nextGameName());
   if (save) restoreRun(save);
   else {
@@ -1621,6 +1800,7 @@ function startGame(save = null, name = null) {
 
 async function gameOver() {
   game.state = 'gameover';
+  setBuild(false);
   flushQuests();
   clearRun();
   trigger = false;
@@ -1664,6 +1844,8 @@ function toMenu() {
   clearProjectiles();
   pickups.clear();
   defend.stop();
+  structures.clear();
+  setBuild(false);
   player.dead = false;
   renderBest();
   showOnly('menu');
@@ -1727,7 +1909,9 @@ const mp = new Multiplayer({
     clearProjectiles();
     clearMedkits();
     player.reset(100);
-    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: 10, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0 });
+    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0 });
+    structures.clear();
+    setBuild(false);
     coop.remaining = 0;
     if (mode === 'defend') defend.start();
     else defend.stop();
@@ -1763,6 +1947,7 @@ const mp = new Multiplayer({
     audio.hurt();
   },
   onDeath(killer) {
+    setBuild(false);
     player.dead = true;
     player.health = 0;
     trigger = false;
@@ -1784,6 +1969,23 @@ const mp = new Multiplayer({
   onMyHp(hp) {
     if (!MODES[mp.mode]?.coop && !player.dead) player.health = hp;
   },
+  onStructures(list) {
+    structures.clear();
+    for (const st of list || []) addServerStructure(st);
+  },
+  onBuilt(st) {
+    addServerStructure(st);
+  },
+  onStructureHp(id, hp) {
+    structures.setHp(id, hp);
+  },
+  onStructureGone(id) {
+    const st = structures.get(id);
+    if (!st) return;
+    audio.explosion(st.pos);
+    if (st.owner === mp.myId) subBanner(`Your ${st.def.name.toLowerCase()} was destroyed`, 1.6);
+    structures.remove(id, effects);
+  },
   onFx(m) {
     if (m.k === 'boom' && Array.isArray(m.p)) {
       const p = new THREE.Vector3(m.p[0], m.p[1], m.p[2]);
@@ -1796,6 +1998,7 @@ const mp = new Multiplayer({
   },
   onKillConfirmed(victim, head) {
     questAdd('pvpKills');
+    game.scrap = Math.min(999, game.scrap + SCRAP_PER_PVP_KILL);
     audio.kill();
     showHit('kill');
     if (head) headshotPop();
@@ -1916,6 +2119,11 @@ document.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('mousedown', (e) => {
   if (game.state !== 'playing' || player.dead) return;
+  if (build.on) {
+    if (e.button === 0) placeStructure();
+    if (e.button === 2) setBuild(false);
+    return;
+  }
   if (e.button === 0) {
     trigger = true;
     pressed = true;
@@ -1954,6 +2162,13 @@ document.addEventListener('keydown', (e) => {
   if (game.state !== 'playing') return;
   if (e.code === 'Space' || e.code === 'KeyC') e.preventDefault();
   player.keys.add(e.code);
+  if (e.code === 'KeyB') return setBuild(!build.on);
+  if (build.on) {
+    // build mode: 1 / 2 pick what to build, R turns it
+    if (e.code === 'Digit1' || e.code === 'Digit2') build.kind = e.code === 'Digit1' ? 'barricade' : 'turret';
+    if (e.code === 'KeyR') build.rot += Math.PI / 2;
+    if (e.code === 'KeyR' || /^Digit/.test(e.code)) return;
+  }
   if (e.code === 'KeyR') weapon.startReload(stats);
   if (e.code === 'KeyQ') weapon.equipLast();
   if (e.code === 'KeyV' && !player.dead && weapon.quickMelee()) meleeAttack();
@@ -2184,6 +2399,7 @@ function update(dt) {
   if (weapon.ammo === 0 && weapon.slot.reserve > 0 && weapon.reloading <= 0 && !trigger) weapon.startReload(stats);
   updateProjectiles(dt);
   updateThrown(dt);
+  if (build.on) updateBuildGhost();
   questFlushT -= dt;
   if (questFlushT <= 0) flushQuests();
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
@@ -2194,6 +2410,7 @@ function update(dt) {
 
 // Zombies, waves, medkits and hazards. In co-op this keeps running while you're in a menu.
 function worldTick(dt) {
+  if (structures.list.length) updateTurrets(dt);
   if (zombieGame()) {
     if (simHost()) {
       if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, isCoop() ? zombieTargets() : player, zombieHooks);
@@ -2336,6 +2553,7 @@ function frame(now) {
   updateDamageNumbers(dt);
   updateZombieMarkers();
   defend.update(dt, time);
+  structures.update(dt, effects);
   updateChat();
 
   camera.getWorldDirection(_fwd);
@@ -2382,6 +2600,6 @@ if (import.meta.env.DEV) {
     get savedGames() {
       return savedGames;
     },
-    game, player, weapon, mp, account, defend, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
+    game, player, weapon, mp, account, defend, structures, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

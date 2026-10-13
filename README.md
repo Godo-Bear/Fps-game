@@ -86,6 +86,19 @@ starts and after every wave (once you pick a power-up); quitting mid-wave restar
 games are stored on their account, so they work on any device (games played as a guest move into your account when
 you log in). Dying ends that game and deletes its save.
 
+### Knife, grenades and building
+- Everyone carries a **Combat Knife** (slot 2). Press **V** for a quick stab with whatever you're holding. Headshots and
+  stabbing a zombie in the back hit much harder.
+- **G** throws a grenade. You carry up to 4 (more with the **Grenadier** shop upgrade) and get 2 back for every wave
+  you clear and when you respawn.
+- **B** opens build mode: **1** sandbag barricade (10 scrap), **2** turret (35 scrap), **R** turns it, click places it.
+  Scrap comes from kills and cleared waves. Zombies have to tear barricades down, and turrets shoot the nearest
+  zombie (or enemy player) in range. It works in every mode; online everyone sees the same builds, and in PvP you
+  can shoot or blow up the other side's.
+
+### Daily quests
+Three new quests every day (the same for everyone). Finish one, then claim its coins in **📜 Quests** on the menu.
+
 ### Chat
 A small chat sits in the top left. Online, press **T** or **Enter** to talk to everyone in the room (lobby and matches).
 In solo it shows game events.

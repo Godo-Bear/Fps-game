@@ -224,6 +224,7 @@ export class ZombieManager {
     this.heads = [];
     this.groanBudget = 0;
     this.nav = null; // NavGrid for the current map
+    this.structures = null; // barricades and turrets they tear down when they're in the way
     this.nextId = 0;
     this.navT = 0;
     this._dir = { x: 0, z: 0 };
@@ -552,8 +553,11 @@ export class ZombieManager {
         continue;
       }
 
+      // a barricade or turret in the way: stop and tear it down
+      z.wall = !ladder && !T.ranged && this.structures ? this.structures.blocking(rp.x, rp.z, z.radius + 0.45, pdx, pdz, pdist) : null;
+
       // turn towards where we're going
-      const want = Math.atan2(ladder ? dx : pdx, ladder ? dz : pdz);
+      const want = z.wall ? Math.atan2(z.wall.x - rp.x, z.wall.z - rp.z) : Math.atan2(ladder ? dx : pdx, ladder ? dz : pdz);
       let diff = want - z.root.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       z.root.rotation.y += diff * Math.min(1, dt * 6);
@@ -561,7 +565,7 @@ export class ZombieManager {
       // spitters keep their distance and lob acid
       const keepAway = T.ranged && !ladder && pdist < 11 && pdist > 3;
       let moving = false;
-      const wantMove = ladder ? dist > 0.3 : T.ranged ? pdist > 16 || keepAway : dist > T.range * 0.8;
+      const wantMove = z.wall ? false : ladder ? dist > 0.3 : T.ranged ? pdist > 16 || keepAway : dist > T.range * 0.8;
       if (wantMove && z.windup <= 0) {
         let mx = dx / (dist || 1);
         let mz = dz / (dist || 1);
@@ -655,12 +659,14 @@ export class ZombieManager {
           const dy = pp.y - rp.y;
           if (T.bloated) {
             hooks.explode(z);
+          } else if (z.wall) {
+            if (hooks.hitStructure && z.wall.hp > 0) hooks.hitStructure(z, z.wall, z.damage * (z.typeId === 'brute' || z.typeId === 'boss' ? 2 : 1));
           } else if (pdist < T.range + 0.5 && dy < reach * z.scale && dy > -1.8) {
             hooks.hitPlayer(z, z.damage, 'melee', z.target);
           }
           z.attackCd = T.cooldown;
         }
-      } else if (pdist < T.range && z.attackCd <= 0 && above < reach * z.scale && !z.climb) {
+      } else if (((pdist < T.range && above < reach * z.scale) || z.wall) && z.attackCd <= 0 && !z.climb) {
         z.windup = T.bloated ? 0.7 : 0.38;
         this.audio.zombieAttack(rp);
       }
