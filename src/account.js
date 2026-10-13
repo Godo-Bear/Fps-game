@@ -527,25 +527,36 @@ export class AccountUI {
     }
     const act = this.adminActions;
     const solo = act && act.inSolo();
+    const mp = act && act.inMP();
     this.body.innerHTML = `
       <p class="muted">Admin account: every customisation is unlocked. Cheats work in solo games only (multiplayer stays fair).</p>
       <h4>Account</h4>
-      <form class="auth inline admin-row" data-act="xp"><input name="v" type="number" min="0" placeholder="Set XP (level 10 = 20250)" /><button class="btn small">SET XP</button></form>
+      <form class="auth inline admin-row" data-act="level"><input name="v" type="number" min="1" max="200" placeholder="Set level (1-200)" /><button class="btn small">SET LEVEL</button></form>
       <form class="auth inline admin-row" data-act="coins"><input name="v" type="number" min="0" placeholder="Set coins" /><button class="btn small">SET COINS</button></form>
-      <h4>Solo game ${solo ? '' : '<span class="muted">(start a solo game to use these)</span>'}</h4>
+      <h4>Solo cheats ${mp ? '<span class="muted">(off in multiplayer)</span>' : ''}</h4>
       <div class="admin-grid">
         ${[
           ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
           ['speed', '2× move speed'], ['freeze', 'Freeze zombies'], ['slowmo', 'Slow motion'], ['nohud', 'Hide HUD (screenshots)'],
         ]
-          .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${solo ? '' : 'disabled'} /> ${label}</label>`)
+          .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${mp ? 'disabled' : ''} /> ${label}</label>`)
           .join('')}
+      </div>
+      ${solo ? '' : '<p class="muted small">The buttons below need a solo game running: start one, then press F2.</p>'}
+      <div class="admin-grid">
         <button class="btn small" data-run="guns" ${solo ? '' : 'disabled'}>GIVE ALL GUNS</button>
         <button class="btn small" data-run="mutate" ${solo ? '' : 'disabled'}>MUTATE ALL MY GUNS</button>
         <button class="btn small" data-run="powerups" ${solo ? '' : 'disabled'}>MAX ALL POWER-UPS</button>
         <button class="btn small" data-run="heal" ${solo ? '' : 'disabled'}>FULL HEAL + OVERHEAL</button>
         <button class="btn small" data-run="boss" ${solo ? '' : 'disabled'}>SPAWN BOSS</button>
         <button class="btn small" data-run="killall" ${solo ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
+      </div>
+      <h4>Undo</h4>
+      <div class="admin-grid">
+        <button class="btn small ghost" data-run="removeguns" ${solo ? '' : 'disabled'}>REMOVE ALL GUNS</button>
+        <button class="btn small ghost" data-run="unmutate" ${solo ? '' : 'disabled'}>UNMUTATE GUNS</button>
+        <button class="btn small ghost" data-run="resetpowerups" ${solo ? '' : 'disabled'}>RESET POWER-UPS</button>
+        <button class="btn small ghost" data-run="cheatsoff">TURN OFF ALL CHEATS</button>
       </div>
       <div class="auth inline admin-row">
         <select id="admin-zombie" ${solo ? '' : 'disabled'}>${(act?.zombieTypes() || []).map((t) => `<option>${t}</option>`).join('')}</select>
@@ -565,17 +576,23 @@ export class AccountUI {
     this.body.querySelectorAll('[data-toggle]').forEach((cb) =>
       cb.addEventListener('change', () => msg(act.toggle(cb.dataset.toggle, cb.checked)))
     );
-    this.body.querySelectorAll('[data-run]').forEach((b) => b.addEventListener('click', () => msg(act.run(b.dataset.run))));
+    this.body.querySelectorAll('[data-run]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const text = act.run(b.dataset.run);
+        if (b.dataset.run === 'cheatsoff') this.render();
+        document.getElementById('admin-msg').textContent = text;
+      })
+    );
     this.body.querySelectorAll('form[data-act]').forEach((f) =>
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
         const v = Number(new FormData(f).get('v'));
         if (!Number.isFinite(v)) return;
-        if (f.dataset.act === 'xp' || f.dataset.act === 'coins') {
+        if (f.dataset.act === 'level' || f.dataset.act === 'coins') {
           try {
-            if (f.dataset.act === 'xp') await a.adminSetXp(v);
+            if (f.dataset.act === 'level') await a.adminSetXp(xpForLevel(Math.max(1, Math.min(200, Math.floor(v)))));
             else await a.adminSetCoins(v);
-            msg(f.dataset.act === 'xp' ? `XP set. You're level ${a.level}.` : `Coins set to ${a.coins}.`);
+            msg(f.dataset.act === 'level' ? `You're now level ${a.level}.` : `Coins set to ${a.coins}.`);
           } catch (err) {
             msg(err.message);
           }

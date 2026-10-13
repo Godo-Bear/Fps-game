@@ -69,6 +69,16 @@ Each power-up has a stack limit shown on its card.
 Healing from medkits, lifesteal and clearing a wave can **overheal** you up to 50 above max health (blue bar).
 Overheal slowly drains, and the **Overcharge** power-up raises the cap.
 
+### Coins and the shop
+You earn **coins** from every game: kills, headshots and waves reached in solo, kills and wins online.
+Spend them in the **Shop** (main menu, or the 🪙 Shop tab) on:
+- **Upgrades** for solo runs: Toughness (+max health), Firepower (+damage), Quick Hands (+reload speed), Scavenger (more guns and medkits)
+- a **starting gun** you begin every solo run with
+- **Revive Tokens**: your next solo run starts with Second Wind
+- any **locked cosmetic**, without waiting for the level
+
+Coins and purchases are saved on your account (or in the browser for guests).
+
 ### Saving your run
 Solo runs are saved after every wave (once you pick a power-up). The main menu shows **Continue · Wave N**
 to pick up where you left off; quitting mid-wave restarts that wave. Logged-in players' saves are also stored on
@@ -96,10 +106,11 @@ The host picks the mode and map, then starts. Up to 8 players.
 | Capture the Flag | Bring the enemy flag to yours; first to 3 captures |
 
 ### Admin
-An admin account has every customisation unlocked, can set its own XP, and gets an admin panel (**F2** in-game,
+An admin account has every customisation unlocked, can set its own level and coins, and gets an admin panel (**F2** in-game,
 or the Admin tab in the account window) with god mode, infinite ammo, one-hit kills, fly/noclip, 2× speed,
 freeze zombies, slow motion, hide HUD, give all guns, mutate all guns, max all power-ups, full heal, spawn a boss
-or any zombie type, kill all zombies, set weather, set score and jump to any wave. Cheats only work in solo games;
+or any zombie type, kill all zombies, set weather, set score and jump to any wave, plus undo buttons
+(remove all guns, unmutate, reset power-ups, turn off all cheats) and setting your level and coins. Cheats only work in solo games;
 in multiplayer admins get an ADMIN badge and can kick players.
 
 To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:

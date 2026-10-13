@@ -1398,15 +1398,23 @@ accountUI.adminActions = {
   },
   cheats,
   inSolo: () => game.mode === 'solo' && !['menu', 'mpmenu', 'lobby'].includes(game.state),
+  inMP: () => game.mode === 'mp',
   toggle(name, on) {
-    if (!cheatsOn()) return 'Cheats only work in solo games.';
+    if (!account.admin) return 'Unlock admin first.';
+    if (game.mode === 'mp') return 'Cheats are off in multiplayer.';
     cheats[name] = on;
     if (name === 'nohud') $('hud').style.visibility = on ? 'hidden' : '';
     if (name === 'fly' && !on) player.vel.set(0, 0, 0);
-    return `${name} ${on ? 'ON' : 'OFF'}`;
+    const inGame = game.mode === 'solo' && !['menu', 'mpmenu', 'lobby'].includes(game.state);
+    return `${name} ${on ? 'ON' : 'OFF'}${inGame ? '' : ' (works when you start a solo game)'}`;
   },
   run(action, value) {
-    if (!cheatsOn()) return 'Start a solo game first.';
+    if (action === 'cheatsoff') {
+      for (const k of Object.keys(cheats)) cheats[k] = false;
+      $('hud').style.visibility = '';
+      return 'All cheats turned off.';
+    }
+    if (!cheatsOn() || ['menu', 'mpmenu', 'lobby'].includes(game.state)) return 'Start a solo game first.';
     switch (action) {
       case 'guns':
         for (const id of Object.keys(GUNS)) if (id !== 'rifle') weapon.give(id, stats);
@@ -1437,6 +1445,30 @@ accountUI.adminActions = {
       case 'heal':
         player.health = overhealCap();
         return 'Healed (with full overheal).';
+      case 'removeguns':
+        weapon.reset(stats);
+        return 'Guns removed: back to just the rifle.';
+      case 'unmutate':
+        for (const s of weapon.slots) s.mut = null;
+        weapon.refreshModels();
+        return 'Mutations removed from your guns.';
+      case 'resetpowerups': {
+        stats = baseStats();
+        const it = account.items;
+        stats.maxHealth += 10 * (it.toughness || 0);
+        stats.damageMul += 0.05 * (it.firepower || 0);
+        stats.reloadSpeed += 0.1 * (it.quickhands || 0);
+        owned.clear();
+        renderOwned();
+        player.health = Math.min(player.health, stats.maxHealth);
+        for (const s of weapon.slots) s.ammo = Math.min(s.ammo, weapon.magSize(stats, s.def));
+        return 'Power-ups reset (shop upgrades kept).';
+      }
+      case 'cheatsoff':
+        for (const k of Object.keys(cheats)) cheats[k] = false;
+        $('hud').style.visibility = '';
+        player.vel.set(0, 0, 0);
+        return 'All cheats turned off.';
       case 'boss':
         zombies.spawn('boss', Math.max(5, game.wave), player.pos, true);
         if (game.phase !== 'active') game.phase = 'active';
