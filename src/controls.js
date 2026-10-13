@@ -23,6 +23,7 @@ const BUTTONS = [
   ['pause', 'II', 'pause'],
   ['chat', '💬', 'key:KeyT'],
   ['scores', '☰', 'hold:Tab'],
+  ['revive', '✚', 'hold:KeyE'],
 ];
 
 export class Controls {
@@ -229,7 +230,12 @@ export class Controls {
       if (lx || ly) this.ctx.look(lx * Math.abs(lx) * speed, ly * Math.abs(ly) * speed * 0.7);
       hold(0, 'Space');
       hold(1, 'KeyC');
-      if (pressed(2)) tap('KeyR');
+      // X: reload, and held it revives a squadmate
+      if (pressed(2)) {
+        tap('KeyR');
+        keyEvent('keydown', 'KeyE');
+      }
+      if (released(2)) keyEvent('keyup', 'KeyE');
       if (pressed(3)) this.ctx.weapon.cycle(1);
       if (pressed(4)) tap('KeyG');
       if (pressed(5) || pressed(11)) tap('KeyV');

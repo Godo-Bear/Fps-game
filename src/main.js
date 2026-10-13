@@ -1922,6 +1922,9 @@ const mp = new Multiplayer({
     Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0 });
     structures.clear();
     setBuild(false);
+    $('banner').className = '';
+    $('subbanner').className = '';
+    spectate.id = null;
     coop.remaining = 0;
     if (mode === 'defend') defend.start();
     else defend.stop();
@@ -1936,13 +1939,15 @@ const mp = new Multiplayer({
     pauseFor(MODES[mode].name.toUpperCase(), `${MAPS[map].name} · ${MODES[mode].desc} Click to play. Hold Tab for scores.`);
     lock();
   },
-  onSpawn(x, z, yaw, hp) {
+  onSpawn(x, z, yaw, hp, revived = false) {
+    spectate.id = null;
     player.reset(100);
     player.pos.set(x, heightAt(x, z), z);
     player.yaw = yaw;
     player.dead = false;
-    if (MODES[mp.mode]?.coop) player.health = stats.maxHealth;
+    if (MODES[mp.mode]?.coop) player.health = revived ? Math.ceil(stats.maxHealth * 0.5) : stats.maxHealth;
     else player.health = hp;
+    if (revived) banner('REVIVED', 'Back on your feet', 'gold', 1.6);
     // deathmatch and co-op: keep the guns you found (fresh mags); objective modes start you over
     if (['ffa', 'tdm', 'coop', 'defend'].includes(mp.mode)) weapon.refillMags(stats);
     else weapon.reset(stats);
@@ -1956,8 +1961,11 @@ const mp = new Multiplayer({
     player.shake = Math.min(1, player.shake + 0.35);
     audio.hurt();
   },
-  onDeath(killer) {
+  onDeath(killer, killerId) {
     setBuild(false);
+    // kill cam: watch whoever got you until you respawn
+    spectate.id = killerId !== mp.myId && mp.avatars.has(killerId) ? killerId : null;
+    spectate.killcam = !!spectate.id;
     player.dead = true;
     player.health = 0;
     trigger = false;
@@ -2134,6 +2142,7 @@ document.addEventListener('mousemove', (e) => {
   weapon.sway(e.movementX * (1 - weapon.ads * 0.8), e.movementY * (1 - weapon.ads * 0.8));
 });
 document.addEventListener('mousedown', (e) => {
+  if (game.state === 'playing' && player.dead && spectate.on && e.button === 0) return nextSpectate();
   if (game.state !== 'playing' || player.dead) return;
   if (build.on) {
     if (e.button === 0) placeStructure();
@@ -2177,6 +2186,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (game.state !== 'playing') return;
   if (e.code === 'Space' || e.code === 'KeyC') e.preventDefault();
+  if (e.code === 'Space' && player.dead && spectate.on) nextSpectate();
   player.keys.add(e.code);
   if (e.code === 'KeyB') return setBuild(!build.on);
   if (build.on) {
@@ -2244,6 +2254,100 @@ account.onChange(() => {
   }
   if ((account.quests || []).length) questsDone = done;
 });
+
+// ---------------------------------------------------------------- co-op revives
+// Stand next to a downed squadmate and hold E (controller X) for a few seconds.
+const REVIVE_TIME = 3;
+const revive = { id: null, t: 0 };
+function updateRevive(dt) {
+  let near = null;
+  if (isCoop() && !player.dead) {
+    let best = 2.4;
+    for (const a of mp.avatars.values()) {
+      if (a.alive) continue;
+      const d = Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z);
+      if (d < best && Math.abs(a.pos.y - player.pos.y) < 2) {
+        best = d;
+        near = a;
+      }
+    }
+  }
+  const holding = near && player.keys.has('KeyE');
+  if (!holding || revive.id !== near.id) revive.t = 0;
+  revive.id = near ? near.id : null;
+  if (holding) {
+    revive.t += dt;
+    if (revive.t >= REVIVE_TIME) {
+      mp.send({ t: 'revive', id: near.id });
+      game.score += 100;
+      revive.t = 0;
+      audio.revive();
+    }
+  }
+  const el = $('interact');
+  el.classList.toggle('hidden', !near);
+  document.body.classList.toggle('can-revive', !!near);
+  if (near) {
+    const html = `${revive.t > 0 ? 'Reviving' : 'Hold <b>E</b> to revive'} <b>${esc(near.info.name)}</b><div class="i-bar"><i style="width:${Math.round((revive.t / REVIVE_TIME) * 100)}%"></i></div>`;
+    if (last.interact !== html) {
+      last.interact = html;
+      el.innerHTML = html;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- spectating and the kill cam
+// Down in co-op: watch a squadmate (click or Space for the next one). Killed in PvP: the kill cam
+// follows whoever got you until you respawn.
+const spectate = { id: null, on: false, killcam: false, nextT: 0 };
+const _camTo = new THREE.Vector3();
+const _look = new THREE.Vector3();
+function spectateCamera(dt) {
+  spectate.on = false;
+  const wanted = game.mode === 'mp' && mp.inMatch && player.dead;
+  if (!wanted) {
+    $('spectate').classList.add('hidden');
+    return;
+  }
+  let a = spectate.id != null ? mp.avatars.get(spectate.id) : null;
+  if (!a || (!a.alive && !spectate.killcam)) {
+    // pick a squadmate who's still up (co-op) or anyone alive
+    const alive = [...mp.avatars.values()].filter((o) => o.alive && (isCoop() || !mp.isEnemy(o.id) || spectate.killcam));
+    a = alive[0] || null;
+    spectate.id = a ? a.id : null;
+    spectate.killcam = false;
+  }
+  if (!a) {
+    $('spectate').classList.add('hidden');
+    return;
+  }
+  spectate.on = true;
+  // over the shoulder, a little above
+  const yaw = a.yaw;
+  _look.set(a.pos.x, a.pos.y + 1.5, a.pos.z);
+  _camTo.set(a.pos.x + Math.sin(yaw) * 3.4 + Math.cos(yaw) * 0.6, a.pos.y + 2.3, a.pos.z + Math.cos(yaw) * 3.4 - Math.sin(yaw) * 0.6);
+  // don't end up inside the ground
+  _camTo.y = Math.max(_camTo.y, heightAt(_camTo.x, _camTo.z) + 0.6);
+  camera.position.lerp(_camTo, Math.min(1, dt * 8));
+  camera.lookAt(_look);
+  const el = $('spectate');
+  el.classList.remove('hidden');
+  const hp = a.hp != null && !isCoop() ? ` · ${Math.max(0, Math.round(a.hp))} HP left` : '';
+  const html = spectate.killcam
+    ? `<b class="kc">KILL CAM</b> ${esc(a.info.name)}${hp}`
+    : `Spectating <b>${esc(a.info.name)}</b> · click for the next player${isCoop() ? '<br><small>A squadmate can revive you, or you\'re back next wave</small>' : ''}`;
+  if (last.spectate !== html) {
+    last.spectate = html;
+    el.innerHTML = html;
+  }
+}
+function nextSpectate() {
+  if (spectate.killcam) return;
+  const alive = [...mp.avatars.values()].filter((o) => o.alive && (isCoop() || !mp.isEnemy(o.id)));
+  if (!alive.length) return;
+  const i = alive.findIndex((o) => o.id === spectate.id);
+  spectate.id = alive[(i + 1) % alive.length].id;
+}
 
 // ---------------------------------------------------------------- settings (saved in this browser)
 const SETTINGS_KEY = 'deadplains.settings';
@@ -2535,6 +2639,7 @@ function update(dt) {
   updateProjectiles(dt);
   updateThrown(dt);
   if (build.on) updateBuildGhost();
+  updateRevive(dt);
   questFlushT -= dt;
   if (questFlushT <= 0) flushQuests();
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
@@ -2694,12 +2799,13 @@ function frame(now) {
   structures.update(dt, effects);
   updateChat();
 
+  if (!menuish) spectateCamera(dt);
   camera.getWorldDirection(_fwd);
   audio.setListener(camera.position, _fwd);
 
   renderer.clear();
   renderer.render(scene, camera);
-  if (!menuish && !player.dead && !weapon.scoped) weapon.render(renderer);
+  if (!menuish && !player.dead && !weapon.scoped && !spectate.on) weapon.render(renderer);
 }
 
 loadMap(game.map);
@@ -2738,6 +2844,6 @@ if (import.meta.env.DEV) {
     get savedGames() {
       return savedGames;
     },
-    game, player, weapon, mp, account, defend, structures, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
+    game, player, weapon, mp, account, defend, structures, spectate, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

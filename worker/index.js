@@ -768,6 +768,19 @@ export class Room extends DurableObject {
         this._broadcast({ t: 'msg', text: `${p.name} is down!` });
         if (![...this.players.values()].some((o) => o.joined && o.alive)) this._endCoop();
         break;
+      case 'revive': {
+        // co-op: a squadmate held E next to you for long enough
+        if (this.phase !== 'playing' || !this._coop || !p.alive) return;
+        const t = this.players.get(m.id);
+        if (!t || !t.joined || t.alive || t === p) return;
+        if (Math.hypot(p.pos[0] - t.pos[0], p.pos[2] - t.pos[2]) > 4) return;
+        if (now - (p.lastRevive || 0) < 2000) return;
+        p.lastRevive = now;
+        p.score += 100;
+        this._spawn(t, t.pos);
+        this._broadcast({ t: 'msg', text: `${p.name} revived ${t.name}` });
+        break;
+      }
       case 'coopwave':
         // the host started a new wave: bring everyone who went down back in
         if (this.phase !== 'playing' || !this._coop || p.id !== this.hostId) return;
@@ -871,8 +884,17 @@ export class Room extends DurableObject {
     this.interval = setInterval(() => this._tick(), 66);
   }
 
-  _spawn(p) {
+  // at: [x, y, z] to come back where you are (a co-op revive)
+  _spawn(p, at = null) {
     const mode = MODES[this.mode];
+    if (at) {
+      p.pos = [...at];
+      p.hp = MAX_HP;
+      p.alive = true;
+      p.protectUntil = Date.now() + 1500;
+      this._send(p, { t: 'spawn', p: [at[0], at[2]], yaw: p.rot?.[0] ?? 0, hp: MAX_HP, revived: true });
+      return;
+    }
     // co-op squads start together
     let list = mode.coop ? TEAM_SPAWNS.red : mode.teams ? TEAM_SPAWNS[p.team] : FFA_SPAWNS;
     let pick = list[Math.floor(Math.random() * list.length)];

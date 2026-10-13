@@ -145,6 +145,16 @@ class Avatar {
       this.body.rotation.x = -Math.min(1, this.deadT / 0.4) * Math.PI * 0.48;
       this.label.visible = false;
     }
+    // co-op: a downed squadmate gets a marker so you can find and revive them
+    if (!this.alive && this.downed) {
+      if (!this.downSprite) {
+        this.downSprite = nameSprite('✚ REVIVE', '#5dff6a');
+        this.downSprite.position.y = 1.2;
+        this.root.add(this.downSprite);
+      }
+      this.downSprite.visible = true;
+      this.downSprite.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() / 150);
+    } else if (this.downSprite) this.downSprite.visible = false;
   }
 
   dispose() {
@@ -360,7 +370,7 @@ export class Multiplayer {
         if (this.ctx.onFx) this.ctx.onFx(m);
         break;
       case 'spawn':
-        this.ctx.onSpawn(m.p[0], m.p[1], m.yaw, m.hp);
+        this.ctx.onSpawn(m.p[0], m.p[1], m.yaw, m.hp, !!m.revived);
         break;
       case 'snap':
         this.snap = m;
@@ -481,6 +491,7 @@ export class Multiplayer {
         a.fresh = true;
       }
       a.alive = !!alive;
+      a.downed = !alive && !!MODES[this.mode]?.coop;
       a.setGun(gun);
     }
     for (const id of [...this.avatars.keys()]) {
