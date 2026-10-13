@@ -68,6 +68,13 @@ export class GameDB extends DurableObject {
       CREATE TABLE IF NOT EXISTS friends (a INTEGER NOT NULL, b INTEGER NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (a, b));
       CREATE INDEX IF NOT EXISTS friends_b ON friends (b);
     `);
+    // added later: admin accounts
+    try {
+      this.sql.exec('ALTER TABLE users ADD COLUMN admin INTEGER NOT NULL DEFAULT 0');
+    } catch {
+      /* column already exists */
+    }
+    this.adminTries = new Map(); // user id -> [count, windowStart]
     this.fails = new Map(); // username -> [count, windowStart]
     this.signups = new Map(); // ip -> [count, windowStart]
   }
@@ -89,11 +96,15 @@ export class GameDB extends DurableObject {
       username: u.username,
       level,
       xp: u.xp,
-      profile: cleanProfile(JSON.parse(u.profile || '{}'), level),
+      // admins have every cosmetic unlocked
+      profile: cleanProfile(JSON.parse(u.profile || '{}'), u.admin ? 999 : level),
       stats: { bestWave: u.best_wave, bestScore: u.best_score, kills: u.kills, headshots: u.headshots, games: u.games, pvpKills: u.pvp_kills, pvpWins: u.pvp_wins },
       online: Date.now() - u.last_seen < ONLINE_MS,
     };
-    if (self) delete out.online;
+    if (self) {
+      delete out.online;
+      out.admin = !!u.admin;
+    }
     return out;
   }
 
@@ -194,7 +205,7 @@ export class GameDB extends DurableObject {
     }
 
     if (path === '/profile' && method === 'PUT') {
-      const profile = cleanProfile(body.profile, levelFromXp(me.xp));
+      const profile = cleanProfile(body.profile, me.admin ? 999 : levelFromXp(me.xp));
       this.sql.exec('UPDATE users SET profile = ? WHERE id = ?', JSON.stringify(profile), me.id);
       return json({ user: this._publicUser({ ...me, profile: JSON.stringify(profile) }, true) });
     }
@@ -218,6 +229,26 @@ export class GameDB extends DurableObject {
       );
       const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
       return json({ user: this._publicUser(user, true), gained: xp, levelBefore: levelFromXp(me.xp) });
+    }
+
+    // Admin code: set as the ADMIN_CODE secret on the Worker. Never stored in the game's code.
+    if (path === '/admin/claim' && method === 'POST') {
+      const secret = this.env.ADMIN_CODE;
+      if (!secret) return err('No admin code is set up on the server yet', 503);
+      if (!this._limit(this.adminTries, me.id, 5, 600000)) return err('Too many tries, wait a few minutes', 429);
+      // forgiving about capitals and spaces: "i am iron man" works too
+      const norm = (s) => String(s).trim().toLowerCase().replace(/\s+/g, ' ');
+      if (typeof body.code !== 'string' || !sameString(await sha256(norm(body.code)), await sha256(norm(secret)))) return err('Wrong code', 403);
+      this.sql.exec('UPDATE users SET admin = 1 WHERE id = ?', me.id);
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ user: this._publicUser(user, true) });
+    }
+    if (path === '/admin/xp' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const xp = Math.max(0, Math.min(10000000, Math.floor(Number(body.xp) || 0)));
+      this.sql.exec('UPDATE users SET xp = ? WHERE id = ?', xp, me.id);
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ user: this._publicUser(user, true) });
     }
 
     if (path === '/friends' && method === 'GET') {
@@ -344,7 +375,7 @@ export class Room extends DurableObject {
   _lobby() {
     return {
       t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId,
-      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, team: p.team, account: p.account })),
+      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, team: p.team, account: p.account, admin: !!p.admin })),
     };
   }
 
@@ -379,6 +410,7 @@ export class Room extends DurableObject {
               const { user } = await res.json();
               name = user.username;
               p.account = true;
+              p.admin = !!user.admin;
               p.avatar = user.profile.avatar;
               p.color = user.profile.color;
             }
@@ -425,6 +457,19 @@ export class Room extends DurableObject {
           this._broadcast(this._lobby());
         }
         break;
+      case 'kick': {
+        // the host (or an admin) can remove someone from the room
+        const target = this.players.get(m.id);
+        if (!target || target === p || !(p.id === this.hostId || p.admin)) return;
+        this._send(target, { t: 'error', msg: `You were removed from the room by ${p.name}` });
+        try {
+          target.ws.close(1000, 'kicked');
+        } catch {
+          /* already closed */
+        }
+        this._onClose(target);
+        break;
+      }
       case 'start':
         if (p.id === this.hostId && this.phase === 'lobby') this._startMatch();
         break;

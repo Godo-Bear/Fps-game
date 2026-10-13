@@ -58,8 +58,15 @@ export class Account {
   get level() {
     return levelFromXp(this.xp);
   }
+  get admin() {
+    return !!this.user?.admin;
+  }
+  // level used for unlocks: admins have everything
+  get unlockLevel() {
+    return this.admin ? 999 : this.level;
+  }
   get profile() {
-    return cleanProfile(this.user ? this.user.profile : this.guest.profile, this.level);
+    return cleanProfile(this.user ? this.user.profile : this.guest.profile, this.unlockLevel);
   }
   get stats() {
     return this.user ? this.user.stats : this.guest.stats;
@@ -134,8 +141,19 @@ export class Account {
     this._dropSession();
   }
 
+  async claimAdmin(code) {
+    const { user } = await this._api('/admin/claim', { method: 'POST', body: { code } });
+    this.user = user;
+    this._changed();
+  }
+  async adminSetXp(xp) {
+    const { user } = await this._api('/admin/xp', { method: 'POST', body: { xp } });
+    this.user = user;
+    this._changed();
+  }
+
   async saveProfile(profile) {
-    const clean = cleanProfile(profile, this.level);
+    const clean = cleanProfile(profile, this.unlockLevel);
     if (this.user) {
       const { user } = await this._api('/profile', { method: 'PUT', body: { profile: clean } });
       this.user = user;
@@ -205,6 +223,7 @@ export class AccountUI {
     this.modal = document.getElementById('account-modal');
     this.body = document.getElementById('account-body');
     this.tab = 'profile';
+    this.adminActions = null; // set by the game: { god, ammo, toggle(name), run(action, value), inSolo }
     account.onChange(() => {
       this.renderCard();
       if (!this.modal.classList.contains('hidden')) this.render();
@@ -255,10 +274,11 @@ export class AccountUI {
 
   render() {
     const tabs = [['profile', 'Customise'], ['friends', 'Friends'], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
+    if (this.account.loggedIn) tabs.push(['admin', this.account.admin ? '⭐ Admin' : 'Admin code']);
     document.getElementById('account-tabs').innerHTML = tabs
       .map(([id, label]) => `<button data-tab="${id}" class="${this.tab === id ? 'active' : ''}">${label}</button>`)
       .join('');
-    const fn = { profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab }[this.tab];
+    const fn = { profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
     fn.call(this);
   }
 
@@ -310,7 +330,7 @@ export class AccountUI {
   _profile() {
     const a = this.account;
     const p = { ...a.profile };
-    const lvl = a.level;
+    const lvl = a.unlockLevel;
     const section = (kind, title, list, render) => `
       <h4>${title}</h4>
       <div class="pick-row" data-kind="${kind}">
@@ -341,6 +361,90 @@ export class AccountUI {
         }
       });
     });
+  }
+
+  _admin() {
+    const a = this.account;
+    if (!a.loggedIn) {
+      this.body.innerHTML = '<p class="muted">Log in first.</p>';
+      return;
+    }
+    if (!a.admin) {
+      this.body.innerHTML = `
+        <p class="muted">Enter the admin code to turn this account into an admin account.</p>
+        <form id="admin-form" class="auth inline">
+          <input name="code" type="password" placeholder="Admin code" maxlength="200" autocomplete="off" required />
+          <button class="btn small">UNLOCK</button>
+        </form>
+        <div id="admin-msg" class="msg"></div>`;
+      document.getElementById('admin-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('admin-msg');
+        msg.textContent = '…';
+        try {
+          await a.claimAdmin(new FormData(e.target).get('code'));
+          this.render();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      });
+      return;
+    }
+    const act = this.adminActions;
+    const solo = act && act.inSolo();
+    this.body.innerHTML = `
+      <p class="muted">Admin account: every customisation is unlocked. Cheats work in solo games only (multiplayer stays fair).</p>
+      <h4>Account</h4>
+      <form class="auth inline admin-row" data-act="xp"><input name="v" type="number" min="0" placeholder="Set XP (level 10 = 20250)" /><button class="btn small">SET XP</button></form>
+      <h4>Solo game ${solo ? '' : '<span class="muted">(start a solo game to use these)</span>'}</h4>
+      <div class="admin-grid">
+        ${[
+          ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
+          ['speed', '2× move speed'], ['freeze', 'Freeze zombies'], ['slowmo', 'Slow motion'], ['nohud', 'Hide HUD (screenshots)'],
+        ]
+          .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${solo ? '' : 'disabled'} /> ${label}</label>`)
+          .join('')}
+        <button class="btn small" data-run="guns" ${solo ? '' : 'disabled'}>GIVE ALL GUNS</button>
+        <button class="btn small" data-run="mutate" ${solo ? '' : 'disabled'}>MUTATE ALL MY GUNS</button>
+        <button class="btn small" data-run="powerups" ${solo ? '' : 'disabled'}>MAX ALL POWER-UPS</button>
+        <button class="btn small" data-run="heal" ${solo ? '' : 'disabled'}>FULL HEAL + OVERHEAL</button>
+        <button class="btn small" data-run="boss" ${solo ? '' : 'disabled'}>SPAWN BOSS</button>
+        <button class="btn small" data-run="killall" ${solo ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
+      </div>
+      <div class="auth inline admin-row">
+        <select id="admin-zombie" ${solo ? '' : 'disabled'}>${(act?.zombieTypes() || []).map((t) => `<option>${t}</option>`).join('')}</select>
+        <button class="btn small" id="admin-spawn" ${solo ? '' : 'disabled'}>SPAWN 5</button>
+        <select id="admin-weather" ${solo ? '' : 'disabled'}>${solo ? act.weathers().map(([id, n]) => `<option value="${id}">${n}</option>`).join('') : ''}</select>
+        <button class="btn small" id="admin-weather-btn" ${solo ? '' : 'disabled'}>SET WEATHER</button>
+      </div>
+      <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCORE</button></form>
+      <form class="auth inline admin-row" data-act="wave"><input name="v" type="number" min="1" max="200" placeholder="Jump to wave" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET WAVE</button></form>
+      <div id="admin-msg" class="msg"></div>
+      <p class="muted small">Press F2 in-game to open this panel. In multiplayer you get an ADMIN badge, and as host you can kick players.</p>`;
+    const msg = (t) => (document.getElementById('admin-msg').textContent = t);
+    const spawn = document.getElementById('admin-spawn');
+    if (spawn) spawn.onclick = () => msg(act.run('spawn', document.getElementById('admin-zombie').value));
+    const wbtn = document.getElementById('admin-weather-btn');
+    if (wbtn) wbtn.onclick = () => msg(act.run('weather', document.getElementById('admin-weather').value));
+    this.body.querySelectorAll('[data-toggle]').forEach((cb) =>
+      cb.addEventListener('change', () => msg(act.toggle(cb.dataset.toggle, cb.checked)))
+    );
+    this.body.querySelectorAll('[data-run]').forEach((b) => b.addEventListener('click', () => msg(act.run(b.dataset.run))));
+    this.body.querySelectorAll('form[data-act]').forEach((f) =>
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const v = Number(new FormData(f).get('v'));
+        if (!Number.isFinite(v)) return;
+        if (f.dataset.act === 'xp') {
+          try {
+            await a.adminSetXp(v);
+            msg(`XP set. You're level ${a.level}.`);
+          } catch (err) {
+            msg(err.message);
+          }
+        } else msg(act.run(f.dataset.act, v));
+      })
+    );
   }
 
   async _friends() {

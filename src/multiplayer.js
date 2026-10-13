@@ -242,6 +242,7 @@ export class Multiplayer {
         }
         if (m.t === 'error') {
           clearTimeout(timer);
+          this.kickMsg = m.msg;
           done(m.msg);
           return;
         }
@@ -259,7 +260,8 @@ export class Multiplayer {
           this.ws = null;
           const wasIn = !!this.lobby;
           this._cleanup();
-          if (wasIn) this.ctx.onLeave('Disconnected from the room');
+          if (wasIn) this.ctx.onLeave(this.kickMsg || 'Disconnected from the room');
+          this.kickMsg = null;
         }
       };
       ws.onerror = () => done("Can't connect to the server (online play needs the Cloudflare backend)");
@@ -712,6 +714,7 @@ export class Multiplayer {
       if (b.dataset.mode) this.send({ t: 'mode', mode: b.dataset.mode });
       if (b.dataset.map) this.send({ t: 'map', map: b.dataset.map });
       if (b.dataset.team) this.send({ t: 'team', team: b.dataset.team });
+      if (b.dataset.kick) this.send({ t: 'kick', id: Number(b.dataset.kick) });
       if (b.id === 'lobby-start') this.send({ t: 'start' });
       if (b.id === 'lobby-leave') this.leave();
       if (b.id === 'lobby-copy') {
@@ -728,8 +731,9 @@ export class Multiplayer {
     if (!l) return;
     const host = this.isHost();
     const mode = MODES[l.mode];
+    const canKick = host || this.me?.admin;
     const player = (p) =>
-      `<div class="lp ${p.id === this.myId ? 'me' : ''}"><span>${esc(p.avatar)}</span><b style="color:${esc(p.color)}">${esc(p.name)}</b>${p.id === l.host ? '<i>HOST</i>' : ''}${p.account ? '' : '<em>guest</em>'}</div>`;
+      `<div class="lp ${p.id === this.myId ? 'me' : ''}"><span>${esc(p.avatar)}</span><b style="color:${esc(p.color)}">${esc(p.name)}</b>${p.admin ? '<i class="admin">⭐ADMIN</i>' : ''}${p.id === l.host ? '<i>HOST</i>' : ''}${p.account ? '' : '<em>guest</em>'}${canKick && p.id !== this.myId ? `<button class="kick" data-kick="${p.id}" title="Kick">✕</button>` : ''}</div>`;
     let roster;
     if (mode.teams) {
       roster = ['red', 'blue']

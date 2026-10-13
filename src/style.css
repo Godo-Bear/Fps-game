@@ -1223,3 +1223,42 @@ table.board {
 #vignette.acid {
   background: radial-gradient(ellipse at center, transparent 45%, rgba(90, 200, 30, 0.85) 100%);
 }
+
+/* admin */
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 14px;
+  margin-bottom: 10px;
+}
+.admin-grid label {
+  font-weight: 700;
+  font-size: 15px;
+}
+.admin-row {
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+.admin-row select {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 7px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #f3e6cc;
+  border: 1px solid rgba(233, 217, 184, 0.35);
+  border-radius: 4px;
+}
+.lp i.admin {
+  background: #c86bff;
+  color: #fff;
+}
+.lp .kick {
+  margin-left: auto;
+  background: none;
+  border: 1px solid rgba(255, 93, 77, 0.6);
+  color: #ff5d4d;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}

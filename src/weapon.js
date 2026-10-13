@@ -77,6 +77,13 @@ export class Weapon {
     if (this.slots.length) this._show(this.cur);
   }
 
+  // Rebuilds the gun models (e.g. after mutations change).
+  refreshModels() {
+    for (const m of Object.values(this.models)) m.group.removeFromParent();
+    this.models = {};
+    if (this.slots.length) this._show(this.cur);
+  }
+
   displayName(slot = this.slot) {
     return slot.mut ? `${MUTATIONS[slot.mut].name} ${slot.def.name}` : slot.def.name;
   }

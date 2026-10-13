@@ -85,6 +85,18 @@ The host picks the mode and map, then starts. Up to 8 players.
 | Capture Point | Stand in the zone in the middle to hold it; first to 150 points |
 | Capture the Flag | Bring the enemy flag to yours; first to 3 captures |
 
+### Admin
+An admin account has every customisation unlocked, can set its own XP, and gets an admin panel (**F2** in-game,
+or the Admin tab in the account window) with god mode, infinite ammo, one-hit kills, fly/noclip, 2× speed,
+freeze zombies, slow motion, hide HUD, give all guns, mutate all guns, max all power-ups, full heal, spawn a boss
+or any zombie type, kill all zombies, set weather, set score and jump to any wave. Cheats only work in solo games;
+in multiplayer admins get an ADMIN badge and can kick players.
+
+To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:
+it lives in a Cloudflare secret called `ADMIN_CODE` (case and extra spaces don't matter). Set it in the Cloudflare dashboard
+(Worker → Settings → Variables and Secrets → Add → type *Secret*, name `ADMIN_CODE`), or with `npx wrangler secret put ADMIN_CODE`.
+For local testing put `ADMIN_CODE="your code"` in a `.dev.vars` file (git-ignored).
+
 ## Running locally
 
 ```bash

@@ -15,7 +15,7 @@ import { heightAt } from './terrain.js';
 import { Weapon } from './weapon.js';
 import { WEATHER, Weather } from './weather.js';
 import { MAP_IDS, THEMES, buildWorld } from './world.js';
-import { ZombieManager } from './zombies.js';
+import { ZOMBIE_TYPES, ZombieManager } from './zombies.js';
 
 // ---------------------------------------------------------------- setup
 const $ = (id) => document.getElementById(id);
@@ -339,6 +339,7 @@ function hitZombie(z, head, point, dir, distance = 0) {
   const def = weapon.def;
   const mut = weapon.mutation;
   let dmg = baseHitDamage(distance);
+  if (cheats.onehit) dmg = Math.max(dmg, z.hp + 1);
   const crit = Math.random() < stats.critChance;
   if (head) dmg *= stats.headshotMul;
   if (crit) dmg *= 2.5;
@@ -517,6 +518,7 @@ function onKill(z, head) {
 
 function onPlayerHit(z, dmg, kind) {
   if (game.state !== 'playing' || game.mode !== 'solo') return;
+  if (cheats.god) return;
   player.health -= dmg * (1 - stats.armor);
   vignette = Math.min(1, vignette + (kind === 'acid' ? 0.3 : 0.6));
   if (kind === 'acid') $('vignette').classList.add('acid');
@@ -1193,10 +1195,128 @@ window.addEventListener('resize', () => {
 
 // ---------------------------------------------------------------- loop
 const _fwd = new THREE.Vector3();
+// ---------------------------------------------------------------- admin (solo only; the account must be verified by the server)
+const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false };
+const cheatsOn = () => account.admin && game.mode === 'solo';
+function flyUpdate(dt) {
+  // noclip flight: look direction + Space up / C down
+  const k = player.keys;
+  const fwd = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0);
+  const strafe = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
+  const up = (k.has('Space') ? 1 : 0) - (k.has('KeyC') ? 1 : 0);
+  const sp = (k.has('ShiftLeft') ? 30 : 12) * dt;
+  const cy = Math.cos(player.pitch);
+  player.pos.x += (-Math.sin(player.yaw) * cy * fwd + Math.cos(player.yaw) * strafe) * sp;
+  player.pos.z += (-Math.cos(player.yaw) * cy * fwd - Math.sin(player.yaw) * strafe) * sp;
+  player.pos.y = Math.max(heightAt(player.pos.x, player.pos.z), player.pos.y + (Math.sin(player.pitch) * fwd + up) * sp);
+  player.vel.set(0, 0, 0);
+  player.onGround = false;
+  player.ladder = null;
+  player.climb = null;
+  player._updateCamera(dt, 0, 0);
+  return 0;
+}
+accountUI.adminActions = {
+  get god() {
+    return cheats.god;
+  },
+  get ammo() {
+    return cheats.ammo;
+  },
+  cheats,
+  inSolo: () => game.mode === 'solo' && !['menu', 'mpmenu', 'lobby'].includes(game.state),
+  toggle(name, on) {
+    if (!cheatsOn()) return 'Cheats only work in solo games.';
+    cheats[name] = on;
+    if (name === 'nohud') $('hud').style.visibility = on ? 'hidden' : '';
+    if (name === 'fly' && !on) player.vel.set(0, 0, 0);
+    return `${name} ${on ? 'ON' : 'OFF'}`;
+  },
+  run(action, value) {
+    if (!cheatsOn()) return 'Start a solo game first.';
+    switch (action) {
+      case 'guns':
+        for (const id of Object.keys(GUNS)) if (id !== 'rifle') weapon.give(id, stats);
+        return 'All guns added.';
+      case 'mutate': {
+        const muts = Object.keys(MUTATIONS);
+        weapon.slots.forEach((s, i) => {
+          s.mut = muts[i % muts.length];
+        });
+        weapon.refreshModels();
+        return 'Every gun is mutated.';
+      }
+      case 'powerups': {
+        for (const p of POWERUPS) {
+          if (p.canOffer && !p.canOffer(stats)) continue;
+          const rarity = p.tiers.legendary !== undefined ? 'legendary' : 'epic';
+          const have = owned.get(p.id)?.count || 0;
+          for (let i = have; i < p.max; i++) {
+            if (p.canOffer && !p.canOffer(stats)) break;
+            p.apply(stats, p.tiers[rarity], { player });
+          }
+          owned.set(p.id, { def: p, count: p.max, rarity });
+        }
+        weapon.refillMags(stats);
+        renderOwned();
+        return 'Every power-up maxed.';
+      }
+      case 'heal':
+        player.health = overhealCap();
+        return 'Healed (with full overheal).';
+      case 'boss':
+        zombies.spawn('boss', Math.max(5, game.wave), player.pos, true);
+        if (game.phase !== 'active') game.phase = 'active';
+        return 'Boss spawned.';
+      case 'killall':
+        for (const z of zombies.list) if (z.alive && zombies.damage(z, 1e9)) onKill(z, false);
+        game.toSpawn = 0;
+        game.bossToSpawn = 0;
+        return 'All zombies killed (wave ends).';
+      case 'spawn': {
+        for (let i = 0; i < 5; i++) zombies.spawn(value, Math.max(1, game.wave), player.pos, false);
+        if (game.phase !== 'active') game.phase = 'active';
+        return `Spawned 5 ${value}s.`;
+      }
+      case 'weather':
+        weather.set(value);
+        return `Weather: ${WEATHER[value].name}`;
+      case 'score':
+        game.score = Math.max(0, Math.floor(value));
+        return `Score set to ${game.score}.`;
+      case 'wave':
+        for (const z of zombies.list) if (z.alive) zombies.damage(z, 1e9);
+        game.wave = Math.max(0, Math.min(200, Math.floor(value)) - 1);
+        game.toSpawn = 0;
+        game.bossToSpawn = 0;
+        game.phase = 'countdown';
+        game.timer = 3;
+        return `Wave ${game.wave + 1} starts in 3 seconds.`;
+    }
+    return '';
+  },
+  zombieTypes: () => Object.keys(ZOMBIE_TYPES),
+  weathers: () => world.theme.weathers.filter((w, i, a) => a.indexOf(w) === i).map((w) => [w, WEATHER[w].name]),
+};
+// F2 opens the admin panel
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'F2' || !account.loggedIn) return;
+  e.preventDefault();
+  if (document.pointerLockElement) document.exitPointerLock();
+  accountUI.open('admin');
+});
+
 function update(dt) {
+  if (cheatsOn()) {
+    if (cheats.slowmo) dt *= 0.35;
+    if (cheats.ammo) for (const s of weapon.slots) s.ammo = weapon.magSize(stats, s.def);
+    if (cheats.god) player.health = Math.max(player.health, stats.maxHealth);
+  }
   const def = weapon.def;
   const moveMul = (def.moveMul || 1) * (1 - weapon.ads * 0.35);
-  const hSpeed = player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul, world.ladders);
+  const flying = cheatsOn() && cheats.fly;
+  const speedMul = cheatsOn() && cheats.speed ? 2 : 1;
+  const hSpeed = flying ? flyUpdate(dt) : player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul * speedMul, world.ladders);
   hitSoundPlayed = false;
   const shots = player.dead
     ? 0
@@ -1211,7 +1331,7 @@ function update(dt) {
   updateProjectiles(dt);
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
   if (game.mode === 'solo') {
-    zombies.update(dt, player, zombieHooks);
+    if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, player, zombieHooks);
     updateMedkits(dt);
     updateWave(dt);
     // toxic pools
