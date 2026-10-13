@@ -80,7 +80,7 @@ Spend them in the **Shop** (main menu, or the 🪙 Shop tab) on:
 Coins and purchases are saved on your account (or in the browser for guests).
 
 ### Saving your run
-Name each solo game when you start it (**New Game**). You can keep up to 5 games; **Saved Games** lists them so
+Start solo games from **Saved Games → New Game** and give each one a name. You can keep up to 5 games; **Saved Games** lists them so
 you can play, rename or delete each one, and **Continue** jumps back into the most recent. A game is saved when it
 starts and after every wave (once you pick a power-up); quitting mid-wave restarts that wave. Logged-in players'
 games are stored on their account, so they work on any device (games played as a guest move into your account when

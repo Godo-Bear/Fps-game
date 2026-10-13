@@ -1599,3 +1599,62 @@ b.coin {
   margin-bottom: 4px;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
+
+/* ---- quests */
+.quests {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+.quest {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(233, 217, 184, 0.2);
+}
+.quest.done {
+  border-color: #ffd34d;
+  box-shadow: 0 0 12px rgba(255, 211, 77, 0.25);
+}
+.quest.claimed {
+  opacity: 0.55;
+}
+.q-main {
+  flex: 1;
+  min-width: 0;
+}
+.q-text {
+  font-weight: 700;
+  font-size: 17px;
+}
+.q-bar {
+  height: 7px;
+  margin: 5px 0 3px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.q-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ffb020, #ffd34d);
+}
+.q-reward {
+  font-weight: 700;
+  color: #ffd34d;
+  white-space: nowrap;
+}
+.q-tag {
+  font-size: 13px;
+  font-weight: 700;
+  color: #5dff6a;
+  white-space: nowrap;
+}
+.quest .btn[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}

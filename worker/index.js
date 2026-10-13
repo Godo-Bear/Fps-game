@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { cleanProfile, levelFromXp, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
+import { addProgress, claimQuest, dayNumber, questView } from '../shared/quests.js';
 import { FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
@@ -88,7 +89,7 @@ export class GameDB extends DurableObject {
     }
     // added later: the saved solo run (so you can continue on any device), coins and shop items
     // and later still: several named saved games (JSON object of id -> save)
-    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT']) {
+    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT', 'quests TEXT']) {
       try {
         this.sql.exec(`ALTER TABLE users ADD COLUMN ${col}`);
       } catch {
@@ -99,6 +100,7 @@ export class GameDB extends DurableObject {
     this.fails = new Map(); // username -> [count, windowStart]
     this.signups = new Map(); // ip -> [count, windowStart]
     this.dms = new Map(); // user id -> [count, windowStart] (friend chat)
+    this.questReports = new Map(); // user id -> [count, windowStart]
   }
 
   // The player's saved games; the old single save (from before named games) moves in as the first one.
@@ -121,6 +123,14 @@ export class GameDB extends DurableObject {
       me.saves = JSON.stringify(saves);
     }
     return saves;
+  }
+
+  _quests(me) {
+    try {
+      return me.quests ? JSON.parse(me.quests) : null;
+    } catch {
+      return null;
+    }
   }
 
   _areFriends(a, b) {
@@ -389,6 +399,22 @@ export class GameDB extends DurableObject {
       }
       friends.sort((x, y) => Number(y.online) - Number(x.online) || y.level - x.level);
       return json({ friends, incoming, outgoing });
+    }
+
+    // ---- daily quests
+    if (path === '/quests' && method === 'GET') return json({ quests: questView(this._quests(me)), day: dayNumber() });
+    if (path === '/quests/progress' && method === 'POST') {
+      if (!this._limit(this.questReports, me.id, 4, 10000)) return err('Slow down a bit', 429);
+      const state = addProgress(this._quests(me), body.delta);
+      this.sql.exec('UPDATE users SET quests = ? WHERE id = ?', JSON.stringify(state), me.id);
+      return json({ quests: questView(state), day: state.day });
+    }
+    if (path === '/quests/claim' && method === 'POST') {
+      const r = claimQuest(this._quests(me), String(body.id));
+      if (r.error) return err(r.error);
+      this.sql.exec('UPDATE users SET quests = ?, coins = coins + ? WHERE id = ?', JSON.stringify(r.state), r.reward, me.id);
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ quests: questView(r.state), day: r.state.day, reward: r.reward, user: this._publicUser(user, true) });
     }
 
     // ---- chat with friends (outside of games too). The game polls for new messages.

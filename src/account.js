@@ -1,5 +1,6 @@
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, TITLES, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
+import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 
 const TOKEN_KEY = 'deadplains.token';
 const GUEST_KEY = 'deadplains.guest';
@@ -34,6 +35,7 @@ export class Account {
     this.online = true;
     this.listeners = [];
     this.unread = {}; // friend chat: username -> unread messages
+    this.quests = [];
     this.unreadListeners = [];
     try {
       this.guest = { ...emptyGuest(), ...JSON.parse(store.get(GUEST_KEY) || '{}') };
@@ -112,6 +114,7 @@ export class Account {
     this.user = null;
     store.set(TOKEN_KEY, null);
     this._changed();
+    this.loadQuests();
   }
 
   async init() {
@@ -124,6 +127,7 @@ export class Account {
       }
     }
     this._changed();
+    this.loadQuests();
     // keeps "online" status fresh for friends
     setInterval(() => {
       if (this.user && document.visibilityState === 'visible') this._api('/me').then(({ user }) => (this.user = user)).catch(() => {});
@@ -148,6 +152,7 @@ export class Account {
     this.user = user;
     store.set(TOKEN_KEY, token);
     this._changed();
+    this.loadQuests();
   }
   async logout() {
     try {
@@ -171,6 +176,52 @@ export class Account {
   async deleteSave(id) {
     if (!this.user) return;
     await this._api('/saves/delete', { method: 'POST', body: { id } });
+  }
+
+  // ---- daily quests (guests keep theirs in this browser)
+  async loadQuests() {
+    this.questsLoaded = true;
+    if (this.user) {
+      try {
+        const { quests } = await this._api('/quests');
+        this.quests = quests;
+      } catch {
+        /* offline */
+      }
+    } else this.quests = questView(this.guest.quests);
+    this._changed();
+    return this.quests;
+  }
+  async questProgress(delta) {
+    if (!delta || !Object.keys(delta).length) return;
+    if (this.user) {
+      const { quests } = await this._api('/quests/progress', { method: 'POST', body: { delta } });
+      this.quests = quests;
+    } else {
+      this.guest.quests = addProgress(this.guest.quests, delta);
+      this.quests = questView(this.guest.quests);
+      store.set(GUEST_KEY, JSON.stringify(this.guest));
+    }
+    this._changed();
+  }
+  async claimQuest(id) {
+    if (this.user) {
+      const { quests, user, reward } = await this._api('/quests/claim', { method: 'POST', body: { id } });
+      this.quests = quests;
+      this.user = user;
+      this._changed();
+      return reward;
+    }
+    const r = claimQuestState(this.guest.quests, id);
+    if (r.error) throw new Error(r.error);
+    this.guest.quests = r.state;
+    this.guest.coins = (this.guest.coins || 0) + r.reward;
+    this.quests = questView(this.guest.quests);
+    this._saveGuest();
+    return r.reward;
+  }
+  get questsReady() {
+    return (this.quests || []).filter((q) => q.done && !q.claimed).length;
   }
 
   // ---- chat with friends
@@ -400,6 +451,7 @@ export class AccountUI {
         <div class="ac-level"><span class="coins">🪙 ${a.coins}</span> Level ${lvl}<div class="xpbar"><div style="width:${Math.min(100, (into / need) * 100)}%"></div></div><span>${into}/${need} XP</span></div>
         <div class="ac-buttons">
           <button data-open="shop" class="hot">🪙 Shop</button>
+          <button data-open="quests">📜 Quests${a.questsReady ? ` <span class="badge" title="Quests to claim">${a.questsReady}</span>` : ''}</button>
           <button data-open="profile">Customise</button>
           <button data-open="friends">Friends${a.unreadTotal ? ` <span class="badge" title="New messages">${a.unreadTotal}</span>` : ''}</button>
           <button data-open="leaderboard">Leaderboard</button>
@@ -410,12 +462,12 @@ export class AccountUI {
 
   render() {
     this._renderTabs();
-    const fn = { shop: this._shop, profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
+    const fn = { shop: this._shop, quests: this._quests, profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
     fn.call(this);
   }
 
   _renderTabs() {
-    const tabs = [['shop', '🪙 Shop'], ['profile', 'Customise'], ['friends', `Friends${this.account.unreadTotal ? ` (${this.account.unreadTotal})` : ''}`], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
+    const tabs = [['shop', '🪙 Shop'], ['quests', `📜 Quests${this.account.questsReady ? ` (${this.account.questsReady})` : ''}`], ['profile', 'Customise'], ['friends', `Friends${this.account.unreadTotal ? ` (${this.account.unreadTotal})` : ''}`], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
     if (this.account.loggedIn) tabs.push(['admin', this.account.admin ? '⭐ Admin' : 'Admin code']);
     document.getElementById('account-tabs').innerHTML = tabs
       .map(([id, label]) => `<button data-tab="${id}" class="${this.tab === id ? 'active' : ''}">${label}</button>`)
@@ -736,6 +788,51 @@ export class AccountUI {
     } catch (err) {
       el.textContent = err.message;
     }
+  }
+
+  // ---- daily quests
+  _quests() {
+    const a = this.account;
+    const quests = a.quests || [];
+    const left = 86400000 - (Date.now() % 86400000);
+    const h = Math.floor(left / 3600000);
+    const m = Math.floor((left % 3600000) / 60000);
+    this.body.innerHTML = `
+      <p class="muted">Three new quests every day. Finish one, then claim its coins here. New quests in <b>${h}h ${m}m</b>.</p>
+      <div class="quests">${
+        quests.length
+          ? quests
+              .map(
+                (q) => `<div class="quest ${q.claimed ? 'claimed' : q.done ? 'done' : ''}">
+          <div class="q-main">
+            <div class="q-text">${esc(q.text)}</div>
+            <div class="q-bar"><i style="width:${Math.round((q.progress / q.goal) * 100)}%"></i></div>
+            <div class="muted small">${q.progress}/${q.goal}</div>
+          </div>
+          <div class="q-reward">🪙 ${q.reward}</div>
+          ${q.claimed ? '<span class="q-tag">CLAIMED ✓</span>' : `<button class="btn small" data-claim="${esc(q.id)}" ${q.done ? '' : 'disabled'}>CLAIM</button>`}
+        </div>`,
+              )
+              .join('')
+          : '<p class="muted">Loading…</p>'
+      }</div>
+      <div id="quest-msg" class="msg"></div>
+      ${a.loggedIn ? '' : '<p class="muted small">Playing as a guest: quest progress and coins are kept in this browser.</p>'}`;
+    this.body.querySelectorAll('button[data-claim]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          const reward = await a.claimQuest(b.dataset.claim);
+          const msg = document.getElementById('quest-msg');
+          if (msg) msg.textContent = `+${reward} 🪙`;
+        } catch (err) {
+          const msg = document.getElementById('quest-msg');
+          if (msg) msg.textContent = err.message;
+          b.disabled = false;
+        }
+      }),
+    );
+    if (!a.questsLoaded) a.loadQuests();
   }
 
   // ---- chat with one friend (works from the menu, no game needed)

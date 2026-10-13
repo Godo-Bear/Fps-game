@@ -226,6 +226,9 @@ function updateWave(dt) {
       game.score += bonus;
       giveGrenades(2);
       game.scrap = Math.min(999, game.scrap + 10);
+      questAdd('waves');
+      if (isCoop()) questAdd('coopWaves');
+      flushQuests();
       player.heal(20, overhealCap());
       if (isCoop()) {
         mp.relay('all', { k: 'cleared', wave: game.wave });
@@ -597,6 +600,17 @@ const questDelta = {};
 function questAdd(key, n = 1) {
   questDelta[key] = (questDelta[key] || 0) + n;
 }
+// Sends quest progress (after waves, matches, quitting and once a minute while playing).
+let questFlushT = 60;
+function flushQuests() {
+  const delta = { ...questDelta };
+  if (!Object.keys(delta).length) return;
+  for (const k of Object.keys(questDelta)) delete questDelta[k];
+  questFlushT = 60;
+  account.questProgress(delta).catch(() => {
+    for (const [k, n] of Object.entries(delta)) questAdd(k, n); // try again next time
+  });
+}
 
 // ---------------------------------------------------------------- knife
 // Slot 2 (or V for a quick stab whatever you're holding). Hits whatever is right in front of you;
@@ -779,6 +793,7 @@ function grenadeBlast(at) {
 function onPickGun(id, mut) {
   const def = GUNS[id];
   const result = weapon.give(id, stats, mut);
+  if (result === 'new') questAdd('gunsPicked');
   audio.pickup();
   const name = mut ? `${MUTATIONS[mut].name} ${def.name}` : def.name;
   if (result === 'ammo') subBanner(`+ammo for ${def.name}`, 1.8);
@@ -937,6 +952,7 @@ function updateMedkits(dt) {
         if (pvp) mp.send({ t: 'heal', amount: 40 });
         else player.heal(40, overhealCap());
         healCooldown = 8;
+        questAdd('medkits');
         audio.pickup();
         subBanner('+40 HP', 1);
         m.away = 30;
@@ -951,6 +967,7 @@ function updateMedkits(dt) {
       if (take) {
         const before = player.health;
         player.heal(30, overhealCap());
+        questAdd('medkits');
         audio.pickup();
         subBanner(`+${Math.round(player.health - before)} HP${player.health > stats.maxHealth ? ' (overheal)' : ''}`, 1);
       }
@@ -1460,9 +1477,7 @@ function renderSaves() {
   const b = $('continue-btn');
   b.classList.toggle('hidden', !latest);
   if (latest) b.textContent = `CONTINUE · ${saveName(latest).toUpperCase()} · WAVE ${latest.wave + 1}`;
-  const sb = $('saves-btn');
-  sb.classList.toggle('hidden', !savedGames.length);
-  sb.textContent = `SAVED GAMES (${savedGames.length})`;
+  $('saves-btn').textContent = savedGames.length ? `SAVED GAMES (${savedGames.length})` : 'SAVED GAMES';
   if (!$('saves-menu').classList.contains('hidden')) renderSavesList();
 }
 
@@ -1484,7 +1499,7 @@ function renderSavesList() {
       </div>`,
         )
         .join('')
-    : '<p class="muted">No saved games. Start a new game and it saves after every wave.</p>';
+    : '<p class="muted">No saved games yet. Press <b>New Game</b> to start one; it saves after every wave.</p>';
 }
 
 function nextGameName() {
@@ -1606,6 +1621,7 @@ function startGame(save = null, name = null) {
 
 async function gameOver() {
   game.state = 'gameover';
+  flushQuests();
   clearRun();
   trigger = false;
   aim = false;
@@ -1635,6 +1651,7 @@ function showXp(r) {
 }
 
 function toMenu() {
+  flushQuests();
   if (mp.lobby) mp.leave(true);
   game.state = 'menu';
   game.mode = 'solo';
@@ -1778,6 +1795,7 @@ const mp = new Multiplayer({
     addChat(name, text, color, admin);
   },
   onKillConfirmed(victim, head) {
+    questAdd('pvpKills');
     audio.kill();
     showHit('kill');
     if (head) headshotPop();
@@ -1785,6 +1803,8 @@ const mp = new Multiplayer({
   },
   async onEnd(result) {
     game.state = 'mpend';
+    if (result.won) questAdd('pvpWins');
+    flushQuests();
     trigger = false;
     aim = false;
     if (document.pointerLockElement) document.exitPointerLock();
@@ -1801,7 +1821,6 @@ const mp = new Multiplayer({
 
 // ---------------------------------------------------------------- menus
 
-$('play-btn').addEventListener('click', openNewGame);
 $('saves-btn').addEventListener('click', openSaves);
 $('newgame-form').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -1981,6 +2000,20 @@ function flyUpdate(dt) {
   player._updateCamera(dt, 0, 0);
   return 0;
 }
+// ---------------------------------------------------------------- quests
+// A quest finished while you play gets a message in the game chat; claim the coins in the menu.
+let questsDone = null;
+account.onChange(() => {
+  const done = new Set((account.quests || []).filter((q) => q.done).map((q) => q.id));
+  if (questsDone) {
+    for (const q of account.quests) if (q.done && !q.claimed && !questsDone.has(q.id)) {
+      addChat('📜', `Quest complete: ${q.text}! Claim ${q.reward} coins in Quests.`, '#ffd34d');
+      if (!inMenu()) subBanner(`QUEST COMPLETE · ${q.text}`, 2.5);
+    }
+  }
+  if ((account.quests || []).length) questsDone = done;
+});
+
 // ---------------------------------------------------------------- friend chat
 // Chat with friends from the menu (Friends → Chat). From a room lobby you can invite them; an invite has a JOIN button.
 accountUI.roomCode = () => (mp.lobby ? mp.lobby.code : null);
@@ -2151,6 +2184,8 @@ function update(dt) {
   if (weapon.ammo === 0 && weapon.slot.reserve > 0 && weapon.reloading <= 0 && !trigger) weapon.startReload(stats);
   updateProjectiles(dt);
   updateThrown(dt);
+  questFlushT -= dt;
+  if (questFlushT <= 0) flushQuests();
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
   if (!isCoop()) worldTick(dt);
   else updateMedkits(dt); // co-op runs worldTick from the frame loop, even while paused
@@ -2250,6 +2285,9 @@ function onCoopRelay(from, d) {
       game.score += pointsBonus(d.wave);
       giveGrenades(2);
       game.scrap = Math.min(999, game.scrap + 10);
+      questAdd('waves');
+      questAdd('coopWaves');
+      flushQuests();
       banner(`WAVE ${d.wave} CLEARED`, `+20 HP${isDefend() ? ` · ${defend.heldCount}/3 points held` : ''} · pick a power-up`, 'gold', 2.3);
       audio.waveCleared();
       setTimeout(() => {
