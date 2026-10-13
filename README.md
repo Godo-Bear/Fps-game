@@ -124,6 +124,7 @@ that matches your controls. Skip it with **K** (tap it on touch, **Back** on a c
   in the party follows them in. The home screen shows your party.
 - **Emotes:** press **Z** (touch 😀, controller R3) for quick callouts shown above your head and in chat. 12 more
   emotes are in the **Shop**; put the ones you buy into any of your 8 emote slots there.
+  You can also write up to 6 of your own **quick chat** phrases (Shop → Your quick chat) and put them in any slot.
 - **Co-op revives:** hold **E** (controller X) next to a downed squadmate for 3 seconds.
 - **Spectating:** while you're down in co-op you watch a squadmate (click for the next one).
 - **Kill cam:** in PvP, after you die the camera follows whoever got you until you respawn.

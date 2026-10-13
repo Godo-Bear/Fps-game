@@ -61,9 +61,28 @@ export const ALL_EMOTES = [...EMOTES, ...SHOP_EMOTES.map((e) => e[0])];
 export const emoteItemId = (i) => `emote_${i}`; // i: index in ALL_EMOTES
 export const canUseEmote = (i, items, admin = false) =>
   Number.isInteger(i) && i >= 0 && (i < EMOTES.length || (i < ALL_EMOTES.length && (admin || !!items?.[emoteItemId(i)])));
-// The 8 emotes in your Z menu (you can swap bought ones in).
+// Custom quick chat: your own short phrases, which can go in any emote slot as 'c0'..'c5'.
+export const QUICK_MAX = 6;
+export const QUICK_LEN = 32;
+export const cleanQuickText = (t) =>
+  String(t ?? '')
+    .replace(/[\u0000-\u001f\u007f<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, QUICK_LEN);
+// always QUICK_MAX entries ('' = empty), so slot references stay put
+export const cleanQuick = (list) => Array.from({ length: QUICK_MAX }, (_, i) => cleanQuickText(Array.isArray(list) ? list[i] : ''));
+export function slotOk(v, items, admin = false) {
+  if (typeof v === 'string') return /^c[0-5]$/.test(v) && !!cleanQuick(items?.quick)[Number(v[1])];
+  return canUseEmote(v, items, admin);
+}
+export function slotText(v, items) {
+  return typeof v === 'string' ? cleanQuick(items?.quick)[Number(v[1])] : ALL_EMOTES[v] || '';
+}
+
+// The 8 things in your Z menu: emotes (numbers) or your quick chat phrases ('c0'..). Anything that's
+// no longer valid falls back to the normal emote for that slot.
 export function emoteSlots(items, admin = false) {
-  const s = items?.emotes;
-  if (Array.isArray(s) && s.length === EMOTES.length && s.every((i) => canUseEmote(i, items, admin))) return [...s];
-  return EMOTES.map((_, i) => i);
+  const s = Array.isArray(items?.emotes) ? items.emotes : [];
+  return EMOTES.map((_, i) => (slotOk(s[i], items, admin) ? s[i] : i));
 }

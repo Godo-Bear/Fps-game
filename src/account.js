@@ -1,6 +1,6 @@
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, TITLES, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
-import { ALL_EMOTES, canUseEmote, emoteSlots } from '../shared/modes.js';
+import { ALL_EMOTES, QUICK_LEN, QUICK_MAX, canUseEmote, cleanQuick, emoteSlots, slotOk } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
 import { GUNS } from './guns.js';
@@ -380,8 +380,19 @@ export class Account {
       this._changed();
       return;
     }
-    if (!slots.every((i) => canUseEmote(i, this.guest.items))) throw new Error("You don't own that emote");
+    if (!slots.every((v) => slotOk(v, this.guest.items))) throw new Error("You don't own that emote");
     this.guest.items = { ...this.guest.items, emotes: slots };
+    this._saveGuest();
+  }
+  // your own quick chat phrases (up to 6)
+  async setQuickChat(list) {
+    if (this.user) {
+      const { user } = await this._api('/shop/loadout', { method: 'POST', body: { quick: list } });
+      this.user = user;
+      this._changed();
+      return;
+    }
+    this.guest.items = { ...this.guest.items, quick: cleanQuick(list) };
     this._saveGuest();
   }
   async adminMastery(mode) {
@@ -707,9 +718,22 @@ export class AccountUI {
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
       <h4>Emotes <span class="muted small">(press Z in game)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'emote').map(card).join('')}</div>
-      <h4>Your emote menu <span class="muted small">(put bought emotes in any slot)</span></h4>
+      <h4>Your quick chat <span class="muted small">(write your own, up to ${QUICK_LEN} letters each)</span></h4>
+      <form id="quick-form" class="quick-chat">
+        ${cleanQuick(items.quick)
+          .map((t, i) => `<input name="q${i}" maxlength="${QUICK_LEN}" placeholder="Quick chat ${i + 1}, e.g. Cover me!" value="${esc(t)}" autocomplete="off" />`)
+          .join('')}
+        <button class="btn small">SAVE QUICK CHAT</button>
+      </form>
+      <h4>Your emote menu <span class="muted small">(press Z in game: put emotes or your quick chat in any slot)</span></h4>
       <div class="emote-slots">${emoteSlots(items, a.admin)
-        .map((cur, slot) => `<label><b>${slot + 1}</b><select data-slot="${slot}">${ALL_EMOTES.map((e, i) => (canUseEmote(i, items, a.admin) ? `<option value="${i}" ${i === cur ? 'selected' : ''}>${esc(e)}</option>` : '')).join('')}</select></label>`)
+        .map((cur, slot) => {
+          const emotes = ALL_EMOTES.map((e, i) => (canUseEmote(i, items, a.admin) ? `<option value="${i}" ${i === cur ? 'selected' : ''}>${esc(e)}</option>` : '')).join('');
+          const quick = cleanQuick(items.quick)
+            .map((t, i) => (t ? `<option value="c${i}" ${cur === `c${i}` ? 'selected' : ''}>💬 ${esc(t)}</option>` : ''))
+            .join('');
+          return `<label><b>${slot + 1}</b><select data-slot="${slot}">${emotes}${quick ? `<optgroup label="Your quick chat">${quick}</optgroup>` : ''}</select></label>`;
+        })
         .join('')}</div>
       ${a.loggedIn ? '' : '<p class="muted small">Bought emotes show to other players online only when you\'re logged in.</p>'}
       <h4>Cosmetics <span class="muted small">(skip the level requirement)</span></h4>
@@ -729,10 +753,16 @@ export class AccountUI {
     this.body.querySelectorAll('select[data-slot]').forEach((sel) =>
       sel.addEventListener('change', () => {
         const slots = emoteSlots(a.items, a.admin);
-        slots[Number(sel.dataset.slot)] = Number(sel.value);
+        slots[Number(sel.dataset.slot)] = /^c\d$/.test(sel.value) ? sel.value : Number(sel.value);
         a.setEmoteSlots(slots).then(() => msg('Emote menu saved'), (e) => msg(e.message));
       }),
     );
+    document.getElementById('quick-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const list = Array.from({ length: QUICK_MAX }, (_, i) => f.get(`q${i}`) || '');
+      a.setQuickChat(list).then(() => msg('Quick chat saved: put it in your emote menu below'), (err) => msg(err.message));
+    });
     this.body.querySelectorAll('[data-equip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(b.dataset.equip).catch((e) => msg(e.message))));
     this.body.querySelectorAll('[data-unequip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(null).catch((e) => msg(e.message))));
   }
@@ -820,6 +850,10 @@ export class AccountUI {
         <select id="admin-weather" ${solo ? '' : 'disabled'}>${solo ? act.weathers().map(([id, n]) => `<option value="${id}">${n}</option>`).join('') : ''}</select>
         <button class="btn small" id="admin-weather-btn" ${solo ? '' : 'disabled'}>SET WEATHER</button>
       </div>
+      <h4>Multiplayer</h4>
+      <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="80" placeholder="Announce to everyone in your room" ${mp ? '' : 'disabled'} /><button class="btn small" ${mp ? '' : 'disabled'}>📢 ANNOUNCE</button></form>
+      ${mp ? '' : '<p class="muted small">Join or create a room to send announcements.</p>'}
+      <h4>Solo game</h4>
       <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCORE</button></form>
       <form class="auth inline admin-row" data-act="setscrap"><input name="v" type="number" min="0" max="999" placeholder="Set scrap" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCRAP</button></form>
       <form class="auth inline admin-row" data-act="setnades"><input name="v" type="number" min="0" max="20" placeholder="Set grenades" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET GRENADES</button></form>
@@ -829,6 +863,12 @@ export class AccountUI {
     const msg = (t) => (document.getElementById('admin-msg').textContent = t);
     const spawn = document.getElementById('admin-spawn');
     if (spawn) spawn.onclick = () => msg(act.run('spawn', document.getElementById('admin-zombie').value));
+    document.getElementById('admin-announce').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = e.target.querySelector('input');
+      msg(act.announce(input.value));
+      input.value = '';
+    });
     const bbtn = document.getElementById('admin-boss-btn');
     if (bbtn) bbtn.onclick = () => msg(act.run('boss', document.getElementById('admin-boss').value));
     this.body.querySelectorAll('[data-acc]').forEach((b) =>

@@ -390,9 +390,13 @@ export class Multiplayer {
       case 'sgone':
         this.ctx.onStructureGone?.(m.id, m.by);
         break;
+      case 'announce':
+        this.ctx.banner('📢 ' + String(m.text).toUpperCase(), `Admin ${m.name}`, 'gold', 4);
+        this.ctx.onChat(`📢 ${m.name}`, m.text, '#ffd34d', true);
+        break;
       case 'emote':
-        this.avatars.get(m.id)?.say(ALL_EMOTES[m.i] || '');
-        this.ctx.onChat(m.name, ALL_EMOTES[m.i] || '', this.teams ? TEAM_CSS[this._team(m.id)] : '#ffd38a', false);
+        this.avatars.get(m.id)?.say(typeof m.text === 'string' ? `💬 ${m.text}` : ALL_EMOTES[m.i] || '');
+        this.ctx.onChat(m.name, typeof m.text === 'string' ? m.text : ALL_EMOTES[m.i] || '', this.teams ? TEAM_CSS[this._team(m.id)] : '#ffd38a', false);
         break;
       case 'fx':
         if (this.ctx.onFx) this.ctx.onFx(m);

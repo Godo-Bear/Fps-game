@@ -5,7 +5,7 @@ import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery } from '../shared/mastery.js';
-import { ALL_EMOTES, EMOTES, canUseEmote, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
+import { ALL_EMOTES, EMOTES, canUseEmote, cleanQuick, cleanQuickText, slotOk, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -398,10 +398,13 @@ export class GameDB extends DurableObject {
     }
     if (path === '/shop/loadout' && method === 'POST') {
       const items = this._items(me);
-      if (Array.isArray(body.emotes)) {
-        // which emotes go in the Z menu
-        if (body.emotes.length !== EMOTES.length || !body.emotes.every((i) => canUseEmote(i, items, !!me.admin))) return err("You don't own that emote");
-        items.emotes = body.emotes;
+      if (Array.isArray(body.quick) || Array.isArray(body.emotes)) {
+        // your quick chat phrases, and what goes in the Z menu
+        if (Array.isArray(body.quick)) items.quick = cleanQuick(body.quick);
+        if (Array.isArray(body.emotes)) {
+          if (body.emotes.length !== EMOTES.length || !body.emotes.every((v) => slotOk(v, items, !!me.admin))) return err("You don't own that emote");
+          items.emotes = body.emotes;
+        }
         return saveItems(items, me.coins);
       }
       if (body.gun === null) delete items.loadout;
@@ -880,9 +883,27 @@ export class Room extends DurableObject {
         } else this._broadcast({ t: 'shp', id: st.id, hp: Math.round(st.hp) });
         break;
       }
+      case 'announce': {
+        // admins: a big message on everyone's screen
+        if (!p.admin || typeof m.text !== 'string' || now - (p.lastAnnounce || 0) < 2000) return;
+        const text = m.text.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 80);
+        if (!text) return;
+        p.lastAnnounce = now;
+        this._broadcast({ t: 'announce', name: p.name, text });
+        break;
+      }
       case 'emote':
+        if (now - (p.lastEmote || 0) < 800) return;
+        if (typeof m.text === 'string') {
+          // custom quick chat: cleaned like normal chat
+          const text = cleanQuickText(m.text);
+          if (!text) return;
+          p.lastEmote = now;
+          this._broadcast({ t: 'emote', id: p.id, name: p.name, text });
+          break;
+        }
         // shop emotes only for accounts that own them
-        if (!canUseEmote(m.i, p.items, p.admin) || now - (p.lastEmote || 0) < 800) return;
+        if (!canUseEmote(m.i, p.items, p.admin)) return;
         p.lastEmote = now;
         this._broadcast({ t: 'emote', id: p.id, name: p.name, i: m.i });
         break;

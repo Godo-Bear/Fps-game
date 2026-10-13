@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
-import { ALL_EMOTES, MAPS, MODES, SOLO_MAP, emoteSlots } from '../shared/modes.js';
+import { MAPS, MODES, SOLO_MAP, emoteSlots, slotText } from '../shared/modes.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
@@ -2488,14 +2488,16 @@ function setEmotes(open) {
 // slot: 0-7 in your emote menu (which emote is in each slot is up to you, see the Shop)
 function sendEmote(slot) {
   setEmotes(false);
-  const i = emoteSlots(account.items, account.admin)[slot];
-  if (!ALL_EMOTES[i]) return;
-  if (game.mode === 'mp' && mp.inMatch) mp.send({ t: 'emote', i });
-  else addChat(account.name, ALL_EMOTES[i], account.profile.color);
+  const v = emoteSlots(account.items, account.admin)[slot];
+  const text = slotText(v, account.items);
+  if (!text) return;
+  // your own quick chat phrases go as text, emotes by number
+  if (game.mode === 'mp' && mp.inMatch) mp.send(typeof v === 'string' ? { t: 'emote', text } : { t: 'emote', i: v });
+  else addChat(account.name, text, account.profile.color);
 }
 function renderEmoteMenu() {
   const html = emoteSlots(account.items, account.admin)
-    .map((e, slot) => `<button data-emote="${slot}"><b>${slot + 1}</b>${ALL_EMOTES[e]}</button>`)
+    .map((v, slot) => `<button data-emote="${slot}" class="${typeof v === 'string' ? 'quick' : ''}"><b>${slot + 1}</b>${typeof v === 'string' ? '💬 ' : ''}${esc(slotText(v, account.items))}</button>`)
     .join('');
   if ($('emotes').innerHTML !== html) $('emotes').innerHTML = html;
 }
@@ -2897,6 +2899,12 @@ accountUI.adminActions = {
   },
   zombieTypes: () => Object.keys(ZOMBIE_TYPES),
   bosses: () => BOSS_IDS.map((id) => [id, BOSSES[id].name]),
+  announce(text) {
+    if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
+    if (!String(text).trim()) return 'Type a message first.';
+    mp.send({ t: 'announce', text });
+    return 'Announced.';
+  },
   weathers: () => world.theme.weathers.filter((w, i, a) => a.indexOf(w) === i).map((w) => [w, WEATHER[w].name]),
 };
 // F2 opens the admin panel

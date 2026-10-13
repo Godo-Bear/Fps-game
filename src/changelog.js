@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '3.7', date: '13 Oct 2026', title: 'Custom quick chat',
+    items: [
+      'Write up to 6 of your own quick chat phrases (Shop → Your quick chat).',
+      'Put them in any slot of your Z menu instead of an emote; they pop up over your head and in chat.',
+      'Admin: send an announcement to everyone in your room.',
+    ],
+  },
+  {
     v: '3.6', date: '13 Oct 2026', title: 'Updates page & more admin tools',
     items: [
       'This 📰 Updates page: every update since day one.',
