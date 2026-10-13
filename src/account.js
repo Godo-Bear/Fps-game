@@ -1,4 +1,5 @@
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, TITLES, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 
 const TOKEN_KEY = 'deadplains.token';
 const GUEST_KEY = 'deadplains.guest';
@@ -22,7 +23,7 @@ const store = {
 };
 
 function emptyGuest() {
-  return { xp: 0, profile: { ...DEFAULT_PROFILE }, stats: { bestWave: 0, bestScore: 0, kills: 0, headshots: 0, games: 0, pvpKills: 0, pvpWins: 0 } };
+  return { xp: 0, coins: 0, items: {}, profile: { ...DEFAULT_PROFILE }, stats: { bestWave: 0, bestScore: 0, kills: 0, headshots: 0, games: 0, pvpKills: 0, pvpWins: 0 } };
 }
 
 // Logged-in account (saved on the server) or a guest (saved in this browser).
@@ -65,8 +66,14 @@ export class Account {
   get unlockLevel() {
     return this.admin ? 999 : this.level;
   }
+  get coins() {
+    return this.user ? this.user.coins || 0 : this.guest.coins || 0;
+  }
+  get items() {
+    return (this.user ? this.user.items : this.guest.items) || {};
+  }
   get profile() {
-    return cleanProfile(this.user ? this.user.profile : this.guest.profile, this.unlockLevel);
+    return cleanProfile(this.user ? this.user.profile : this.guest.profile, this.unlockLevel, this.items);
   }
   get stats() {
     return this.user ? this.user.stats : this.guest.stats;
@@ -152,6 +159,57 @@ export class Account {
     await this._api('/save', { method: 'PUT', body: { save } });
   }
 
+  // ---- shop
+  _saveGuest() {
+    store.set(GUEST_KEY, JSON.stringify(this.guest));
+    this._changed();
+  }
+  async buy(itemId) {
+    if (this.user) {
+      const { user } = await this._api('/shop/buy', { method: 'POST', body: { item: itemId } });
+      this.user = user;
+      this._changed();
+      return;
+    }
+    const g = this.guest;
+    g.items = g.items || {};
+    const price = priceOf(itemId, g.items);
+    if (price === null) throw new Error("That can't be bought");
+    if ((g.coins || 0) < price) throw new Error('Not enough coins');
+    g.coins -= price;
+    g.items[itemId] = (g.items[itemId] || 0) + 1;
+    this._saveGuest();
+  }
+  async useItem(itemId) {
+    if (this.user) {
+      const { user } = await this._api('/shop/use', { method: 'POST', body: { item: itemId } });
+      this.user = user;
+      this._changed();
+      return;
+    }
+    const g = this.guest;
+    if (!(g.items?.[itemId] > 0)) throw new Error("You don't have that");
+    g.items[itemId]--;
+    this._saveGuest();
+  }
+  async setLoadout(gun) {
+    if (this.user) {
+      const { user } = await this._api('/shop/loadout', { method: 'POST', body: { gun } });
+      this.user = user;
+      this._changed();
+      return;
+    }
+    const g = this.guest;
+    if (gun === null) delete g.items.loadout;
+    else if (g.items?.[`gun_${gun}`]) g.items.loadout = gun;
+    this._saveGuest();
+  }
+  async adminSetCoins(coins) {
+    const { user } = await this._api('/admin/coins', { method: 'POST', body: { coins } });
+    this.user = user;
+    this._changed();
+  }
+
   async claimAdmin(code) {
     const { user } = await this._api('/admin/claim', { method: 'POST', body: { code } });
     this.user = user;
@@ -164,7 +222,7 @@ export class Account {
   }
 
   async saveProfile(profile) {
-    const clean = cleanProfile(profile, this.unlockLevel);
+    const clean = cleanProfile(profile, this.unlockLevel, this.items);
     if (this.user) {
       const { user } = await this._api('/profile', { method: 'PUT', body: { profile: clean } });
       this.user = user;
@@ -180,18 +238,20 @@ export class Account {
     const levelBefore = this.level;
     if (this.user) {
       try {
-        const { user, gained } = await this._api('/progress', { method: 'POST', body: run });
+        const { user, gained, coins } = await this._api('/progress', { method: 'POST', body: run });
         this.user = user;
         this._changed();
-        return { gained, levelBefore, levelAfter: this.level };
+        return { gained, coins, levelBefore, levelAfter: this.level };
       } catch (e) {
-        return { gained: 0, levelBefore, levelAfter: levelBefore, error: e.message };
+        return { gained: 0, coins: 0, levelBefore, levelAfter: levelBefore, error: e.message };
       }
     }
+    const coins = coinsForRun(run);
     const pvp = run.mode === 'pvp';
     const gained = xpForRun({ wave: pvp ? 0 : run.wave, score: pvp ? run.kills * 100 + (run.won ? 500 : 0) : run.score, kills: run.kills });
     const g = this.guest;
     g.xp += gained;
+    g.coins = (g.coins || 0) + coins;
     g.stats.games++;
     g.stats.headshots += run.headshots || 0;
     if (pvp) {
@@ -204,7 +264,7 @@ export class Account {
     }
     store.set(GUEST_KEY, JSON.stringify(g));
     this._changed();
-    return { gained, levelBefore, levelAfter: this.level };
+    return { gained, coins, levelBefore, levelAfter: this.level };
   }
 
   friends() {
@@ -273,8 +333,9 @@ export class AccountUI {
       <div class="ac-avatar">${esc(p.avatar)}</div>
       <div class="ac-main">
         <div class="ac-name" style="color:${esc(p.color)}">${esc(a.name)} <span class="ac-title">${esc(p.title)}</span></div>
-        <div class="ac-level">Level ${lvl}<div class="xpbar"><div style="width:${Math.min(100, (into / need) * 100)}%"></div></div><span>${into}/${need} XP</span></div>
+        <div class="ac-level"><span class="coins">🪙 ${a.coins}</span> Level ${lvl}<div class="xpbar"><div style="width:${Math.min(100, (into / need) * 100)}%"></div></div><span>${into}/${need} XP</span></div>
         <div class="ac-buttons">
+          <button data-open="shop" class="hot">🪙 Shop</button>
           <button data-open="profile">Customise</button>
           <button data-open="friends">Friends</button>
           <button data-open="leaderboard">Leaderboard</button>
@@ -284,12 +345,12 @@ export class AccountUI {
   }
 
   render() {
-    const tabs = [['profile', 'Customise'], ['friends', 'Friends'], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
+    const tabs = [['shop', '🪙 Shop'], ['profile', 'Customise'], ['friends', 'Friends'], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
     if (this.account.loggedIn) tabs.push(['admin', this.account.admin ? '⭐ Admin' : 'Admin code']);
     document.getElementById('account-tabs').innerHTML = tabs
       .map(([id, label]) => `<button data-tab="${id}" class="${this.tab === id ? 'active' : ''}">${label}</button>`)
       .join('');
-    const fn = { profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
+    const fn = { shop: this._shop, profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
     fn.call(this);
   }
 
@@ -347,8 +408,9 @@ export class AccountUI {
       <div class="pick-row" data-kind="${kind}">
         ${list
           .map(([id, need, label, extra]) => {
-            const locked = need > lvl;
-            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${locked ? `Unlocks at level ${need}` : esc(label || id)}">${render(id, label, extra)}${locked ? `<i>Lv ${need}</i>` : ''}</button>`;
+            const locked = need > lvl && !a.items[cosmeticItemId(kind, id)];
+            const price = locked ? cosmeticPrice(kind, id) : null;
+            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${locked ? `Unlocks at level ${need}, or buy it in the shop` : esc(label || id)}">${render(id, label, extra)}${locked ? `<i>Lv ${need} · 🪙${price}</i>` : ''}</button>`;
           })
           .join('')}
       </div>`;
@@ -372,6 +434,68 @@ export class AccountUI {
         }
       });
     });
+  }
+
+  _shop() {
+    const a = this.account;
+    const items = a.items;
+    const card = (def) => {
+      const have = items[def.id] || 0;
+      const price = priceOf(def.id, items);
+      let status = '';
+      let button = '';
+      if (def.kind === 'upgrade') {
+        status = `<div class="pips">${Array.from({ length: def.max }, (_, i) => `<i class="${i < have ? 'on' : ''}"></i>`).join('')}</div>`;
+        button = price === null ? '<span class="maxed">MAX</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
+      } else if (def.kind === 'gun') {
+        if (!have) button = `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
+        else if (items.loadout === def.gun) button = '<button class="btn small ghost" data-unequip="1">EQUIPPED ✓</button>';
+        else button = `<button class="btn small ghost" data-equip="${def.gun}">EQUIP</button>`;
+      } else {
+        status = `<div class="owned-count">You have ${have}</div>`;
+        button = price === null ? '<span class="maxed">MAX</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
+      }
+      return `<div class="shop-card"><div class="si">${def.icon}</div><div class="sn">${esc(def.name)}</div><div class="sd">${esc(def.desc)}</div>${status}${button}</div>`;
+    };
+    const lists = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
+    const names = { avatar: 'Avatar', color: 'Name colour', title: 'Title', crosshair: 'Crosshair', finish: 'Gun finish' };
+    const cosmetics = Object.entries(lists)
+      .flatMap(([kind, list]) =>
+        list
+          .filter(([id, need]) => need > a.unlockLevel && !items[cosmeticItemId(kind, id)])
+          .map(([id, need, label, color]) => {
+            const price = cosmeticPrice(kind, id);
+            const show = kind === 'avatar' ? `<span class="big">${id}</span>` : kind === 'color' || kind === 'crosshair' ? `<span class="swatch" style="background:${id}"></span>${esc(label)}` : kind === 'finish' ? `<span class="swatch" style="background:${color}"></span>${esc(label)}` : esc(id);
+            return `<div class="cos-item"><span class="muted small">${names[kind]}</span> ${show} <button class="btn small" data-buy="${cosmeticItemId(kind, id)}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button></div>`;
+          })
+      )
+      .join('');
+    this.body.innerHTML = `
+      <div class="shop-head"><span class="coins big">🪙 ${a.coins}</span>
+        <span class="muted">Earn coins from kills, headshots and waves in solo, and from kills and wins online.</span></div>
+      <div id="shop-msg" class="msg"></div>
+      <h4>Upgrades <span class="muted small">(solo runs)</span></h4>
+      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>
+      <h4>Starting gun <span class="muted small">(own it, equip it, start every solo run with it)</span></h4>
+      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>
+      <h4>Items</h4>
+      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
+      <h4>Cosmetics <span class="muted small">(skip the level requirement)</span></h4>
+      <div class="cos-list">${cosmetics || '<p class="muted">You own every cosmetic!</p>'}</div>
+      ${a.loggedIn ? '' : '<p class="muted small">Guest: coins and purchases are saved in this browser. Log in to keep them on your account.</p>'}`;
+    const msg = (t) => (document.getElementById('shop-msg').textContent = t);
+    this.body.querySelectorAll('[data-buy]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          await a.buy(b.dataset.buy);
+          msg('Bought!');
+        } catch (err) {
+          msg(err.message);
+        }
+      })
+    );
+    this.body.querySelectorAll('[data-equip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(b.dataset.equip).catch((e) => msg(e.message))));
+    this.body.querySelectorAll('[data-unequip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(null).catch((e) => msg(e.message))));
   }
 
   _admin() {
@@ -407,6 +531,7 @@ export class AccountUI {
       <p class="muted">Admin account: every customisation is unlocked. Cheats work in solo games only (multiplayer stays fair).</p>
       <h4>Account</h4>
       <form class="auth inline admin-row" data-act="xp"><input name="v" type="number" min="0" placeholder="Set XP (level 10 = 20250)" /><button class="btn small">SET XP</button></form>
+      <form class="auth inline admin-row" data-act="coins"><input name="v" type="number" min="0" placeholder="Set coins" /><button class="btn small">SET COINS</button></form>
       <h4>Solo game ${solo ? '' : '<span class="muted">(start a solo game to use these)</span>'}</h4>
       <div class="admin-grid">
         ${[
@@ -446,10 +571,11 @@ export class AccountUI {
         e.preventDefault();
         const v = Number(new FormData(f).get('v'));
         if (!Number.isFinite(v)) return;
-        if (f.dataset.act === 'xp') {
+        if (f.dataset.act === 'xp' || f.dataset.act === 'coins') {
           try {
-            await a.adminSetXp(v);
-            msg(`XP set. You're level ${a.level}.`);
+            if (f.dataset.act === 'xp') await a.adminSetXp(v);
+            else await a.adminSetCoins(v);
+            msg(f.dataset.act === 'xp' ? `XP set. You're level ${a.level}.` : `Coins set to ${a.coins}.`);
           } catch (err) {
             msg(err.message);
           }

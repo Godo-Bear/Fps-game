@@ -1320,3 +1320,104 @@ table.board {
   opacity: 0.55;
   font-weight: 500;
 }
+
+/* coins & shop */
+.btn.gold {
+  background: linear-gradient(#ffe08a, #e0a52a);
+  box-shadow: 0 4px 0 #7a5410, 0 10px 24px rgba(0, 0, 0, 0.5);
+}
+.coins {
+  color: #ffd34d;
+  font-weight: 700;
+}
+.coins.big {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 28px;
+  margin-right: 10px;
+}
+b.coin {
+  color: #ffd34d;
+}
+#run-coins {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffd34d;
+}
+.shop-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.shop-card {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(233, 217, 184, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+}
+.shop-card .si {
+  font-size: 30px;
+}
+.shop-card .sn {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 16px;
+  margin: 4px 0;
+}
+.shop-card .sd {
+  font-size: 13px;
+  opacity: 0.8;
+  min-height: 32px;
+}
+.shop-card .btn:disabled {
+  filter: grayscale(0.8);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.pips {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin: 6px 0;
+}
+.pips i {
+  width: 14px;
+  height: 6px;
+  border-radius: 2px;
+  background: rgba(233, 217, 184, 0.2);
+}
+.pips i.on {
+  background: #ffd34d;
+}
+.maxed {
+  display: inline-block;
+  margin: 8px 0 4px;
+  color: #ffd34d;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+.owned-count {
+  font-size: 13px;
+  margin: 4px 0;
+}
+.cos-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cos-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.cos-item .big {
+  font-size: 22px;
+}

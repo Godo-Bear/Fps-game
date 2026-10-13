@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
 import { MAPS, MODES, SOLO_MAP } from '../shared/modes.js';
+import { coinsForRun } from '../shared/shop.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
 import { Effects } from './effects.js';
@@ -506,7 +507,7 @@ function onKill(z, head) {
     // burning spreads to whoever is close
     for (const o of zombies.list) if (o.alive && o.root.position.distanceTo(z.root.position) < 3.5) zombies.addDot(o, 'fire', 9, 3);
   }
-  const medChance = { walker: 0.05, runner: 0.05, crawler: 0.05, spitter: 0.1, bloater: 0.15, brute: 0.35, boss: 1 }[z.typeId] ?? 0.05;
+  const medChance = ({ walker: 0.05, runner: 0.05, crawler: 0.05, spitter: 0.1, bloater: 0.15, brute: 0.35, boss: 1 }[z.typeId] ?? 0.05) * (1 + 0.35 * scavengerLevel());
   if (Math.random() < medChance) dropMedkit(z.root.position);
   // mutated zombies sometimes drop a mutated gun; bosses always do
   if ((z.mutated && Math.random() < 0.15) || z.typeId === 'boss') {
@@ -878,6 +879,7 @@ function updateHud(dt) {
     setText('zombies-left', game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : 'Wave cleared');
     setText('score', String(game.score));
     setText('kills', `${game.kills} kills`);
+    setText('run-coins', `🪙 +${coinsForRun({ mode: 'solo', wave: game.wave, kills: game.kills, headshots: game.headshots })}`);
   }
   setText('weather-label', weather ? weather.name : '');
   const hp = Math.max(0, Math.ceil(player.health));
@@ -1048,6 +1050,32 @@ function restoreRun(save) {
   Object.assign(game, { wave: save.wave, score: save.score | 0, kills: save.kills | 0, headshots: save.headshots | 0, runId: save.id });
 }
 
+// Permanent shop upgrades, starting gun and revive tokens (new solo runs only).
+function applyShop() {
+  const it = account.items;
+  const tough = it.toughness || 0;
+  stats.maxHealth += 10 * tough;
+  stats.damageMul += 0.05 * (it.firepower || 0);
+  stats.reloadSpeed += 0.1 * (it.quickhands || 0);
+  player.health = stats.maxHealth;
+  if (it.scavenger) pickups.topUp(5 + 2 * it.scavenger, player.pos, 0.06);
+  if (it.loadout && it[`gun_${it.loadout}`] && GUNS[it.loadout]) {
+    weapon.give(it.loadout, stats); // you start holding it
+  }
+  if (it.revive > 0) {
+    account
+      .useItem('revive')
+      .then(() => {
+        stats.secondWind += 1;
+        owned.set('secondwind', { def: POWERUPS.find((p) => p.id === 'secondwind'), count: 1, rarity: 'legendary' });
+        renderOwned();
+        subBanner('Revive token used: Second Wind ready', 2.5);
+      })
+      .catch(() => {});
+  }
+}
+const scavengerLevel = () => (game.mode === 'solo' ? account.items.scavenger || 0 : 0);
+
 function startGame(save = null) {
   audio.init();
   game.mode = 'solo';
@@ -1069,6 +1097,7 @@ function startGame(save = null) {
   weather.set(world.theme.weather, true);
   Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
   if (save) restoreRun(save);
+  else applyShop();
   $('banner').className = '';
   $('subbanner').className = '';
   pauseFor('READY?', save ? `Continuing · wave ${game.wave + 1} starts in 5 seconds` : `${world.theme.name} · the first wave comes in 5 seconds`);
@@ -1102,7 +1131,7 @@ function showXp(r) {
   if (!el) return;
   el.innerHTML = r.error
     ? `Couldn't save: ${esc(r.error)}`
-    : `+${r.gained} XP${r.levelAfter > r.levelBefore ? ` · <b class="lvlup">LEVEL UP! You're level ${r.levelAfter}</b> — new unlocks in Customise` : ''}${account.loggedIn ? '' : ' (guest, saved in this browser)'}`;
+    : `+${r.gained} XP · <b class="coin">+${r.coins || 0} 🪙</b>${r.levelAfter > r.levelBefore ? ` · <b class="lvlup">LEVEL UP! You're level ${r.levelAfter}</b> — new unlocks in Customise` : ''}${account.loggedIn ? '' : ' (guest, saved in this browser)'}`;
 }
 
 function toMenu() {
@@ -1214,13 +1243,14 @@ const mp = new Multiplayer({
     showOnly('mp-end');
     $('mp-end-xp').textContent = 'Saving progress…';
     const r = await account.recordRun({ mode: 'pvp', kills: result.kills, headshots: result.headshots, won: result.won });
-    $('mp-end-xp').innerHTML = r.error ? '' : `+${r.gained} XP${r.levelAfter > r.levelBefore ? ` · <b class="lvlup">LEVEL UP! Level ${r.levelAfter}</b>` : ''} · back to the lobby in a moment…`;
+    $('mp-end-xp').innerHTML = r.error ? '' : `+${r.gained} XP · +${r.coins || 0} 🪙${r.levelAfter > r.levelBefore ? ` · <b class="lvlup">LEVEL UP! Level ${r.levelAfter}</b>` : ''} · back to the lobby in a moment…`;
   },
 });
 
 // ---------------------------------------------------------------- menus
 
 $('play-btn').addEventListener('click', () => startGame());
+$('shop-btn').addEventListener('click', () => accountUI.open('shop'));
 $('continue-btn').addEventListener('click', () => pendingSave && startGame(pendingSave));
 $('again-btn').addEventListener('click', () => startGame());
 account.onChange(() => refreshSave());

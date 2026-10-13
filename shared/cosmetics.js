@@ -35,17 +35,18 @@ export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survi
 
 const LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
 
-export function unlocked(kind, id, level) {
+// Unlocked by level, or bought in the shop (items[`cos_kind_id`]).
+export function unlocked(kind, id, level, items = {}) {
   const row = LISTS[kind]?.find((r) => r[0] === id);
-  return !!row && row[1] <= level;
+  return !!row && (row[1] <= level || !!items[`cos_${kind}_${id}`]);
 }
 
 // Keeps only valid, unlocked choices.
-export function cleanProfile(input, level) {
+export function cleanProfile(input, level, items = {}) {
   const out = { ...DEFAULT_PROFILE };
   if (input && typeof input === 'object') {
     for (const kind of Object.keys(LISTS)) {
-      if (typeof input[kind] === 'string' && unlocked(kind, input[kind], level)) out[kind] = input[kind];
+      if (typeof input[kind] === 'string' && unlocked(kind, input[kind], level, items)) out[kind] = input[kind];
     }
   }
   return out;

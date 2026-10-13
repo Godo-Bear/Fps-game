@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanProfile, levelFromXp, xpForRun } from '../shared/cosmetics.js';
+import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
 
 const json = (data, status = 200) =>
@@ -74,11 +75,13 @@ export class GameDB extends DurableObject {
     } catch {
       /* column already exists */
     }
-    // added later: the saved solo run (so you can continue on any device)
-    try {
-      this.sql.exec('ALTER TABLE users ADD COLUMN save TEXT');
-    } catch {
-      /* column already exists */
+    // added later: the saved solo run (so you can continue on any device), coins and shop items
+    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'"]) {
+      try {
+        this.sql.exec(`ALTER TABLE users ADD COLUMN ${col}`);
+      } catch {
+        /* column already exists */
+      }
     }
     this.adminTries = new Map(); // user id -> [count, windowStart]
     this.fails = new Map(); // username -> [count, windowStart]
@@ -96,20 +99,32 @@ export class GameDB extends DurableObject {
     return e[0] <= max;
   }
 
+  _items(u) {
+    try {
+      const items = JSON.parse(u.items || '{}');
+      return items && typeof items === 'object' ? items : {};
+    } catch {
+      return {};
+    }
+  }
+
   _publicUser(u, self = false) {
     const level = levelFromXp(u.xp);
+    const items = this._items(u);
     const out = {
       username: u.username,
       level,
       xp: u.xp,
       // admins have every cosmetic unlocked
-      profile: cleanProfile(JSON.parse(u.profile || '{}'), u.admin ? 999 : level),
+      profile: cleanProfile(JSON.parse(u.profile || '{}'), u.admin ? 999 : level, items),
       stats: { bestWave: u.best_wave, bestScore: u.best_score, kills: u.kills, headshots: u.headshots, games: u.games, pvpKills: u.pvp_kills, pvpWins: u.pvp_wins },
       online: Date.now() - u.last_seen < ONLINE_MS,
     };
     if (self) {
       delete out.online;
       out.admin = !!u.admin;
+      out.coins = u.coins || 0;
+      out.items = items;
     }
     return out;
   }
@@ -211,7 +226,7 @@ export class GameDB extends DurableObject {
     }
 
     if (path === '/profile' && method === 'PUT') {
-      const profile = cleanProfile(body.profile, me.admin ? 999 : levelFromXp(me.xp));
+      const profile = cleanProfile(body.profile, me.admin ? 999 : levelFromXp(me.xp), this._items(me));
       this.sql.exec('UPDATE users SET profile = ? WHERE id = ?', JSON.stringify(profile), me.id);
       return json({ user: this._publicUser({ ...me, profile: JSON.stringify(profile) }, true) });
     }
@@ -227,14 +242,15 @@ export class GameDB extends DurableObject {
       const pvp = body.mode === 'pvp';
       const won = pvp && body.won === true ? 1 : 0;
       const xp = xpForRun({ wave: pvp ? 0 : wave, score: pvp ? kills * 100 + won * 500 : score, kills });
+      const coins = coinsForRun({ mode: pvp ? 'pvp' : 'solo', wave, kills, headshots, won: !!won });
       this.sql.exec(
-        `UPDATE users SET xp = xp + ?, games = games + 1, kills = kills + ?, headshots = headshots + ?,
+        `UPDATE users SET xp = xp + ?, coins = coins + ?, games = games + 1, kills = kills + ?, headshots = headshots + ?,
           best_wave = MAX(best_wave, ?), best_score = MAX(best_score, ?), pvp_kills = pvp_kills + ?, pvp_wins = pvp_wins + ?, last_progress = ?
          WHERE id = ?`,
-        xp, pvp ? 0 : kills, headshots, pvp ? 0 : wave, pvp ? 0 : score, pvp ? kills : 0, won, now, me.id
+        xp, coins, pvp ? 0 : kills, headshots, pvp ? 0 : wave, pvp ? 0 : score, pvp ? kills : 0, won, now, me.id
       );
       const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
-      return json({ user: this._publicUser(user, true), gained: xp, levelBefore: levelFromXp(me.xp) });
+      return json({ user: this._publicUser(user, true), gained: xp, coins, levelBefore: levelFromXp(me.xp) });
     }
 
     // Admin code: set as the ADMIN_CODE secret on the Worker. Never stored in the game's code.
@@ -255,6 +271,40 @@ export class GameDB extends DurableObject {
       this.sql.exec('UPDATE users SET xp = ? WHERE id = ?', xp, me.id);
       const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
       return json({ user: this._publicUser(user, true) });
+    }
+
+    // ---- shop
+    const saveItems = (items, coins) => {
+      this.sql.exec('UPDATE users SET items = ?, coins = ? WHERE id = ?', JSON.stringify(items), coins, me.id);
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ user: this._publicUser(user, true) });
+    };
+    if (path === '/shop/buy' && method === 'POST') {
+      const items = this._items(me);
+      const price = typeof body.item === 'string' ? priceOf(body.item, items) : null;
+      if (price === null) return err("That can't be bought");
+      if ((me.coins || 0) < price) return err('Not enough coins');
+      items[body.item] = (items[body.item] || 0) + 1;
+      return saveItems(items, me.coins - price);
+    }
+    if (path === '/shop/use' && method === 'POST') {
+      const items = this._items(me);
+      const def = SHOP.find((s) => s.id === body.item && s.kind === 'consumable');
+      if (!def || !(items[def.id] > 0)) return err("You don't have that");
+      items[def.id]--;
+      return saveItems(items, me.coins);
+    }
+    if (path === '/shop/loadout' && method === 'POST') {
+      const items = this._items(me);
+      if (body.gun === null) delete items.loadout;
+      else if (typeof body.gun === 'string' && items[`gun_${body.gun}`]) items.loadout = body.gun;
+      else return err("You don't own that gun");
+      return saveItems(items, me.coins);
+    }
+    if (path === '/admin/coins' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const coins = Math.max(0, Math.min(100000000, Math.floor(Number(body.coins) || 0)));
+      return saveItems(this._items(me), coins);
     }
 
     if (path === '/save' && method === 'GET') {
