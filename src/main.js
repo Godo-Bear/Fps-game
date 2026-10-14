@@ -1522,6 +1522,8 @@ function updateZombieMarkers() {
 
 const OVERLAYS = ['menu', 'pause', 'choose', 'gameover', 'mp-menu', 'lobby', 'mp-end', 'newgame', 'saves-menu'];
 function showOnly(id) {
+  // leaving the lobby closes whichever lobby tab was open
+  if (id !== 'menu') closeLobbyPages();
   for (const o of OVERLAYS) $(o).classList.toggle('hidden', o !== id);
   $('hud').classList.toggle('hidden', ['menu', 'mp-menu', 'lobby', 'newgame', 'saves-menu'].includes(id));
   $('crosshair').classList.toggle('hidden', id !== null);
@@ -1848,7 +1850,7 @@ function restoreRun(save) {
   weapon.cur = 0;
   weapon.last = 0;
   weapon.ensureKnife();
-  unlimitedLoadout();
+  giveLoadout();
   weapon.refreshModels();
   game.grenades = Math.max(0, Math.min(maxGrenades(), save.grenades ?? 2));
   game.scrap = Math.max(0, Math.min(999, save.scrap | 0));
@@ -1860,11 +1862,18 @@ function restoreRun(save) {
   Object.assign(game, { wave: save.wave, score: save.score | 0, kills: save.kills | 0, headshots: save.headshots | 0, runId: save.id, runName: saveName(save) });
 }
 
-// The gun you equipped in the shop never runs out of reserve ammo (you still reload).
-function unlimitedLoadout() {
+// The gun you equipped in the Shop: you spawn holding it (every mode, every respawn)
+// and it never runs out of reserve ammo (you still reload).
+function giveLoadout() {
   const id = account.items.loadout;
-  if (!id || !account.items[`gun_${id}`]) return;
-  for (const s of weapon.slots) if (s.def.id === id) s.reserve = Infinity;
+  if (!id || !account.items[`gun_${id}`] || !GUNS[id]) return;
+  let i = weapon.slots.findIndex((s) => s.def.id === id);
+  if (i < 0) {
+    weapon.slots.push({ def: GUNS[id], ammo: weapon.magSize(stats, GUNS[id]), reserve: Infinity, mut: null });
+    i = weapon.slots.length - 1;
+  }
+  weapon.slots[i].reserve = Infinity;
+  weapon.holdNow(i);
 }
 
 // Permanent shop upgrades, starting gun and revive tokens (new solo runs only).
@@ -1877,10 +1886,7 @@ function applyShop() {
   player.health = stats.maxHealth;
   if (it.grenadier) giveGrenades(it.grenadier);
   if (it.scavenger) pickups.topUp(5 + 2 * it.scavenger, player.pos, 0.06);
-  if (it.loadout && it[`gun_${it.loadout}`] && GUNS[it.loadout]) {
-    weapon.give(it.loadout, stats); // you start holding it
-    unlimitedLoadout();
-  }
+  giveLoadout();
   if (it.revive > 0) {
     const runId = game.runId;
     account
@@ -2071,6 +2077,7 @@ const mp = new Multiplayer({
     } else {
       spawnHealthPacks();
     }
+    giveLoadout();
     player.dead = true; // until the server spawns us
     $('mp-end').classList.add('hidden');
     pauseFor(MODES[mode].name.toUpperCase(), `${MAPS[map].name} · ${MODES[mode].desc} Click to play. Hold Tab for scores.`);
@@ -2088,6 +2095,7 @@ const mp = new Multiplayer({
     // deathmatch and co-op: keep the guns you found (fresh mags); objective modes start you over
     if (['ffa', 'tdm', 'coop', 'defend'].includes(mp.mode)) weapon.refillMags(stats);
     else weapon.reset(stats);
+    giveLoadout();
     $('respawn').classList.add('hidden');
     game.grenades = Math.max(game.grenades, 2);
     player.update(0, world.colliders, stats, false, audio, 1, world.ladders);
@@ -2219,7 +2227,7 @@ $('saves-list').addEventListener('click', (e) => {
 $('shop-btn').addEventListener('click', () => accountUI.open('shop'));
 $('quests-btn').addEventListener('click', () => accountUI.open('quests'));
 $('friends-btn').addEventListener('click', () => accountUI.open('friends'));
-$('help-btn').addEventListener('click', () => $('help').classList.remove('hidden'));
+$('help-btn').addEventListener('click', () => showPage('help'));
 // 📰 Updates: everything that's changed, newest first; NEW until you've looked
 const SEEN_KEY = 'deadplains.seenVersion';
 function renderUpdatesBadge() {
@@ -2232,16 +2240,16 @@ $('updates-btn').addEventListener('click', () => {
       <ul>${u.items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
     </div>`,
   ).join('');
-  $('updates').classList.remove('hidden');
+  showPage('updates');
   savePref(SEEN_KEY, LATEST_VERSION);
   renderUpdatesBadge();
 });
 $('updates').addEventListener('click', (e) => {
-  if (e.target === $('updates') || e.target.closest('[data-close-updates]')) $('updates').classList.add('hidden');
+  if ((e.target === $('updates') && !$('updates').classList.contains('docked')) || e.target.closest('[data-close-updates]')) hidePage('updates');
 });
 renderUpdatesBadge();
 $('help').addEventListener('click', (e) => {
-  if (e.target === $('help') || e.target.closest('[data-close-help]')) $('help').classList.add('hidden');
+  if ((e.target === $('help') && !$('help').classList.contains('docked')) || e.target.closest('[data-close-help]')) hidePage('help');
 });
 $('again-btn').addEventListener('click', () => startGame(null, game.runName));
 account.onChange(() => refreshSave());
@@ -2282,7 +2290,57 @@ $('play-big').addEventListener('click', () => {
 });
 $('nav-locker').addEventListener('click', () => accountUI.open('profile'));
 $('nav-leaderboard').addEventListener('click', () => accountUI.open('leaderboard'));
-$('nav-play').addEventListener('click', () => accountUI.close());
+$('nav-play').addEventListener('click', lobbyHome);
+
+// ---- lobby tabs: Locker, Quests, Shop, Friends, Updates... open as pages under the top bar, not pop-ups.
+// (Opened from anywhere else, like the pause menu, they're still pop-ups.)
+const NAV_FOR = { shop: 'shop-btn', quests: 'quests-btn', profile: 'nav-locker', mastery: 'nav-locker', friends: 'friends-btn', leaderboard: 'nav-leaderboard', updates: 'updates-btn', help: 'help-btn', settings: 'settings-btn' };
+const PAGES = ['updates', 'help', 'settings'];
+const inLobby = () => !$('menu').classList.contains('hidden');
+function setLobbyNav(page) {
+  for (const b of document.querySelectorAll('.fn-nav button')) b.classList.toggle('on', page ? b.id === NAV_FOR[page] : b.id === 'nav-play');
+  $('settings-btn').classList.toggle('on', page === 'settings');
+  $('menu').classList.toggle('page-open', !!page);
+  measureTopBar();
+}
+// pages start just under the top bar
+const measureTopBar = () => document.documentElement.style.setProperty('--fn-top-h', `${$('menu').querySelector('.fn-top').offsetHeight}px`);
+window.addEventListener('resize', measureTopBar);
+// Updates, How to Play and Settings: a tab in the lobby, a pop-up anywhere else
+function showPage(id) {
+  const docked = inLobby();
+  if (docked) {
+    accountUI.close();
+    for (const p of PAGES) if (p !== id) hidePage(p);
+  }
+  $(id).classList.toggle('docked', docked);
+  $(id).classList.remove('hidden');
+  if (docked) setLobbyNav(id);
+}
+function hidePage(id) {
+  const el = $(id);
+  const was = el.classList.contains('docked') && !el.classList.contains('hidden');
+  el.classList.add('hidden');
+  el.classList.remove('docked');
+  if (was) setLobbyNav(null);
+}
+function closeLobbyPages() {
+  for (const p of PAGES) if ($(p).classList.contains('docked')) hidePage(p);
+  if (accountUI.docked) accountUI.close();
+}
+function lobbyHome() {
+  closeLobbyPages();
+  setLobbyNav(null);
+}
+accountUI.dock = inLobby;
+accountUI.onShow = (tab) => {
+  for (const p of PAGES) hidePage(p);
+  setLobbyNav(NAV_FOR[tab] ? tab : 'account');
+};
+accountUI.onHide = () => setLobbyNav(null);
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && inLobby() && $('menu').classList.contains('page-open') && !e.target.closest?.('input, textarea')) lobbyHome();
+});
 
 // daily quests in the bottom left
 function renderHomeQuests() {
@@ -2898,7 +2956,7 @@ function openSettings() {
     showAllSettings = !showAllSettings;
     openSettings();
   });
-  $('settings').classList.remove('hidden');
+  showPage('settings');
 }
 $('settings-body').addEventListener('input', (e) => {
   const el = e.target;
@@ -2915,9 +2973,9 @@ $('settings-reset').addEventListener('click', () => {
   applySettings();
   openSettings();
 });
-$('settings-close').addEventListener('click', () => $('settings').classList.add('hidden'));
+$('settings-close').addEventListener('click', () => hidePage('settings'));
 $('settings').addEventListener('click', (e) => {
-  if (e.target === $('settings')) $('settings').classList.add('hidden');
+  if (e.target === $('settings') && !$('settings').classList.contains('docked')) hidePage('settings');
 });
 for (const id of ['settings-btn', 'pause-settings']) {
   $(id).addEventListener('click', (e) => {

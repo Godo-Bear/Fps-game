@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.5', date: '14 Oct 2026', title: 'Lobby tabs, phone buttons & shop guns',
+    items: [
+      'Locker, Quests, Shop, Friends, Leaderboard, Updates and Settings now open as tabs under the top bar instead of pop-ups. PLAY or Esc takes you back.',
+      'Phone buttons are spread out in two arcs around Fire and sized for your screen, so nothing is cramped. The lobby fits better on phones too.',
+      'The gun you equip in the Shop is now in your hands when you spawn: new games, continued games, co-op, PvP and every respawn.',
+      'Admin: give yourself every Shop gun, and equip any of them from the Admin tab.',
+    ],
+  },
+  {
     v: '4.4', date: '14 Oct 2026', title: 'New lobby',
     items: [
       'A new home screen: tabs along the top, your party standing in the middle as big nameplates, daily quests bottom left.',

@@ -75,7 +75,8 @@ Overheal slowly drains, and the **Overcharge** power-up raises the cap.
 You earn **coins** from every game: kills, headshots and waves reached in solo, kills and wins online.
 Spend them in the **Shop** (main menu, or the 🪙 Shop tab) on:
 - **Upgrades** for solo runs: Toughness (+max health), Firepower (+damage), Quick Hands (+reload speed), Scavenger (more guns and medkits)
-- a **starting gun** you begin every solo and co-op run with; the one you equip has **unlimited ammo** (you still reload)
+- **guns**: equip one and you spawn holding it in every mode (solo, continued games, co-op and PvP, and after every
+  respawn), with **unlimited ammo** (you still reload)
 - **Revive Tokens**: your next solo run starts with Second Wind
 - any **locked cosmetic**, without waiting for the level
 
@@ -91,6 +92,7 @@ you log in). Dying ends that game and deletes its save.
 ### Touch screens and controllers
 - **Phones and tablets:** a joystick appears where your left thumb lands, drag on the right side to look (or drag
   the fire button), and buttons for aim, jump, crouch/slide, reload, swap, knife, grenade, build and pause.
+  The right-hand buttons sit in two arcs around fire, spaced out and sized to fit your screen.
   In build mode fire places, R turns and swap changes what you're building.
 - **Controllers** (Xbox / PlayStation layout): left stick move (all the way forward sprints), right stick look,
   RT fire, LT aim, A jump, B crouch/slide, X reload (hold to revive), Y swap gun, LB grenade, RB knife, R3 quick chat wheel, L3 sprint, D-pad up build,
@@ -143,7 +145,11 @@ minimap, chat, hit markers, screen shake, view bob, quick chat bubbles and the n
 of keyboard controls. Settings are saved in your browser.
 
 ### Updates page
-The **📰 Updates** tile on the home screen lists every update, newest first, with a **NEW** badge until you've
+The tabs along the top of the home screen (Locker, Quests, Shop, Friends, Leaderboard, Updates, How to Play and ⚙
+Settings) open as pages under the top bar, like a game lobby; **Play** (or Esc) goes back. Opened during a game they're
+still pop-ups.
+
+The **📰 Updates** tab on the home screen lists every update, newest first, with a **NEW** badge until you've
 looked. New updates go at the top of `src/changelog.js`.
 
 ### Daily quests

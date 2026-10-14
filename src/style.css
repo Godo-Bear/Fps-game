@@ -1755,18 +1755,8 @@ b.coin {
   letter-spacing: 1px;
   opacity: 0.8;
 }
-.t-fire { right: calc(22px + env(safe-area-inset-right)); bottom: 64px; width: 84px; height: 84px; font-size: 30px; background: rgba(200, 40, 30, 0.4); }
-.t-aim { right: calc(118px + env(safe-area-inset-right)); bottom: 30px; }
-.t-jump { right: calc(30px + env(safe-area-inset-right)); bottom: 162px; }
-.t-crouch { right: calc(104px + env(safe-area-inset-right)); bottom: 110px; }
-.t-reload { right: calc(178px + env(safe-area-inset-right)); bottom: 84px; }
-.t-swap { right: calc(190px + env(safe-area-inset-right)); bottom: 18px; }
-.t-knife,
-.t-nade,
-.t-build { bottom: 230px; width: 44px; height: 44px; font-size: 17px; }
-.t-knife { right: calc(18px + env(safe-area-inset-right)); }
-.t-nade { right: calc(70px + env(safe-area-inset-right)); }
-.t-build { right: calc(122px + env(safe-area-inset-right)); }
+.t-fire { background: rgba(200, 40, 30, 0.4); }
+/* where the right-hand buttons go is worked out in controls.js (two arcs around FIRE) */
 .t-pause,
 .t-scores,
 .t-chat { left: calc(12px + env(safe-area-inset-left)); width: 42px; height: 42px; font-size: 16px; }
@@ -1791,11 +1781,11 @@ body.touch-mode .controls {
   display: none;
 }
 body.touch-mode #map-corner {
-  transform: scale(0.55);
+  transform: scale(0.5);
   transform-origin: top right;
 }
 body.touch-mode #top-right-stats {
-  right: 116px;
+  right: 108px;
   transform: scale(0.62);
   transform-origin: top right;
 }
@@ -2787,5 +2777,176 @@ body.no-chat #chat {
     left: 12px;
     right: 12px;
     width: auto;
+  }
+}
+
+/* ---- lobby tabs: Locker, Shop, Quests... open as a page under the top bar instead of a pop-up */
+.overlay.docked {
+  top: var(--fn-top-h, 96px);
+  z-index: 30;
+  align-items: flex-start;
+  padding: 14px 18px 24px;
+  background: linear-gradient(180deg, rgba(10, 14, 30, 0.88), rgba(8, 6, 4, 0.94));
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  animation: fn-page-in 0.18s ease-out;
+}
+@keyframes fn-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.overlay.docked > .modal {
+  width: min(1100px, 100%);
+  max-height: none;
+  overflow: visible;
+  margin: 0 auto;
+  padding: 4px 0 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+.overlay.docked .modal > .close,
+.overlay.docked [data-close-updates],
+.overlay.docked [data-close-help] {
+  display: none;
+}
+.overlay.docked #account-tabs:empty {
+  display: none;
+}
+#menu.page-open .fn-stage,
+#menu.page-open .fn-quests,
+#menu.page-open .fn-play {
+  display: none;
+}
+.fn-gear.on {
+  background: #fff;
+  color: #1a1200;
+}
+
+/* phones on their side: everything smaller so the name plate, modes and PLAY all fit */
+@media (max-height: 520px) and (min-width: 561px) {
+  .fn-top {
+    padding: 6px 12px 0;
+    gap: 2px 10px;
+  }
+  .fn-logo {
+    font-size: 17px;
+  }
+  .fn-logo span {
+    font-size: 11px;
+    letter-spacing: 3px;
+  }
+  .fn-nav button {
+    font-size: 13px;
+    padding: 4px 8px 9px;
+  }
+  .fn-coins,
+  .fn-level,
+  .fn-me,
+  .fn-gear {
+    font-size: 13px;
+    padding: 4px 9px;
+  }
+  .fn-stage,
+  #party-bar.fn-stage {
+    right: min(300px, 42vw);
+    top: 58%;
+  }
+  .fn-slot.me {
+    width: 180px;
+    transform: none;
+  }
+  .fn-play {
+    left: auto;
+    right: 12px;
+    bottom: 10px;
+    width: min(270px, 40vw);
+    gap: 6px;
+  }
+  .fn-modes button {
+    font-size: 12px;
+    padding: 7px 2px;
+  }
+  .fn-mode-card {
+    padding: 6px 10px;
+  }
+  .fn-mode-card b {
+    font-size: 16px;
+  }
+  .fn-mode-card small,
+  .fn-play #best {
+    display: none;
+  }
+  .btn.fn-playbtn {
+    font-size: 28px;
+    padding: 8px 0;
+    letter-spacing: 4px;
+  }
+  .overlay.docked {
+    padding: 10px 12px 18px;
+  }
+}
+/* phones upright: tabs scroll sideways with room for your thumb */
+@media (max-width: 560px) {
+  .fn-nav {
+    gap: 2px;
+    margin: 0 -10px;
+    padding: 0 6px;
+    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
+  }
+  .fn-nav button {
+    padding: 8px 10px 12px;
+  }
+  .fn-modes button {
+    padding: 10px 4px;
+  }
+  .overlay.docked {
+    padding: 10px 10px 18px;
+  }
+}
+/* touch: keep the tutorial card between the left buttons and the right-hand arcs */
+body.touch-mode #tutorial {
+  top: 56px;
+  width: min(420px, calc(100vw - 400px));
+  min-width: 240px;
+  padding: 8px 12px 6px;
+}
+@media (max-height: 520px) and (min-width: 561px) {
+  .fn-nav button[data-badge]:not([data-badge=''])::after {
+    top: -1px;
+    right: -4px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    font-size: 9px;
+    line-height: 14px;
+  }
+  .fn-nav {
+    padding-top: 4px;
+  }
+}
+body.touch-mode .tut-text {
+  font-size: 16px;
+}
+/* the tabs shrink a little on narrower screens so they all fit */
+@media (min-width: 761px) and (min-height: 521px) {
+  .fn-nav button {
+    font-size: clamp(13px, 1.15vw, 17px);
+    padding: 10px clamp(6px, 0.6vw, 12px) 12px;
+  }
+}
+@media (min-width: 761px) and (min-height: 521px) {
+  .fn-nav {
+    padding-top: 5px;
+  }
+  .fn-nav button[data-badge]:not([data-badge=''])::after {
+    top: -5px;
+    right: -4px;
+    height: 16px;
+    min-width: 16px;
+    font-size: 10px;
+    line-height: 16px;
   }
 }

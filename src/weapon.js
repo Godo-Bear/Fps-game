@@ -193,6 +193,17 @@ export class Weapon {
     return true;
   }
 
+  // Straight into a slot with no swap animation (spawning).
+  holdNow(i) {
+    if (i < 0 || i >= this.slots.length) return;
+    if (i !== this.cur) this.last = this.cur;
+    this.cur = i;
+    this.pending = -1;
+    this.switchT = 0;
+    this.reloading = 0;
+    this._show(i);
+  }
+
   equip(i) {
     if (i < 0 || i >= this.slots.length || i === (this.pending >= 0 ? this.pending : this.cur)) return;
     this.pending = i;

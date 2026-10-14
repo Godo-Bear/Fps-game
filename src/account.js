@@ -394,6 +394,11 @@ export class Account {
     this.user = user;
     this._changed();
   }
+  async adminGuns(mode) {
+    const { user } = await this._api('/admin/guns', { method: 'POST', body: { mode } });
+    this.user = user;
+    this._changed();
+  }
   async adminQuests(mode) {
     const { quests } = await this._api('/admin/quests', { method: 'POST', body: { mode } });
     this.quests = quests;
@@ -495,6 +500,11 @@ export class AccountUI {
     this.dm = { list: [], last: 0, timer: 0 };
     this.roomCode = () => null;
     this.joinRoom = null;
+    // On the home screen the window is a page under the top bar (a tab), not a pop-up.
+    // The game sets dock() (true while the lobby is showing) and onShow(tab) / onHide().
+    this.dock = () => false;
+    this.onShow = null;
+    this.onHide = null;
     account.onParty(() => {
       this.renderCard();
       if (!this.modal.classList.contains('hidden') && this.tab === 'friends' && !this.chatWith) this._loadFriends();
@@ -510,7 +520,7 @@ export class AccountUI {
       if (!this.modal.classList.contains('hidden')) this.render();
     });
     this.modal.addEventListener('click', (e) => {
-      if (e.target === this.modal || e.target.closest('[data-close]')) this.close();
+      if ((e.target === this.modal && !this.docked) || e.target.closest('[data-close]')) this.close();
       const t = e.target.closest('[data-tab]');
       if (t) {
         this.tab = t.dataset.tab;
@@ -528,12 +538,20 @@ export class AccountUI {
   open(tab = 'profile', keepChat = false) {
     this.tab = tab;
     if (!keepChat) this.chatWith = null;
+    this.modal.classList.toggle('docked', !!this.dock());
     this.modal.classList.remove('hidden');
     this.render();
+    if (this.docked && this.onShow) this.onShow(tab);
   }
   close() {
+    const was = this.docked && !this.modal.classList.contains('hidden');
     this.modal.classList.add('hidden');
+    this.modal.classList.remove('docked');
     this._stopDm();
+    if (was && this.onHide) this.onHide();
+  }
+  get docked() {
+    return this.modal.classList.contains('docked');
   }
   // straight into a chat with one friend
   openChat(name) {
@@ -573,7 +591,14 @@ export class AccountUI {
   _renderTabs() {
     const tabs = [['shop', '🪙 Shop'], ['quests', `📜 Quests${this.account.questsReady ? ` (${this.account.questsReady})` : ''}`], ['profile', 'Customise'], ['mastery', '🏅 Mastery'], ['friends', `Friends${this.account.unreadTotal ? ` (${this.account.unreadTotal})` : ''}`], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
     if (this.account.loggedIn) tabs.push(['admin', this.account.admin ? '⭐ Admin' : 'Admin code']);
-    document.getElementById('account-tabs').innerHTML = tabs
+    // as a lobby tab the top bar does the switching; only show the pages that share this tab
+    let shown = tabs;
+    if (this.docked) {
+      const group = [['profile', 'mastery'], ['account', 'login', 'admin']].find((g) => g.includes(this.tab)) || [];
+      shown = tabs.filter(([id]) => group.includes(id));
+      if (shown.length < 2) shown = [];
+    }
+    document.getElementById('account-tabs').innerHTML = shown
       .map(([id, label]) => `<button data-tab="${id}" class="${this.tab === id ? 'active' : ''}">${label}</button>`)
       .join('');
   }
@@ -716,7 +741,7 @@ export class AccountUI {
       <div id="shop-msg" class="msg"></div>
       <h4>Upgrades <span class="muted small">(solo runs)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>
-      <h4>Starting gun <span class="muted small">(own it, equip it: you start every solo and co-op run with it, with unlimited ammo)</span></h4>
+      <h4>Starting gun <span class="muted small">(Own it, equip it: you spawn holding it in every mode, with unlimited ammo)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>
       <h4>Items</h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
@@ -780,6 +805,15 @@ export class AccountUI {
         <button class="btn small ghost" data-acc="quests-reset">RESET TODAY'S QUESTS</button>
         <button class="btn small ghost" data-run="tutorial">REPLAY THE TUTORIAL</button>
         <button class="btn small ghost" id="admin-quick-reset">RESET MY QUICK CHAT</button>
+        <button class="btn small" data-acc="guns-all">🔫 OWN EVERY SHOP GUN</button>
+        <button class="btn small ghost" data-acc="guns-none">REMOVE MY SHOP GUNS</button>
+      </div>
+      <div class="auth inline admin-row">
+        <span>🔫 Spawn with:</span>
+        <select id="admin-loadout"><option value="">Nothing (rifle)</option>${SHOP.filter((d) => d.kind === 'gun' && a.items[d.id])
+          .map((d) => `<option value="${d.gun}" ${a.items.loadout === d.gun ? 'selected' : ''}>${esc(d.name)}</option>`)
+          .join('')}</select>
+        <span class="muted small">(every mode, unlimited ammo)</span>
       </div>
       <div class="auth inline admin-row">
         <span>🗺️ Solo map:</span>
@@ -853,6 +887,8 @@ export class AccountUI {
     });
     document.getElementById('admin-night').onchange = (e) => msg(act.setNightMode(e.target.value));
     document.getElementById('admin-map').onchange = (e) => msg(act.setSoloMap(e.target.value));
+    document.getElementById('admin-loadout').onchange = (e) =>
+      a.setLoadout(e.target.value || null).then(() => msg(e.target.value ? 'Equipped: you spawn with it next time.' : 'Unequipped.'), (err) => msg(err.message));
     document.getElementById('admin-quick-reset').onclick = () => a.setQuickChat([]).then(() => msg('Quick chat back to the defaults.'), (e) => msg(e.message));
     const bbtn = document.getElementById('admin-boss-btn');
     if (bbtn) bbtn.onclick = () => msg(act.run('boss', document.getElementById('admin-boss').value));
@@ -861,6 +897,7 @@ export class AccountUI {
         const [what, mode] = b.dataset.acc.split('-');
         try {
           if (what === 'mastery') await a.adminMastery(mode);
+          else if (what === 'guns') await a.adminGuns(mode);
           else await a.adminQuests(mode);
           msg(
             {
@@ -868,6 +905,8 @@ export class AccountUI {
               'mastery-reset': 'Gun mastery reset.',
               'quests-complete': "Today's quests are done: claim them in 📜 Quests.",
               'quests-reset': "Today's quests reset.",
+              'guns-all': 'You own every Shop gun. Pick one under Spawn with.',
+              'guns-none': 'Shop guns removed.',
             }[b.dataset.acc],
           );
         } catch (err) {

@@ -433,6 +433,17 @@ export class GameDB extends DurableObject {
       this.sql.exec('UPDATE users SET quests = ? WHERE id = ?', JSON.stringify(state), me.id);
       return json({ quests: questView(state) });
     }
+    // admin: own every Shop gun (or none of them)
+    if (path === '/admin/guns' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const items = this._items(me);
+      for (const def of SHOP) if (def.kind === 'gun') {
+        if (body.mode === 'all') items[def.id] = 1;
+        else delete items[def.id];
+      }
+      if (body.mode !== 'all') delete items.loadout;
+      return saveItems(items, me.coins);
+    }
     if (path === '/admin/coins' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);
       const coins = Math.max(0, Math.min(100000000, Math.floor(Number(body.coins) || 0)));

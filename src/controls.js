@@ -27,6 +27,20 @@ const BUTTONS = [
   ['emote', '💬', 'key:KeyZ'],
 ];
 
+// The right thumb's buttons sit in two arcs around FIRE: [id, size, radius, angle] (90° = straight up,
+// 180° = straight left). Sizes are for a ~420px tall screen and scale with it.
+const FIRE_SIZE = 80;
+const ARCS = [
+  ['jump', 56, 122, 90],
+  ['crouch', 56, 122, 124],
+  ['aim', 56, 122, 158],
+  ['reload', 56, 122, 192],
+  ['build', 46, 198, 115],
+  ['nade', 46, 198, 140],
+  ['knife', 46, 198, 165],
+  ['swap', 46, 198, 190],
+];
+
 export class Controls {
   // ctx: { player, weapon, canPlay(), playing(), pause(), resume(), look(dx, dy), inMatch(), building() }
   constructor(ctx) {
@@ -40,6 +54,8 @@ export class Controls {
     this.padLook = { x: 0, y: 0 };
     this.sens = 1;
     this._buildTouch();
+    this._layout();
+    window.addEventListener('resize', () => this._layout());
     // whatever was used last decides the mode
     // (a tap also fires mouse events; those don't count)
     window.addEventListener('mousemove', (e) => {
@@ -83,6 +99,31 @@ export class Controls {
     r.addEventListener('touchmove', (e) => this._touchMove(e), opts);
     r.addEventListener('touchend', (e) => this._touchEnd(e), opts);
     r.addEventListener('touchcancel', (e) => this._touchEnd(e), opts);
+  }
+
+  // Spread the buttons out for this screen size so they never crowd each other.
+  _layout() {
+    const s = Math.max(0.75, Math.min(1.3, Math.min(innerHeight, innerWidth * 0.75) / 420));
+    const m = 14;
+    const fx = m + (FIRE_SIZE * s) / 2; // FIRE's centre, from the right
+    const fy = m + (FIRE_SIZE * s) / 2 + 8 * s; // and from the bottom
+    const place = (id, size, x, y) => {
+      const el = this.root.querySelector(`.t-${id}`);
+      if (!el) return;
+      const px = Math.round(size);
+      Object.assign(el.style, {
+        width: `${px}px`,
+        height: `${px}px`,
+        fontSize: `${Math.round(px * 0.4)}px`,
+        right: `calc(${Math.round(x - size / 2)}px + env(safe-area-inset-right))`,
+        bottom: `${Math.round(y - size / 2)}px`,
+      });
+    };
+    place('fire', FIRE_SIZE * s, fx, fy);
+    for (const [id, size, r, deg] of ARCS) {
+      const a = (deg * Math.PI) / 180;
+      place(id, size * s, fx - Math.cos(a) * r * s, fy + Math.sin(a) * r * s);
+    }
   }
 
   _press(id, down) {
@@ -293,7 +334,7 @@ export class Controls {
 
   // D-pad through the buttons on whatever screen is showing
   _focusMove(dir) {
-    const scope = document.querySelector('#account-modal:not(.hidden)') || [...document.querySelectorAll('.overlay')].find((o) => !o.classList.contains('hidden'));
+    const scope = document.querySelector('#account-modal:not(.hidden), .overlay.docked:not(.hidden)') || [...document.querySelectorAll('.overlay')].find((o) => !o.classList.contains('hidden'));
     if (!scope) return;
     const all = [...scope.querySelectorAll('button')].filter((x) => x.offsetParent && !x.disabled);
     // the big buttons first, then the small ones
