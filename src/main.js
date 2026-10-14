@@ -162,31 +162,65 @@ function loadMap(id) {
 }
 
 // ---------------------------------------------------------------- waves (solo)
+// A wave never has more than WAVE_CAP zombies (bosses on top). Later waves get harder by
+// swapping walkers for tougher types instead of piling on more bodies.
+const WAVE_CAP = 50;
+let adminWaveCap = WAVE_CAP;
+const rawWaveSize = (n) => 6 + n * 4 + Math.floor(n * n * 0.15);
 function waveConfig(n) {
+  const raw = rawWaveSize(n);
+  const total = Math.min(raw, adminWaveCap);
   return {
-    total: 6 + n * 4 + Math.floor(n * n * 0.15),
-    maxAlive: Math.min(10 + n * 2, 42),
+    total,
+    // how much bigger the wave "wanted" to be: turned into nastier types
+    pressure: raw / total,
+    maxAlive: Math.min(10 + n * 2, 30),
     interval: Math.max(0.3, 1.3 - n * 0.07),
     boss: n % 5 === 0 ? 1 + Math.floor(n / 10) : 0,
   };
 }
 
-// Which zombie to spawn next. Mutations show up as the waves go on.
-function pickType(n) {
-  const table = [
-    ['brute', n >= 4 ? Math.min(0.12, 0.04 + (n - 4) * 0.015) : 0],
-    ['runner', n >= 2 ? Math.min(0.3, 0.12 + (n - 2) * 0.025) : 0],
-    ['crawler', n >= 3 ? Math.min(0.14, 0.06 + (n - 3) * 0.015) : 0],
-    ['bloater', n >= 4 ? Math.min(0.1, 0.04 + (n - 4) * 0.01) : 0],
-    ['spitter', n >= 5 ? Math.min(0.12, 0.05 + (n - 5) * 0.012) : 0],
+// How likely each special zombie is on wave n (walkers fill the rest). `pressure` > 1 once the
+// wave hits the cap, and shifts the mix towards brutes, bloaters, spitters and runners.
+function typeOdds(n, pressure = 1) {
+  const k = Math.min(3, pressure);
+  const odds = [
+    ['brute', n >= 4 ? Math.min(0.12, 0.04 + (n - 4) * 0.015) * k : 0],
+    ['runner', n >= 2 ? Math.min(0.3, 0.12 + (n - 2) * 0.025) * Math.min(1.5, k) : 0],
+    ['crawler', n >= 3 ? Math.min(0.14, 0.06 + (n - 3) * 0.015) * Math.min(1.5, k) : 0],
+    ['bloater', n >= 4 ? Math.min(0.1, 0.04 + (n - 4) * 0.01) * k : 0],
+    ['spitter', n >= 5 ? Math.min(0.12, 0.05 + (n - 5) * 0.012) * k : 0],
   ];
+  // walkers always make up at least a fifth of the wave
+  const sum = odds.reduce((a, [, p]) => a + p, 0);
+  if (sum > 0.8) for (const o of odds) o[1] *= 0.8 / sum;
+  return odds;
+}
+// Which zombie to spawn next (random, used when a wave's list has run out). Mutations show up as the waves go on.
+function pickType(n) {
   let r = Math.random();
-  for (const [type, p] of table) {
+  for (const [type, p] of typeOdds(n)) {
     if (r < p) return type;
     r -= p;
   }
   return 'walker';
 }
+// The whole wave's line-up, shuffled: every type that's unlocked shows up at least once.
+function waveDeck(n, total, pressure) {
+  const odds = typeOdds(n, pressure).filter(([, p]) => p > 0);
+  const deck = [];
+  for (const [type, p] of odds) {
+    const count = Math.max(1, Math.round(total * p));
+    for (let i = 0; i < count && deck.length < total; i++) deck.push(type);
+  }
+  while (deck.length < total) deck.push('walker');
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+const nextType = (n) => (game.deck?.length ? game.deck.pop() : pickType(n));
 const mutatedChance = (n) => (n >= 6 ? Math.min(0.25, 0.08 + (n - 6) * 0.012) : n >= 3 ? 0.03 : 0);
 
 // ---------------------------------------------------------------- night waves
@@ -197,7 +231,7 @@ const isNightWave = (w) => (adminNight === 'night' ? true : adminNight === 'day'
 // night zombies: more fast and nasty types
 function nightType(n) {
   if (Math.random() < 0.35) return n >= 5 ? ['runner', 'spitter', 'crawler', 'brute'][Math.floor(Math.random() * 4)] : 'runner';
-  return pickType(n);
+  return nextType(n);
 }
 function nightBuff(z) {
   z.maxHp *= NIGHT.hp;
@@ -232,6 +266,7 @@ function beginWave() {
   game.wave++;
   game.cfg = waveConfig(game.wave);
   game.toSpawn = game.cfg.total;
+  game.deck = waveDeck(game.wave, game.cfg.total, game.cfg.pressure);
   game.bossToSpawn = game.cfg.boss;
   game.spawnT = 0.5;
   game.phase = 'active';
@@ -298,7 +333,7 @@ function updateWave(dt) {
     game.spawnT -= dt;
     const alive = zombies.aliveCount;
     if (game.spawnT <= 0 && game.toSpawn > 0 && alive < cfg.maxAlive) {
-      const z = zombies.spawn(game.night ? nightType(game.wave) : pickType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave) + (game.night ? NIGHT.mutated : 0));
+      const z = zombies.spawn(game.night ? nightType(game.wave) : nextType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave) + (game.night ? NIGHT.mutated : 0));
       if (game.night) nightBuff(z);
       roomZombieHp(z);
       game.toSpawn--;
@@ -3542,6 +3577,9 @@ accountUI.adminActions = {
         for (const st of mine) structures.setHp(st.id, st.def.hp);
         return `Repaired ${mine.length} build${mine.length === 1 ? '' : 's'} to full health.`;
       }
+      case 'wavecap':
+        adminWaveCap = Math.max(5, Math.min(300, Math.floor(value)));
+        return `Waves now have at most ${adminWaveCap} zombies (from the next wave).`;
       case 'startwave':
         if (game.phase !== 'prep') return 'No wave is waiting right now.';
         game.phase = 'countdown';

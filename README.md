@@ -39,6 +39,9 @@ Weather changes between waves: dust storms, rain, thunderstorms, snow, blizzards
 ### Zombies
 - **Walker**, **Runner** (wave 2+), **Brute** (wave 4+), **Abomination** boss every 5th wave.
 - Mutations: **Crawler** (wave 3+, low and fast), **Bloater** (wave 4+, explodes when it dies or reaches you), **Spitter** (wave 5+, lobs acid from range).
+- A wave has at most **50 zombies** (bosses on top). Each wave's line-up is planned so every type that's unlocked
+  shows up; once a wave would be bigger than 50, walkers get swapped for brutes, bloaters, spitters and runners instead,
+  so later waves get tougher without flooding the map.
 - From wave 6, any zombie can be **mutated**: glowing green, tougher, faster, worth double score, and sometimes drops a mutated gun.
 
 Every alive zombie has a small marker over its head, they show on the minimap, and arrows point to the last few.
@@ -218,7 +221,7 @@ or any zombie type, kill all zombies, set weather, set score and jump to any wav
 in multiplayer admins get an ADMIN badge and can kick players.
 
 Newer admin tools: max or reset all **gun mastery** (every skin unlocked), finish or reset **today's quests**,
-replay or skip the **tutorial**, spawn a **specific boss**, **unlimited reserve for all your guns**, **infinite grenades**, **free building**, **repair all your builds**, **start the next wave now**,
+replay or skip the **tutorial**, spawn a **specific boss**, **unlimited reserve for all your guns**, **infinite grenades**, **free building**, **repair all your builds**, **start the next wave now**, **set the max zombies per wave**,
 **super turrets**, max / set **scrap**, refill / set **grenades**, remove all builds and zero scrap & grenades.
 Admins can also reset their quick chat wheel to the defaults.
 

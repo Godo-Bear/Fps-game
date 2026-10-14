@@ -2,6 +2,16 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.9', date: '14 Oct 2026', title: 'Smaller, nastier waves',
+    items: [
+      'A wave never has more than 50 zombies now (bosses come on top), so late waves don\'t flood the map or slow your game down.',
+      'Every wave gets a planned mix: each zombie type that\'s unlocked shows up at least once.',
+      'Past the cap, waves get harder by swapping walkers for brutes, bloaters, spitters, runners and crawlers. Wave 20 is about one walker in five.',
+      'At most 30 zombies are out at once; the rest join as you kill them.',
+      'Admin: set the max zombies per wave (solo).',
+    ],
+  },
+  {
     v: '4.8', date: '14 Oct 2026', title: 'Ready up between waves & build as much as you like',
     items: [
       'The next wave waits for you: build, restock and get in position, then press E (controller X, ✚ on phones) when you\'re ready. It starts 3 seconds later.',
