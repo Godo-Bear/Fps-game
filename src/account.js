@@ -550,21 +550,18 @@ export class AccountUI {
     };
     badge('quests-btn', a.questsReady);
     badge('friends-btn', a.unreadTotal + a.partyInvites.length);
+    if (this.onCard) this.onCard();
     const p = a.profile;
     const lvl = a.level;
     const into = a.xp - xpForLevel(lvl);
     const need = xpForLevel(lvl + 1) - xpForLevel(lvl);
+    // top right of the lobby: coins, level badge with XP, and your name (or log in)
     this.card.innerHTML = `
-      <div class="ac-avatar">${esc(p.avatar)}</div>
-      <div class="ac-main">
-        <div class="ac-name" style="color:${esc(p.color)}">${esc(a.name)} <span class="ac-title">${esc(p.title)}</span></div>
-        <div class="ac-level"><span class="coins">🪙 ${a.coins}</span> Level ${lvl}<div class="xpbar"><div style="width:${Math.min(100, (into / need) * 100)}%"></div></div><span>${into}/${need} XP</span></div>
-        <div class="ac-buttons">
-          <button data-open="profile">Customise</button>
-          <button data-open="leaderboard">Leaderboard</button>
-          ${a.loggedIn ? '' : '<button data-open="login" class="hot">Log in / Sign up</button>'}
-        </div>
-      </div>`;
+      <button class="fn-coins" data-open="shop" title="Coins: spend them in the Shop">🪙 ${a.coins}</button>
+      <button class="fn-level" data-open="profile" title="${into}/${need} XP to level ${lvl + 1}">
+        <b>${lvl}</b><span><i style="width:${Math.min(100, (into / need) * 100)}%"></i></span>
+      </button>
+      ${a.loggedIn ? `<button class="fn-me" data-open="account" style="color:${esc(p.color)}">${esc(a.name)}</button>` : '<button class="fn-me hot" data-open="login">LOG IN</button>'}`;
   }
 
   render() {

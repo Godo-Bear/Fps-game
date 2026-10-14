@@ -78,25 +78,38 @@
       <div id="chat-hint"></div>
     </div>
 
-    <div id="menu" class="overlay">
-      <div class="panel wide home">
-        <div id="account-card"></div>
-        <div id="party-bar" class="hidden"></div>
-        <h1>HOLLOW GROUND</h1>
-        <p class="tag">The town is gone. The dead are not.</p>
-        <div class="home-main">
-          <button id="continue-btn" class="btn hidden">CONTINUE</button>
-          <button id="saves-btn" class="btn">SAVED GAMES</button>
-          <button id="mp-btn" class="btn alt">MULTIPLAYER</button>
+    <div id="menu" class="overlay lobby-home">
+      <header class="fn-top">
+        <div class="fn-logo">HOLLOW<span>GROUND</span></div>
+        <nav class="fn-nav">
+          <button class="on" id="nav-play">PLAY</button>
+          <button id="nav-locker">LOCKER</button>
+          <button id="quests-btn">QUESTS</button>
+          <button id="shop-btn">SHOP</button>
+          <button id="friends-btn">FRIENDS</button>
+          <button id="nav-leaderboard">LEADERBOARD</button>
+          <button id="updates-btn">UPDATES</button>
+          <button id="help-btn">HOW TO PLAY</button>
+        </nav>
+        <div class="fn-right">
+          <div id="account-card"></div>
+          <button id="settings-btn" class="fn-gear" title="Settings">⚙</button>
         </div>
-        <div class="home-row">
-          <button id="quests-btn" class="tile"><b>📜</b><span>Quests</span></button>
-          <button id="shop-btn" class="tile"><b>🪙</b><span>Shop</span></button>
-          <button id="friends-btn" class="tile"><b>👥</b><span>Friends</span></button>
-          <button id="updates-btn" class="tile"><b>📰</b><span>Updates</span></button>
-          <button id="help-btn" class="tile"><b>❔</b><span>How to play</span></button>
-          <button id="settings-btn" class="tile"><b>⚙️</b><span>Settings</span></button>
+      </header>
+
+      <!-- your party standing in a row, like a lobby: names instead of skins -->
+      <section id="party-bar" class="fn-stage"></section>
+
+      <aside id="home-quests" class="fn-quests"></aside>
+
+      <div class="fn-play">
+        <div class="fn-modes">
+          <button id="continue-btn" class="hidden" data-mode-pick="continue">CONTINUE</button>
+          <button id="saves-btn" data-mode-pick="solo">SOLO</button>
+          <button id="mp-btn" data-mode-pick="mp">MULTIPLAYER</button>
         </div>
+        <div id="mode-card" class="fn-mode-card"></div>
+        <button id="play-big" class="btn fn-playbtn">PLAY</button>
         <div id="best"></div>
       </div>
     </div>

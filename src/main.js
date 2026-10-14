@@ -1775,10 +1775,8 @@ function timeAgo(t) {
 
 function renderSaves() {
   const latest = savedGames[0];
-  const b = $('continue-btn');
-  b.classList.toggle('hidden', !latest);
-  if (latest) b.textContent = `CONTINUE · ${saveName(latest).toUpperCase()} · WAVE ${latest.wave + 1}`;
-  $('saves-btn').textContent = savedGames.length ? `SAVED GAMES (${savedGames.length})` : 'SAVED GAMES';
+  $('continue-btn').classList.toggle('hidden', !latest);
+  renderModeCard();
   if (!$('saves-menu').classList.contains('hidden')) renderSavesList();
 }
 
@@ -2182,7 +2180,6 @@ const mp = new Multiplayer({
 
 // ---------------------------------------------------------------- menus
 
-$('saves-btn').addEventListener('click', openSaves);
 $('newgame-form').addEventListener('submit', (e) => {
   e.preventDefault();
   startGame(null, $('newgame-name').value || $('newgame-name').placeholder);
@@ -2246,16 +2243,66 @@ renderUpdatesBadge();
 $('help').addEventListener('click', (e) => {
   if (e.target === $('help') || e.target.closest('[data-close-help]')) $('help').classList.add('hidden');
 });
-$('continue-btn').addEventListener('click', () => savedGames[0] && startGame(savedGames[0]));
 $('again-btn').addEventListener('click', () => startGame(null, game.runName));
 account.onChange(() => refreshSave());
 $('menu-btn').addEventListener('click', toMenu);
-$('mp-btn').addEventListener('click', () => {
+function openMultiplayer() {
   audio.init();
   game.state = 'mpmenu';
   $('mp-error').textContent = '';
   showOnly('mp-menu');
+}
+
+// ---------------------------------------------------------------- lobby (home screen)
+// Pick a mode (Continue / Solo / Multiplayer) and hit PLAY. Your party stands in the middle.
+let homeMode = null; // null = not picked yet: continue if there's a save, else solo
+const currentMode = () => (homeMode === 'continue' && !savedGames[0] ? 'solo' : homeMode || (savedGames[0] ? 'continue' : 'solo'));
+function renderModeCard() {
+  const mode = currentMode();
+  for (const b of document.querySelectorAll('[data-mode-pick]')) b.classList.toggle('on', b.dataset.modePick === mode);
+  const latest = savedGames[0];
+  const card = {
+    continue: latest ? ['CONTINUE', `${esc(saveName(latest))} · wave ${latest.wave + 1}`, 'Dead Plains'] : null,
+    solo: ['SOLO SURVIVAL', savedGames.length ? `New game or ${savedGames.length} saved game${savedGames.length === 1 ? '' : 's'}` : 'Start a new game', 'Dead Plains'],
+    mp: ['MULTIPLAYER', 'Co-op, Defend, FFA, TDM, Capture Point, CTF', 'Room codes · 4 maps'],
+  }[mode];
+  $('mode-card').innerHTML = card ? `<b>${card[0]}</b><span>${card[1]}</span><small>${card[2]}</small>` : '';
+}
+document.querySelectorAll('[data-mode-pick]').forEach((b) =>
+  b.addEventListener('click', () => {
+    homeMode = b.dataset.modePick;
+    renderModeCard();
+  }),
+);
+$('play-big').addEventListener('click', () => {
+  const mode = currentMode();
+  if (mode === 'continue' && savedGames[0]) startGame(savedGames[0]);
+  else if (mode === 'mp') openMultiplayer();
+  else openSaves();
 });
+$('nav-locker').addEventListener('click', () => accountUI.open('profile'));
+$('nav-leaderboard').addEventListener('click', () => accountUI.open('leaderboard'));
+$('nav-play').addEventListener('click', () => accountUI.close());
+
+// daily quests in the bottom left
+function renderHomeQuests() {
+  const qs = account.quests || [];
+  $('home-quests').innerHTML = `<div class="fq-head">DAILY QUESTS${account.questsReady ? ` <span class="fq-ready">${account.questsReady} TO CLAIM</span>` : ''}</div>
+    ${qs
+      .map(
+        (q) => `<div class="fq ${q.claimed ? 'claimed' : q.done ? 'done' : ''}"><div class="fq-text">${esc(q.text)}</div>
+          <div class="fq-bar"><i style="width:${Math.round((q.progress / q.goal) * 100)}%"></i></div>
+          <div class="fq-meta"><span>${q.claimed ? 'CLAIMED ✓' : `${q.progress}/${q.goal}`}</span><span>🪙 ${q.reward}</span></div></div>`,
+      )
+      .join('') || '<div class="fq-text muted">Loading…</div>'}`;
+}
+$('home-quests').addEventListener('click', () => accountUI.open('quests'));
+accountUI.onCard = () => {
+  renderHomeQuests();
+  renderPartyBar();
+};
+renderModeCard();
+renderHomeQuests();
 $('mp-back').addEventListener('click', () => {
   game.state = 'menu';
   showOnly('menu');
@@ -2447,12 +2494,41 @@ function partyFollow() {
     addChat('🎉', `Your party went into room ${p.room}. Open Multiplayer to join them.`, '#ffd34d');
   }
 }
+// The lobby line-up: you in the middle, your party either side, empty spots to invite friends.
+// Names instead of character skins.
 function renderPartyBar() {
   const p = account.party;
+  const me = { username: account.name, profile: account.profile, level: account.level, me: true, leader: !!p && account.partyLeader, online: true };
+  const others = p ? p.members.filter((m) => m.username !== account.name) : [];
+  const slots = [...others.slice(0, 2).reverse(), me, ...others.slice(2, 4)];
+  const max = 4;
+  while (slots.length < max) slots[slots.length % 2 ? 'unshift' : 'push']({ empty: true });
+  const html = slots
+    .map((m) => {
+      if (m.empty) {
+        return `<button class="fn-slot empty" data-invite="1"><div class="fn-plus">+</div><div class="fn-name">${account.loggedIn ? 'INVITE' : 'LOG IN'}</div><div class="fn-pad"></div></button>`;
+      }
+      return `<div class="fn-slot ${m.me ? 'me' : ''}">
+        ${m.leader ? '<div class="fn-crown">👑</div>' : ''}
+        <div class="fn-plate" style="--c:${esc(m.profile?.color || '#ffffff')}">
+          <div class="fn-name">${esc(m.username)}</div>
+          <div class="fn-title">${esc(m.profile?.title || '')}</div>
+          <div class="fn-lvl">LV ${m.level ?? 1}${m.me ? '' : ` · <i class="dot ${m.online ? 'on' : ''}"></i>`}</div>
+        </div>
+        <div class="fn-pad"></div>
+      </div>`;
+    })
+    .join('');
   const el = $('party-bar');
-  el.classList.toggle('hidden', !p);
-  if (p) el.innerHTML = `🎉 Party: ${p.members.map((m) => `${m.leader ? '👑' : ''}<b style="color:${esc(m.profile.color)}">${esc(m.username)}</b>`).join(', ')}${p.room ? ` · room <b>${esc(p.room)}</b>` : ''}`;
+  if (last.lineup !== html) {
+    last.lineup = html;
+    el.innerHTML = html + (p?.room ? `<div class="fn-room">Party room <b>${esc(p.room)}</b></div>` : '');
+  }
 }
+$('party-bar').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-invite]')) return;
+  accountUI.open(account.loggedIn ? 'friends' : 'login');
+});
 account.onParty(partyFollow);
 
 // ---------------------------------------------------------------- quests

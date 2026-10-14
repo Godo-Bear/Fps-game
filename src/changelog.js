@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.4', date: '14 Oct 2026', title: 'New lobby',
+    items: [
+      'A new home screen: tabs along the top, your party standing in the middle as big nameplates, daily quests bottom left.',
+      'Pick Continue, Solo or Multiplayer and hit the big PLAY button.',
+      'Empty party spots: click + to invite a friend.',
+    ],
+  },
+  {
     v: '4.3', date: '13 Oct 2026', title: 'All settings',
     items: [
       'Settings → Show all settings: HUD size, crosshair size, toggle aim, hit markers, screen shake, view bob, hide the minimap or chat, quick chat bubbles, flashlight.',
