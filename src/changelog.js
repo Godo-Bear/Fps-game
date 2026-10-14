@@ -2,6 +2,16 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.7', date: '14 Oct 2026', title: 'Busier maps: cover, red barrels & ammo crates',
+    items: [
+      'Every map has lots more cover out in the open: concrete barriers, half-fallen walls, stacked crates you can climb, tyre piles, dumpsters and sandbag nests.',
+      'Red barrels: shoot one (or throw a grenade near it) and it blows up a moment later, hurting zombies and players close by and setting off any barrels next to it. They come back after a minute.',
+      'Ammo crates: walk up and press E (controller X) to refill every gun and get a grenade. Each crate refills you once every 45 seconds; the light turns red while it\'s empty. They\'re on the minimap.',
+      'More detail: street lamps (some flicker), rubble outside the ruined houses, bricks, stones and planks lying around, mushrooms and stumps in the forest, bones and fires in the canyon.',
+      'Admin: put a red barrel in front of you, blow up every barrel, bring them all back and refill every ammo crate.',
+    ],
+  },
+  {
     v: '4.6', date: '14 Oct 2026', title: 'Supply drops, Gun Game, Infection & a live leaderboard',
     items: [
       'Supply drops: crates parachute down with red smoke in every mode. Walk into one to heal and grab a gun with lots of ammo.',

@@ -65,6 +65,12 @@ You start with the **AR-7 Rifle** (red dot sight, unlimited reserve). Others spa
 Shock (lightning chains to 2 zombies), Cryo (freeze, bonus damage to frozen), Vampiric (heal on hit) and Void (chance to erase a zombie).
 They spawn rarely on the map, from mutated zombies, and every boss drops one.
 
+### Cover, red barrels and ammo crates
+Every map has cover out in the open (concrete barriers, ruined walls, crate stacks you can climb, tyres, dumpsters, sandbag nests).
+**Red barrels** blow up when you shoot them or something explodes next to them, hurting zombies and players nearby and
+setting off barrels next to them; they come back after a minute. **Ammo crates** (green diamonds on the minimap):
+press **E** next to one to refill every gun and get a grenade, once every 45 seconds per crate.
+
 ### Power-ups and healing
 After each wave pick 1 of 3 power-ups. Each card rolls Rare 68% / Epic 26% / Legendary 6%.
 Each power-up has a stack limit shown on its card.
@@ -214,6 +220,7 @@ Admins can also reset their quick chat wheel to the defaults.
 **kick**, **timeout** (kicked and no online games, chat or messages for 5 minutes up to a week), **ban / unban** (bans the account and its IP), and
 **give or take coins** by name. **Blocked words**: type the words nobody may say; only those exact words are hidden as
 *** in every chat on every server, and new names can't use them. **Supply drop on me** drops a crate in any mode.
+Map props (solo): a red barrel in front of you, blow up every barrel, bring them all back, refill every ammo crate.
 
 To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:
 it lives in a Cloudflare secret called `ADMIN_CODE` (case and extra spaces don't matter). Set it in the Cloudflare dashboard

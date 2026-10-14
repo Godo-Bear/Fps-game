@@ -983,6 +983,13 @@ export class AccountUI {
       <h4>Multiplayer</h4>
       <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="80" placeholder="Announce to everyone in your room" ${mp ? '' : 'disabled'} /><button class="btn small" ${mp ? '' : 'disabled'}>📢 ANNOUNCE</button></form>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
+      <h4>🛢️ Map props <span class="muted small">(solo games)</span></h4>
+      <div class="admin-grid">
+        <button class="btn small" data-barrels="place">🛢️ RED BARREL IN FRONT OF ME</button>
+        <button class="btn small bad" data-barrels="boom">💥 BLOW UP EVERY BARREL</button>
+        <button class="btn small" data-barrels="back">↩ BRING BACK ALL BARRELS</button>
+        <button class="btn small" data-barrels="ammo">🔫 REFILL ALL AMMO CRATES</button>
+      </div>
       ${mp ? '' : '<p class="muted small">Join or create a room to send announcements.</p>'}
       <h4>Solo game</h4>
       <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCORE</button></form>
@@ -993,6 +1000,7 @@ export class AccountUI {
       <p class="muted small">Press F2 in-game to open this panel. In multiplayer you get an ADMIN badge, and as host you can kick players.</p>`;
     const msg = (t) => (document.getElementById('admin-msg').textContent = t);
     document.getElementById('admin-drop').onclick = () => msg(act.supplyDrop());
+    for (const btn of this.body.querySelectorAll('[data-barrels]')) btn.onclick = () => msg(act.barrels(btn.dataset.barrels));
     this._adminPlayers('');
     document.getElementById('admin-find').addEventListener('submit', (e) => {
       e.preventDefault();

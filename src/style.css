@@ -1991,7 +1991,8 @@ body.touch-mode #build-hud {
   font-size: 30px;
   background: rgba(93, 255, 106, 0.35);
 }
-body.can-revive .t-revive {
+body.can-revive .t-revive,
+body.can-use .t-revive {
   display: block;
 }
 

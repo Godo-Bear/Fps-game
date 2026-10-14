@@ -1123,7 +1123,18 @@ export class Room extends DurableObject {
       }
       case 'fx': {
         // effects other players should see (a grenade going off); nothing here does damage
-        if (this.phase !== 'playing' || now - (p.lastFx || 0) < 200) return;
+        if (this.phase !== 'playing') return;
+        // a red barrel on the map going off (chains can set off a few at once)
+        if (m.k === 'barrel') {
+          if (!Number.isInteger(m.id) || m.id < 0 || m.id > 999) return;
+          if (now - (p.lastBarrel || 0) > 1000) p.barrels = 0;
+          if (++p.barrels > 12) return;
+          p.lastBarrel = now;
+          const msg = JSON.stringify({ t: 'fx', k: 'barrel', id: m.id, by: p.id });
+          for (const o of this.players.values()) if (o !== p && o.joined) o.ws.send(msg);
+          return;
+        }
+        if (now - (p.lastFx || 0) < 200) return;
         if (m.k !== 'boom' || !Array.isArray(m.p) || m.p.length !== 3 || !m.p.every(Number.isFinite)) return;
         p.lastFx = now;
         const msg = JSON.stringify({ t: 'fx', id: p.id, k: 'boom', p: m.p.map((v) => Math.max(-500, Math.min(500, v))) });

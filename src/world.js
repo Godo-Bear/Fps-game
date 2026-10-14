@@ -479,6 +479,12 @@ export function buildWorld(scene, mapId = 'plains') {
     place(g, x, z, rot, 0.05);
     reserve(x, z, Math.hypot(w, d) / 2 + 2);
     lootSpots.push({ x, z });
+    // bits of the house lying outside it
+    for (let i = 0; i < 2; i++) {
+      const side = i ? -1 : 1;
+      const p = toWorld(g, side * (w / 2 + 1.1), rand(-d / 3, d / 3));
+      if (rng() < 0.7) rubble(p.x, p.z, wall);
+    }
     return g;
   }
 
@@ -1712,6 +1718,303 @@ export function buildWorld(scene, mapId = 'plains') {
     reserve(x, z, 3);
   }
 
+  // ---------------------------------------------------------------- cover, interactive props and detail
+  // Red barrels you can shoot: they go off after a moment, hurt everything close and set off their neighbours.
+  const explosives = []; // { id, x, y, z, group, col, top, alive }
+  const barrelBody = new THREE.CylinderGeometry(0.4, 0.4, 1.0, 14);
+  const barrelBand = new THREE.CylinderGeometry(0.415, 0.415, 0.16, 14);
+  const barrelRed = mat(0xb02a1e, { roughness: 0.55, metalness: 0.15 });
+  const hazardYellow = mat(0xe0b020, { roughness: 0.6 });
+  let barrelLabel = null;
+  let ammoSign = null;
+  function redBarrel(x, z) {
+    const g = new THREE.Group();
+    const entry = { id: explosives.length, x, y: heightAt(x, z), z, group: g, alive: true };
+    const body = meshOf(barrelBody, barrelRed);
+    body.position.y = 0.5;
+    g.add(body);
+    for (const y of [0.25, 0.75]) {
+      const band = meshOf(barrelBand, hazardYellow, { shadow: false });
+      band.position.y = y;
+      g.add(band);
+    }
+    // warning label
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.3), (barrelLabel ||= new THREE.MeshStandardMaterial({ map: textTexture(['DANGER'], { fg: '#1a1a1a', bg: '#e0b020', w: 128, h: 112, font: 'bold 30px Impact, sans-serif' }), roughness: 0.8 })));
+    label.position.set(0, 0.5, 0.405);
+    g.add(label);
+    for (const c of g.children) {
+      c.userData.barrel = entry;
+      if (c.isMesh && c.geometry !== barrelBand) solid(c, false);
+    }
+    place(g, x, z, rand(0, PI * 2));
+    entry.top = heightAt(x, z) + 1;
+    entry.col = colliders.add(x, z, 0.42, 0.42, 0, entry.top);
+    explosives.push(entry);
+    reserve(x, z, 0.9);
+  }
+
+  // Ammo crates: walk up and press E to refill every gun (each player has their own cool-down).
+  const ammoCrates = []; // { x, y, z, lamp }
+  function ammoCrate(x, z, rot) {
+    const g = new THREE.Group();
+    const olive = M.olive;
+    const base = box(1.3, 0.6, 0.8, olive);
+    base.position.y = 0.3;
+    g.add(solid(base));
+    const lid = box(1.34, 0.12, 0.84, M.metalDark);
+    lid.position.y = 0.66;
+    g.add(lid);
+    for (const sx of [-0.45, 0.45]) {
+      const strap = box(0.08, 0.62, 0.84, M.darkWood);
+      strap.position.set(sx, 0.31, 0);
+      g.add(strap);
+    }
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.3), (ammoSign ||= new THREE.MeshStandardMaterial({ map: textTexture(['AMMO'], { fg: '#f2e6c0', bg: '#3c4228', w: 128, h: 48, font: 'bold 34px Impact, sans-serif' }), roughness: 0.9 })));
+    sign.position.set(0, 0.32, 0.405);
+    g.add(sign);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0x5aff6a }));
+    lamp.position.set(0.5, 0.76, 0.3);
+    g.add(lamp);
+    place(g, x, z, rot);
+    ammoCrates.push({ x, y: heightAt(x, z), z, lamp });
+    reserve(x, z, 1.2);
+  }
+
+  // Concrete road barrier: waist-high cover.
+  function jersey(x, z, rot) {
+    const g = new THREE.Group();
+    const foot = box(2.6, 0.35, 0.75, M.concrete);
+    foot.position.y = 0.17;
+    g.add(foot);
+    const wall = box(2.6, 0.75, 0.38, M.concrete);
+    wall.position.y = 0.7;
+    g.add(wall);
+    const stripe = box(2.62, 0.12, 0.4, rng() < 0.5 ? M.redPaint : hazardYellow);
+    stripe.position.y = 0.92;
+    stripe.castShadow = false;
+    g.add(stripe);
+    proxy(g, 2.6, 1.08, 0.75, 0, 0.54, 0);
+    g.children.forEach((c) => c.isMesh && c.visible && solid(c, false));
+    place(g, x, z, rot, 0.03);
+    reserve(x, z, 1.6);
+  }
+
+  // Half-fallen wall with a jagged top: chest-high on one end, head-high on the other.
+  function ruinWall(x, z, rot, len = 5, material = M.brick) {
+    const g = new THREE.Group();
+    const n = Math.max(3, Math.round(len / 0.7));
+    const step = len / n;
+    for (let i = 0; i < n; i++) {
+      const h = 0.9 + (i / n) * 1.3 + rand(-0.25, 0.25);
+      const b = box(step + 0.02, h, 0.45, material);
+      b.position.set(-len / 2 + step * (i + 0.5), h / 2, 0);
+      g.add(solid(b));
+    }
+    // fallen bricks at its foot
+    for (let i = 0; i < 6; i++) {
+      const b = box(rand(0.25, 0.45), 0.14, 0.2, material);
+      b.position.set(rand(-len / 2, len / 2), 0.07, rand(0.35, 1.1) * (rng() < 0.5 ? 1 : -1));
+      b.rotation.set(rand(-0.3, 0.3), rand(0, PI), 0);
+      b.castShadow = false;
+      g.add(b);
+    }
+    place(g, x, z, rot, 0.05);
+    reserve(x, z, len / 2 + 0.6);
+  }
+
+  // Two or three crates stacked up: cover, and something to climb.
+  function crateStack(x, z, rot) {
+    const g = new THREE.Group();
+    const spots = [[-0.6, 0, 0], [0.6, 0, 0.05], [-0.1, 1.15, 0]];
+    const n = rng() < 0.6 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const [lx, ly, lz] = spots[i];
+      const c = box(1.15, 1.15, 1.15, rng() < 0.5 ? M.planks : M.wood);
+      c.position.set(lx, ly + 0.575, lz);
+      c.rotation.y = rand(-0.12, 0.12);
+      g.add(solid(c));
+    }
+    place(g, x, z, rot, 0.03);
+    reserve(x, z, 1.8);
+    if (n === 3) lootSpots.push({ ...toWorld(g, -0.1, 0), high: true });
+  }
+
+  function tireStack(x, z) {
+    const g = new THREE.Group();
+    const tire = new THREE.TorusGeometry(0.42, 0.17, 6, 14);
+    const n = 2 + Math.floor(rng() * 3);
+    for (let i = 0; i < n; i++) {
+      const t = meshOf(tire, M.rubber);
+      t.rotation.x = PI / 2;
+      t.position.set(rand(-0.05, 0.05), 0.17 + i * 0.32, rand(-0.05, 0.05));
+      g.add(solid(t, false));
+    }
+    proxy(g, 1.1, n * 0.32 + 0.05, 1.1, 0, (n * 0.32) / 2, 0);
+    place(g, x, z, rand(0, PI));
+    reserve(x, z, 0.9);
+  }
+
+  function dumpster(x, z, rot) {
+    const g = new THREE.Group();
+    const body = box(2.2, 1.25, 1.3, pick([M.paintA, M.paintC, M.containerC]));
+    body.position.y = 0.68;
+    g.add(solid(body));
+    const lid = box(2.24, 0.08, 1.36, M.metalDark);
+    lid.position.set(0, 1.34, -0.1);
+    lid.rotation.x = rng() < 0.5 ? -0.5 : 0;
+    g.add(lid);
+    for (const sx of [-0.9, 0.9]) {
+      const w = cyl(0.1, 0.1, 0.1, M.rubber, 8);
+      w.rotation.z = PI / 2;
+      w.position.set(sx, 0.06, 0.5);
+      g.add(w);
+    }
+    place(g, x, z, rot);
+    reserve(x, z, 1.5);
+  }
+
+  // A U of sandbags to crouch behind.
+  function sandbagNest(x, z, rot) {
+    const g = new THREE.Group();
+    place(g, x, z, rot);
+    const at = (lx, lz) => toWorld(g, lx, lz);
+    const f = at(0, -1.4);
+    sandbags(f.x, f.z, rot, 3.6);
+    const l = at(-1.9, 0);
+    sandbags(l.x, l.z, rot + PI / 2, 2.4);
+    const r = at(1.9, 0);
+    sandbags(r.x, r.z, rot + PI / 2, 2.4);
+    reserve(x, z, 2.6);
+  }
+
+  // Street lamp; some flicker.
+  const lampGlow = new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffd88a, emissiveIntensity: 1.4 });
+  function streetLamp(x, z, rot) {
+    const g = new THREE.Group();
+    const pole = cyl(0.07, 0.1, 5, M.metalDark, 8);
+    pole.position.y = 2.5;
+    g.add(solid(pole, false));
+    const arm = box(1.3, 0.08, 0.08, M.metalDark);
+    arm.position.set(0.6, 4.9, 0);
+    g.add(arm);
+    const head = box(0.5, 0.14, 0.3, M.metalDark);
+    head.position.set(1.15, 4.82, 0);
+    g.add(head);
+    const flicker = rng() < 0.35;
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.05, 0.2), flicker ? lampGlow.clone() : lampGlow);
+    bulb.position.set(1.15, 4.73, 0);
+    g.add(bulb);
+    proxy(g, 0.25, 5, 0.25, 0, 2.5, 0);
+    place(g, x, z, rot);
+    reserve(x, z, 0.6);
+    if (flicker) {
+      const seed = rand(0, 10);
+      updaters.push((dt, t) => {
+        const on = Math.sin(t * 9 + seed) + Math.sin(t * 23.7 + seed * 3) > -0.6;
+        bulb.material.emissiveIntensity = on ? 1.4 : 0.05;
+      });
+    }
+  }
+
+  // Cheap scattered detail (bricks, stones, cans, planks, bones): one draw call per kind.
+  const _d = new THREE.Object3D();
+  function clutter(count, geo, material, { minR = 8, maxR = ARENA_RADIUS, y = 0, scale = [0.7, 1.3], flat = false } = {}) {
+    const inst = new THREE.InstancedMesh(geo, material, count);
+    for (let i = 0; i < count; i++) {
+      let x = 0;
+      let z = 0;
+      for (let tries = 0; tries < 12; tries++) {
+        const a = rng() * PI * 2;
+        const d = Math.sqrt(rand((minR / maxR) ** 2, 1)) * maxR;
+        x = Math.cos(a) * d;
+        z = Math.sin(a) * d;
+        if (!reserved.some((o) => Math.hypot(x - o.x, z - o.z) < o.r * 0.8)) break;
+      }
+      const s = rand(scale[0], scale[1]);
+      _d.position.set(x, heightAt(x, z) + y * s, z);
+      _d.rotation.set(flat ? 0 : rand(-0.4, 0.4), rand(0, PI * 2), flat ? 0 : rand(-0.4, 0.4));
+      _d.scale.setScalar(s);
+      _d.updateMatrix();
+      inst.setMatrixAt(i, _d.matrix);
+    }
+    inst.castShadow = false;
+    inst.receiveShadow = true;
+    root.add(inst);
+  }
+  // Rubble heaps next to the ruins.
+  function rubble(x, z, material = M.brick) {
+    const n = 14;
+    const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.4, 0.2, 0.25), material, n);
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, PI * 2);
+      const d = rand(0, 1.4);
+      const px = x + Math.cos(a) * d;
+      const pz = z + Math.sin(a) * d;
+      _d.position.set(px, heightAt(px, pz) + 0.08 + (1.4 - d) * 0.15, pz);
+      _d.rotation.set(rand(-0.6, 0.6), rand(0, PI), rand(-0.6, 0.6));
+      _d.scale.setScalar(rand(0.7, 1.4));
+      _d.updateMatrix();
+      inst.setMatrixAt(i, _d.matrix);
+    }
+    inst.castShadow = true;
+    inst.receiveShadow = true;
+    root.add(inst);
+  }
+
+  // A spot of cover in the open: a few pieces in the map's style, sometimes with a red barrel or ammo.
+  const COVER = {
+    plains: [(x, z, r) => { jersey(x, z, r); jersey(x + Math.cos(r) * 2.8, z - Math.sin(r) * 2.8, r + 0.15); },
+      (x, z, r) => ruinWall(x, z, r, 5, pick([M.brick, M.plaster])),
+      (x, z, r) => { crateStack(x, z, r); tireStack(x + 2.2, z + 1.2); },
+      (x, z, r) => { hayBale(x, z); hayBale(x + 1.6, z + 0.4); tireStack(x - 1.6, z - 0.6); }],
+    frost: [(x, z, r) => sandbagNest(x, z, r),
+      (x, z, r) => { jersey(x, z, r); jersey(x + Math.cos(r) * 2.8, z - Math.sin(r) * 2.8, r); },
+      (x, z, r) => ruinWall(x, z, r, 5, M.concrete),
+      (x, z, r) => crateStack(x, z, r)],
+    forest: [(x, z, r) => ruinWall(x, z, r, 4.5, M.stone),
+      (x, z, r) => crateStack(x, z, r),
+      (x, z, r) => { logPile(x, z, r); },
+      (x, z, r) => sandbagNest(x, z, r)],
+    docks: [(x, z, r) => { jersey(x, z, r); jersey(x + Math.cos(r) * 2.8, z - Math.sin(r) * 2.8, r - 0.1); },
+      (x, z, r) => crateStack(x, z, r),
+      (x, z, r) => dumpster(x, z, r),
+      (x, z, r) => { tireStack(x, z); tireStack(x + 1.2, z + 0.3); pallet(x - 1.6, z); }],
+    ember: [(x, z, r) => ruinWall(x, z, r, 5, M.burnt),
+      (x, z, r) => ruinWall(x, z, r, 4, M.obsidian),
+      (x, z, r) => crateStack(x, z, r),
+      (x, z, r) => sandbagNest(x, z, r)],
+  };
+  function coverSpots(count) {
+    let n = 0;
+    scatter(count, 3.2, (x, z) => {
+      const r = rand(0, PI);
+      pick(COVER[mapId])(x, z, r);
+      n++;
+      // a red barrel or an ammo crate nearby every so often
+      const bx = x + rand(-3, 3);
+      const bz = z + rand(2.5, 3.5) * (rng() < 0.5 ? 1 : -1);
+      if (n % 3 === 0 && isFree(bx, bz, 0.8)) redBarrel(bx, bz);
+      else if (n % 5 === 1 && isFree(bx, bz, 1.1)) ammoCrate(bx, bz, rand(0, PI));
+    }, 15, 72);
+  }
+  // hand-placed extras skip spots that are already taken (spawns, flags, buildings)
+  const clear = (x, z, r) => !reserved.some((o) => Math.hypot(x - o.x, z - o.z) < o.r + r);
+  const at = (fn, r) => (x, z, ...rest) => clear(x, z, r) && fn(x, z, ...rest);
+  const lampAt = at(streetLamp, 0.6);
+  const barrelAt = at(redBarrel, 0.9);
+  const ammoAt = at(ammoCrate, 1.2);
+  const jerseyAt = at(jersey, 1.6);
+  const dumpsterAt = at(dumpster, 1.5);
+  // Every map: cover, barrels, ammo, and small bits lying around.
+  function extras({ cover = 16, barrels = 8, ammo = 3, debris = M.brick, stones = M.rock } = {}) {
+    coverSpots(cover);
+    scatter(barrels, 0.9, redBarrel, 14, 85);
+    scatter(ammo, 1.2, (x, z) => ammoCrate(x, z, rand(0, PI)), 14, 70);
+    clutter(160, new THREE.BoxGeometry(0.3, 0.12, 0.18), debris, { y: 0.05 });
+    clutter(220, new THREE.DodecahedronGeometry(0.16, 0), stones, { y: 0.04, scale: [0.5, 1.6] });
+    clutter(70, new THREE.BoxGeometry(1.4, 0.05, 0.22), M.wood, { y: 0.03, flat: true, maxR: 80 });
+  }
+
   // ---------------------------------------------------------------- layouts
   const layouts = {
     plains() {
@@ -1754,6 +2057,14 @@ export function buildWorld(scene, mapId = 'plains') {
       scatter(14, 1, crate);
       scatter(10, 3, (x, z) => car(x, z, rand(0, PI * 2), { flipped: rng() < 0.25 }), 25, ARENA_RADIUS);
       scatter(30, 3, (x, z) => rock(x, z, rand(1.5, 4)), ARENA_RADIUS + 5, ARENA_RADIUS + 70);
+      // street lamps along the road, cover and barrels around town
+      for (const lx of [-70, -46, -20, 6, 30, 54, 80]) lampAt(lx, 18.6, PI / 2 + (lx % 2 ? 0.05 : -0.05));
+      for (const [x, z, r] of [[-12, 30, 0.1], [22, 18, -0.2], [46, 30, 0.05], [-56, 18, 0]]) jerseyAt(x, z, r);
+      for (const [x, z] of [[-36, 30], [8, 33], [40, 16], [70, 14]]) barrelAt(x, z);
+      dumpsterAt(-18, 44, 0);
+      dumpsterAt(24, 45, PI);
+      ammoAt(-4, 32, 0.3);
+      extras();
       for (let i = 0; i < 8; i++) {
         const a = rand(0, PI * 2);
         const d = rand(20, 100);
@@ -1794,6 +2105,12 @@ export function buildWorld(scene, mapId = 'plains') {
       scatter(18, 0.8, barrel);
       scatter(16, 1, crate);
       scatter(40, 3, (x, z) => pineTree(x, z, { snowy: true, scale: 1.3 }), ARENA_RADIUS + 3, ARENA_RADIUS + 60);
+      // base lights, fuel drums by the tanks, ammo at the bunkers
+      for (const [x, z, r] of [[-20, 0, 0], [20, -4, PI], [-10, 36, PI / 2], [12, -40, -PI / 2], [-40, 30, 0.4], [40, 30, PI]]) lampAt(x, z, r);
+      for (const [x, z] of [[74, -26], [76, -36], [88, -36]]) barrelAt(x, z);
+      ammoAt(-18, -16, 0.2);
+      ammoAt(22, 14, PI);
+      extras({ debris: M.concrete, stones: M.snow, cover: 18 });
     },
 
     forest() {
@@ -1822,6 +2139,11 @@ export function buildWorld(scene, mapId = 'plains') {
       scatter(14, 0.8, barrel);
       scatter(10, 1, crate);
       scatter(60, 3, (x, z) => pineTree(x, z, { scale: 1.4 }), ARENA_RADIUS + 3, ARENA_RADIUS + 60);
+      // lamps by the church path, mushrooms and stumps
+      for (const [x, z] of [[-8, 56], [4, 56], [-8, 44], [4, 44]]) lampAt(x, z, x < 0 ? 0 : PI);
+      clutter(90, new THREE.ConeGeometry(0.12, 0.14, 7), mat(0xb8462e), { y: 0.1, scale: [0.6, 1.5], flat: true });
+      clutter(40, new THREE.CylinderGeometry(0.35, 0.42, 0.45, 9), M.tree, { y: 0.2, flat: true, maxR: 90 });
+      extras({ debris: M.stone, cover: 14, barrels: 6 });
     },
 
     docks() {
@@ -1863,6 +2185,17 @@ export function buildWorld(scene, mapId = 'plains') {
       scatter(26, 0.8, barrel);
       scatter(22, 1, crate);
       scatter(12, 1.5, (x, z) => rock(x, z, rand(0.4, 1.4)));
+      // quay lamps, more cover in the container yard, fuel drums
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * PI * 2 + 0.3;
+        lampAt(Math.cos(a) * 92, Math.sin(a) * 92, -a + PI);
+      }
+      for (const [x, z] of [[60, 20], [74, 30], [-50, -14], [26, 6]]) barrelAt(x, z);
+      dumpsterAt(-20, 22, 0.2);
+      dumpsterAt(36, -24, PI);
+      ammoAt(-6, 22, 0);
+      ammoAt(6, -18, PI);
+      extras({ debris: M.rust, stones: M.concreteDark, cover: 18 });
     },
 
     ember() {
@@ -1890,6 +2223,13 @@ export function buildWorld(scene, mapId = 'plains') {
       scatter(12, 0.8, barrel);
       scatter(10, 1, crate);
       scatter(30, 3, (x, z) => spire(x, z, rand(10, 22)), ARENA_RADIUS + 3, ARENA_RADIUS + 50);
+      // bones, burning braziers and the usual cover
+      clutter(80, new THREE.CylinderGeometry(0.035, 0.035, 0.5, 5), mat(0xd8cdb4), { y: 0.03, scale: [0.6, 1.4] });
+      clutter(30, new THREE.SphereGeometry(0.12, 7, 5), mat(0xd8cdb4), { y: 0.08, scale: [0.8, 1.2] });
+      for (const [x, z] of [[-24, 20], [26, -18], [40, 38], [-40, -30]]) campfire(x + 3, z + 3);
+      ammoAt(-26, 30, 0.3);
+      ammoAt(28, -28, 2.8);
+      extras({ debris: M.burnt, stones: M.obsidian, cover: 16, barrels: 10 });
       for (let i = 0; i < 12; i++) {
         const a = rand(0, PI * 2);
         const d = rand(20, 100);
@@ -2058,6 +2398,25 @@ export function buildWorld(scene, mapId = 'plains') {
     lootSpots,
     ladders,
     hazards,
+    explosives,
+    ammoCrates,
+    // admin: a new red barrel on the spot
+    addBarrel(x, z) {
+      redBarrel(x, z);
+      const b = explosives[explosives.length - 1];
+      b.group.updateMatrixWorld(true);
+      b.group.traverse((o) => o.isMesh && o.userData.solid && solids.push(o));
+      return b;
+    },
+    // a barrel blowing up (alive=false) or coming back
+    setBarrel(id, alive) {
+      const b = explosives[id];
+      if (!b) return null;
+      b.alive = alive;
+      b.group.visible = alive;
+      b.col.top = alive ? b.top : -Infinity;
+      return b;
+    },
     mapId,
     theme,
     atmosphere: { skyTop: skyColorTop, skyHorizon: skyColorHorizon, hemi, sun, fill, sunDir },

@@ -118,12 +118,17 @@ function savePref(k, v) {
 }
 
 // ---------------------------------------------------------------- maps
+// map props state (red barrels, ammo crates), reset with every map load
+const barrelQueue = []; // { b, t, mine }
+const barrelsGone = []; // { b, t }
+const ammoCd = new Map(); // crate -> seconds left
 function loadMap(id) {
-  if (world && world.mapId === id) return;
+  if (world && world.mapId === id) return resetMapProps();
   if (world) world.dispose();
   if (weather) weather.dispose();
   world = buildWorld(scene, id);
   world.setEffects(effects);
+  resetMapProps();
   if (!zombies) {
     zombies = new ZombieManager(scene, world, effects, audio);
     // co-op host: show the acid to everyone else too
@@ -437,6 +442,10 @@ function traceBullet(origin, dir, primary) {
         break;
       }
     } else {
+      if (ud.barrel) {
+        if (!ud.barrel.alive) continue;
+        detonateBarrel(ud.barrel, true);
+      }
       end = h.point.clone();
       impact = true;
       effects.dust(end);
@@ -575,6 +584,7 @@ function chainLightning(from, point, dmg) {
 
 function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false, src = null } = {}) {
   effects.explosion(point, radius / 2.6);
+  chainBarrels(point, radius, dmg > 0);
   if (color) effects.burst(point, { count: 30, color, speed: radius * 1.5, size: 0.16, life: 0.7, grav: 4, up: 1.2 });
   if (explosionSoundT <= 0) {
     audio.explosion(point);
@@ -585,7 +595,7 @@ function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false, src 
     if (d < radius) onPlayerHit(null, 30 * (1 - (d / radius) * 0.6), 'blast');
     if (isCoop() && simHost()) mp.relay('all', { k: 'boom', x: point.x, y: point.y, z: point.z, r: radius });
   }
-  if (!zombieGame()) return;
+  if (!zombieGame() || dmg <= 0) return;
   if (hurtsPlayer && simHost()) {
     for (const st of [...structures.list]) {
       const d = st.pos.distanceTo(point);
@@ -607,6 +617,101 @@ function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false, src 
     if (zombies.damage(z, dmg * fall, { slow: stats.slow })) killedBy(z, false, 'me', null, src);
     else showHit('');
   }
+}
+
+// ---------------------------------------------------------------- red barrels and ammo crates on the maps
+// Shoot a red barrel (or blow something up next to it) and it goes off a moment later, setting off
+// its neighbours. Whoever set it off does the damage; everyone else just sees it. They come back after a minute.
+const BARREL_R = 5.5;
+const BARREL_DMG = 220;
+const BARREL_BACK = 60;
+function detonateBarrel(b, mine) {
+  if (!b.alive) return;
+  world.setBarrel(b.id, false);
+  barrelsGone.push({ b, t: BARREL_BACK });
+  if (mine && game.mode === 'mp') mp.send({ t: 'fx', k: 'barrel', id: b.id });
+  const p = new THREE.Vector3(b.x, b.y + 0.6, b.z);
+  effects.explosion(p, 1.6);
+  effects.burst(p, { count: 26, color: [0xff7a1a, 0xffc04a, 0x3a3632], speed: 9, size: 0.2, life: 0.9, grav: 6, up: 2 });
+  explodeAt(p, BARREL_R, mine ? BARREL_DMG * (zombieGame() ? 1 : 0.6) : 0, { src: 'barrel' });
+  // it hurts you too if you're standing next to it (PvP damage goes through the server)
+  const me = new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z);
+  const d = p.distanceTo(me);
+  if (zombieGame() && !player.dead && d < BARREL_R) onPlayerHit(null, 45 * (1 - (d / BARREL_R) * 0.7), 'blast');
+  if (mine && game.mode === 'mp' && !isCoop()) {
+    for (const a of mp.avatars.values()) {
+      if (!a.alive || !mp.isEnemy(a.id)) continue;
+      const ad = Math.hypot(a.pos.x - p.x, a.pos.y + 1 - p.y, a.pos.z - p.z);
+      if (ad < BARREL_R) mp.reportHit(a.id, Math.round(110 * (1 - (ad / BARREL_R) * 0.6)), false);
+    }
+  }
+}
+function chainBarrels(point, radius, mine) {
+  for (const b of world.explosives || []) {
+    if (!b.alive || barrelQueue.some((q) => q.b === b)) continue;
+    if (Math.hypot(b.x - point.x, b.y + 0.5 - point.y, b.z - point.z) < radius + 0.5) barrelQueue.push({ b, t: 0.18 + Math.random() * 0.12, mine });
+  }
+}
+// Ammo crates: press E (controller X) next to one. Each crate refills you once every 45 seconds.
+const AMMO_CD = 45;
+let ammoKeyWas = false;
+function updateMapProps(dt) {
+  for (let i = barrelQueue.length - 1; i >= 0; i--) {
+    const q = barrelQueue[i];
+    if ((q.t -= dt) > 0) continue;
+    barrelQueue.splice(i, 1);
+    detonateBarrel(q.b, q.mine);
+  }
+  for (let i = barrelsGone.length - 1; i >= 0; i--) {
+    const g = barrelsGone[i];
+    if ((g.t -= dt) > 0) continue;
+    // wait until nobody's standing on the spot
+    if (Math.hypot(g.b.x - player.pos.x, g.b.z - player.pos.z) < 1.2) continue;
+    barrelsGone.splice(i, 1);
+    world.setBarrel(g.b.id, true);
+  }
+  let near = null;
+  for (const c of world.ammoCrates || []) {
+    const left = ammoCd.get(c) || 0;
+    if (left > 0) {
+      ammoCd.set(c, left - dt);
+      if (left - dt <= 0) c.lamp.material.color.setHex(0x5aff6a);
+    }
+    if (!player.dead && Math.hypot(c.x - player.pos.x, c.z - player.pos.z) < 2 && Math.abs(c.y - player.pos.y) < 1.6) near = c;
+  }
+  const reviving = document.body.classList.contains('can-revive');
+  const usable = near && !reviving && !(mp.infection && mp.infected);
+  const key = player.keys.has('KeyE');
+  if (usable && key && !ammoKeyWas && !((ammoCd.get(near) || 0) > 0)) {
+    for (const sl of weapon.slots) if (sl.reserve !== Infinity && !sl.def.melee) sl.reserve = Math.max(sl.reserve, weapon.magSize(stats, sl.def) * 5);
+    weapon.refillMags(stats);
+    giveGrenades(1);
+    ammoCd.set(near, AMMO_CD);
+    near.lamp.material.color.setHex(0xff3a2a);
+    audio.pickup?.();
+    subBanner('🔫 Ammo refilled · +1 grenade', 1.6);
+  }
+  ammoKeyWas = key;
+  document.body.classList.toggle('can-use', !!usable);
+  if (reviving) return;
+  const el = $('interact');
+  el.classList.toggle('hidden', !usable);
+  if (usable) {
+    const left = Math.ceil(ammoCd.get(near) || 0);
+    const html = left > 0 ? `Ammo crate empty · back in <b>${left}s</b>` : 'Press <b>E</b> for ammo';
+    if (last.interact !== html) {
+      last.interact = html;
+      el.innerHTML = html;
+    }
+  }
+}
+// a new map: every barrel and crate starts fresh
+function resetMapProps() {
+  barrelQueue.length = 0;
+  barrelsGone.length = 0;
+  ammoCd.clear();
+  for (const b of world.explosives || []) if (!b.alive) world.setBarrel(b.id, true);
+  for (const c of world.ammoCrates || []) c.lamp.material.color.setHex(0x5aff6a);
 }
 
 // Bloaters burst in a cloud of toxic gunk, whether they die or reach you.
@@ -1739,6 +1844,7 @@ function updateHud(dt) {
   const marks = [];
   if (game.mode === 'mp') marks.push(...mp.minimapMarkers());
   if (supply) marks.push(...supply.minimapMarkers());
+  for (const c of world.ammoCrates || []) marks.push({ x: c.x, z: c.z, color: (ammoCd.get(c) || 0) > 0 ? '#6a6a5a' : '#a8d65a', r: 2.2, shape: 'diamond' });
   if (zombieGame()) {
     for (const z of zombies.list) {
       if (!z.alive) continue;
@@ -2313,6 +2419,11 @@ const mp = new Multiplayer({
     structures.remove(id, effects);
   },
   onFx(m) {
+    if (m.k === 'barrel') {
+      const b = world.explosives?.[m.id];
+      if (b) detonateBarrel(b, false);
+      return;
+    }
     if (m.k === 'boom' && Array.isArray(m.p)) {
       const p = new THREE.Vector3(m.p[0], m.p[1], m.p[2]);
       effects.explosion(p, 2.5);
@@ -3409,6 +3520,33 @@ accountUI.adminActions = {
     soloSupplyDrop({ x: player.pos.x + 3, z: player.pos.z + 1 });
     return 'Supply drop on its way to you.';
   },
+  // map props: red barrels and ammo crates (solo games)
+  barrels(what) {
+    if (game.mode !== 'solo' || inMenu()) return 'Start a solo game first.';
+    const list = world.explosives || [];
+    if (what === 'boom') {
+      const live = list.filter((b) => b.alive);
+      live.forEach((b, i) => barrelQueue.push({ b, t: 0.05 + i * 0.04, mine: true }));
+      return `💥 ${live.length} barrels going off.`;
+    }
+    if (what === 'back') {
+      resetMapProps();
+      return `All ${list.length} barrels are back and every ammo crate is full.`;
+    }
+    if (what === 'place') {
+      camera.getWorldDirection(_dir);
+      const x = player.pos.x + _dir.x * 3;
+      const z = player.pos.z + _dir.z * 3;
+      world.addBarrel(x, z);
+      return 'Red barrel placed in front of you. Shoot it!';
+    }
+    if (what === 'ammo') {
+      ammoCd.clear();
+      for (const c of world.ammoCrates || []) c.lamp.material.color.setHex(0x5aff6a);
+      return `All ${(world.ammoCrates || []).length} ammo crates are full again.`;
+    }
+    return '';
+  },
   announce(text) {
     if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
     if (!String(text).trim()) return 'Type a message first.';
@@ -3451,6 +3589,7 @@ function update(dt) {
   updateThrown(dt);
   if (build.on) updateBuildGhost();
   updateRevive(dt);
+  updateMapProps(dt);
   questFlushT -= dt;
   if (questFlushT <= 0) flushQuests();
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
