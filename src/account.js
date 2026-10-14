@@ -939,7 +939,7 @@ export class AccountUI {
         ${[
           ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
           ['speed', '2× move speed'], ['freeze', 'Freeze zombies'], ['slowmo', 'Slow motion'], ['nohud', 'Hide HUD (screenshots)'],
-          ['grenades', 'Infinite grenades'], ['build', 'Free building (no scrap)'], ['turrets', 'Super turrets (5× damage)'], ['instabuild', 'Unlimited builds (no max)'],
+          ['grenades', 'Infinite grenades'], ['build', 'Free building (no scrap)'], ['turrets', 'Super turrets (5× damage)'],
         ]
           .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${mp ? 'disabled' : ''} /> ${label}</label>`)
           .join('')}
@@ -952,6 +952,8 @@ export class AccountUI {
         <button class="btn small" data-run="heal" ${solo ? '' : 'disabled'}>FULL HEAL + OVERHEAL</button>
         <button class="btn small" data-run="boss" ${solo ? '' : 'disabled'}>SPAWN BOSS</button>
         <button class="btn small" data-run="killall" ${solo ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
+        <button class="btn small" data-run="startwave" ${solo ? '' : 'disabled'}>▶ START NEXT WAVE NOW</button>
+        <button class="btn small" data-run="repairbuilds" ${solo ? '' : 'disabled'}>🔧 REPAIR ALL MY BUILDS</button>
         <button class="btn small" data-run="scrap" ${solo ? '' : 'disabled'}>🔩 MAX SCRAP</button>
         <button class="btn small" data-run="nades" ${solo ? '' : 'disabled'}>💣 REFILL GRENADES</button>
         <button class="btn small" data-run="infinitereserve" ${solo ? '' : 'disabled'}>♾️ UNLIMITED RESERVE (ALL MY GUNS)</button>

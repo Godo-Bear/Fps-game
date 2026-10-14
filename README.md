@@ -111,9 +111,15 @@ you log in). Dying ends that game and deletes its save.
 - **G** throws a grenade. You carry up to 4 (more with the **Grenadier** shop upgrade) and get 2 back for every wave
   you clear and when you respawn.
 - **B** opens build mode: **1** sandbag barricade (10 scrap), **2** turret (35 scrap), **R** turns it, click places it.
-  Scrap comes from kills and cleared waves. Zombies have to tear barricades down, and turrets shoot the nearest
+  There's no limit on how many you build; scrap is the only cost. Scrap comes from kills and cleared waves. Zombies have to tear barricades down, and turrets shoot the nearest
   zombie (or enemy player) in range. It works in every mode; online everyone sees the same builds, and in PvP you
   can shoot or blow up the other side's.
+
+### Ready up between waves
+After you clear a wave (and pick a power-up) the next one waits until you press **E** (controller **X**, **✚** on phones),
+so you can build, restock and get into position. In co-op every squadmate still standing has to be ready; if someone's
+away it starts by itself after 2 minutes. Turn on *Start waves by themselves* in Settings (or pick it in the co-op room
+settings) to go back to the timer.
 
 ### Night waves
 Every 4th wave (4, 8, 12...) happens at night: the sky goes dark, the moon comes out and a flashlight comes on.
@@ -212,7 +218,7 @@ or any zombie type, kill all zombies, set weather, set score and jump to any wav
 in multiplayer admins get an ADMIN badge and can kick players.
 
 Newer admin tools: max or reset all **gun mastery** (every skin unlocked), finish or reset **today's quests**,
-replay or skip the **tutorial**, spawn a **specific boss**, **unlimited reserve for all your guns**, **infinite grenades**, **free building**, **unlimited builds**,
+replay or skip the **tutorial**, spawn a **specific boss**, **unlimited reserve for all your guns**, **infinite grenades**, **free building**, **repair all your builds**, **start the next wave now**,
 **super turrets**, max / set **scrap**, refill / set **grenades**, remove all builds and zero scrap & grenades.
 Admins can also reset their quick chat wheel to the defaults.
 

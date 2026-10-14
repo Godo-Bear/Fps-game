@@ -34,6 +34,7 @@ export const MODE_SETTINGS = {
   coop: [
     { key: 'wave', label: '🌊 Starting wave', options: opt([1, 5, 10, 15, 20], (v) => `Wave ${v}`), def: 1 },
     { key: 'zhp', label: '🧟 Zombie health', options: opt([50, 75, 100, 150, 200], (v) => `${v}%`), def: 100 },
+    { key: 'start', label: '▶ Next wave starts', options: [['ready', 'When everyone is ready'], ['auto', 'By itself (timer)']], def: 'ready' },
     DROPS,
   ],
   defend: [],

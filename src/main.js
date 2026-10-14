@@ -70,7 +70,7 @@ const medkits = [];
 const game = {
   mode: 'solo', // solo | mp
   state: 'menu', // menu | mpmenu | lobby | newgame | saves | playing | paused | choosing | gameover | mpend
-  phase: 'countdown', // countdown | active | cleared
+  phase: 'countdown', // prep (waiting for READY) | countdown | active | cleared | picking
   map: SOLO_MAP, // solo is always Dead Plains; the other maps are multiplayer-only
   wave: 0,
   kills: 0,
@@ -273,6 +273,18 @@ function spawnAnchor() {
 
 function updateWave(dt) {
   if (game.phase === 'tutorial') return updateTutorial(dt);
+  if (game.phase === 'prep') {
+    // the wave waits until everyone still standing is ready (in co-op a slow squad gets 2 minutes)
+    const need = prepNeeded();
+    if (isCoop()) prep.t -= dt;
+    if ((need.length && need.every((id) => prep.ready.has(id))) || (isCoop() && prep.t <= 0)) {
+      game.phase = 'countdown';
+      game.timer = 3;
+      if (isCoop()) mp.relay('all', { k: 'wavego', wave: game.wave + 1 });
+      banner('GET READY', `Wave ${game.wave + 1} in 3 seconds`, '', 1.4);
+    }
+    return;
+  }
   if (game.phase === 'countdown') {
     const before = Math.ceil(game.timer);
     game.timer -= dt;
@@ -341,10 +353,68 @@ function updateWave(dt) {
   if (game.phase === 'picking') {
     coop.pickT -= dt;
     const alive = [...mp.avatars.values()].filter((a) => a.alive).length + (player.dead ? 0 : 1);
-    if (coop.ready.size >= alive || coop.pickT <= 0) {
-      game.phase = 'countdown';
-      game.timer = 5;
-    }
+    if (coop.ready.size >= alive || coop.pickT <= 0) toPrep(5);
+  }
+}
+
+// ---------------------------------------------------------------- ready up between waves
+// Between waves the next one waits until you press E (controller X, the ✚ button on phones), so you
+// can build, restock and get into position. In co-op every squadmate still standing has to be ready.
+// "Start waves by themselves" in Settings (solo) or the room setting (co-op) brings back the timer.
+const prep = { ready: new Set(), me: false, keyWas: false, t: 0, rd: 0, nd: 0 };
+const PREP_COOP_MAX = 120;
+function autoWaves() {
+  return isCoop() ? mp.settings.start === 'auto' : !!settings.autoWaves;
+}
+// the solo player / co-op host moves the run into the break before the next wave
+function toPrep(autoSeconds = 5) {
+  prep.ready = new Set();
+  prep.me = false;
+  prep.t = PREP_COOP_MAX;
+  if (autoWaves()) {
+    game.phase = 'countdown';
+    game.timer = autoSeconds;
+  } else {
+    game.phase = 'prep';
+  }
+}
+function prepNeeded() {
+  const ids = player.dead ? [] : ['me'];
+  if (isCoop()) for (const a of mp.avatars.values()) if (a.alive) ids.push(a.id);
+  if (!ids.length && isCoop()) for (const a of mp.avatars.values()) ids.push(a.id);
+  return ids;
+}
+function setReady() {
+  if (prep.me) return;
+  prep.me = true;
+  audio.click?.(1.2, 0.4);
+  if (simHost()) prep.ready.add('me');
+  else mp.relay('host', { k: 'waveready' });
+}
+let nearAmmo = false;
+function updateReadyUp() {
+  const on = zombieGame() && game.phase === 'prep' && game.state === 'playing';
+  const key = player.keys.has('KeyE') || player.keys.has('KeyN');
+  if (on && key && !prep.keyWas && !nearAmmo && !document.body.classList.contains('can-revive')) setReady();
+  prep.keyWas = key;
+  document.body.classList.toggle('can-ready', on && !prep.me);
+  const el = $('wave-ready');
+  el.classList.toggle('hidden', !on);
+  if (!on) return;
+  const how = controls.mode === 'touch' ? 'Tap <b>✚</b>' : controls.mode === 'pad' ? 'Press <b>X</b>' : 'Press <b>E</b>';
+  let squad = '';
+  if (isCoop()) {
+    const rd = simHost() ? prep.ready.size : prep.rd;
+    const nd = simHost() ? prepNeeded().length : prep.nd;
+    const left = Math.max(0, Math.ceil(simHost() ? prep.t : prep.left || 0));
+    squad = `<div class="wr-squad">${rd}/${nd} ready${left ? ` · starts anyway in ${left}s` : ''}</div>`;
+  }
+  const html = prep.me
+    ? `<div class="wr-title ok">✔ READY</div><div>${isCoop() ? 'Waiting for your squad…' : 'Here they come…'}</div>${squad}`
+    : `<div class="wr-title">WAVE ${game.wave + 1} IS WAITING</div><div>Build, restock and get in position. ${how} when you're ready</div>${squad}`;
+  if (last.waveReady !== html) {
+    last.waveReady = html;
+    el.innerHTML = html;
   }
 }
 
@@ -681,6 +751,7 @@ function updateMapProps(dt) {
   }
   const reviving = document.body.classList.contains('can-revive');
   const usable = near && !reviving && !(mp.infection && mp.infected);
+  nearAmmo = !!usable;
   const key = player.keys.has('KeyE');
   if (usable && key && !ammoKeyWas && !((ammoCd.get(near) || 0) > 0)) {
     for (const sl of weapon.slots) if (sl.reserve !== Infinity && !sl.def.melee) sl.reserve = Math.max(sl.reserve, weapon.magSize(stats, sl.def) * 5);
@@ -865,13 +936,12 @@ function updateBuildGhost() {
   Object.assign(_foot, { x: build.x, z: build.z, hx: def.hx, hz: def.hz, cos, sin });
   if (world.colliders._dist2(_foot, player.pos.x, player.pos.z) < 0.5 * 0.5) ok = false;
   if (!ok) build.why = "Can't build there";
-  else if (structures.count(build.kind, myOwner()) >= def.max && !(cheatsOn() && cheats.instabuild)) build.why = `You can only have ${def.max} ${def.name.toLowerCase()}s`;
   else if (game.scrap < def.cost && !freeBuild()) build.why = `Need ${def.cost} scrap`;
   build.valid = !build.why;
   structures.showGhost(build.kind, build.x, build.z, build.yaw, build.valid);
   const opt = (k) => {
     const d = STRUCTURES[k];
-    return `<span class="${build.kind === k ? 'on' : ''}"><b>${d.key}</b> ${d.icon} ${d.name} · 🔩${d.cost} <small>(${structures.count(k, myOwner())}/${d.max})</small></span>`;
+    return `<span class="${build.kind === k ? 'on' : ''}"><b>${d.key}</b> ${d.icon} ${d.name} · 🔩${d.cost} <small>(${structures.count(k, myOwner())} built)</small></span>`;
   };
   const html = `<div class="b-title">BUILD MODE · 🔩 ${game.scrap} scrap</div><div class="b-opts">${opt('barricade')}${opt('turret')}</div>
     <div class="b-help">${build.why ? `<b class="bad">${build.why}</b>` : 'Click to place'} · R turn · B or right-click to stop</div>`;
@@ -1548,10 +1618,9 @@ function choose(i) {
     lock();
     return;
   }
-  game.phase = 'countdown';
-  game.timer = 6;
+  toPrep(6);
   persistRun();
-  pauseFor('READY?', 'Click to drop back in · progress saved');
+  pauseFor('READY?', autoWaves() ? 'Click to drop back in · progress saved' : `Click to drop back in · progress saved · wave ${game.wave + 1} starts when you press E`);
   lock();
 }
 
@@ -1781,7 +1850,7 @@ function updateHud(dt) {
   if (zombieGame()) {
     setText('wave-label', game.wave > 0 ? `WAVE ${game.wave}${game.night ? ' 🌙' : ''}` : 'GET READY');
     const remaining = game.phase !== 'active' ? 0 : simHost() ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : coop.remaining;
-    setText('zombies-left', game.phase === 'tutorial' ? 'Tutorial' : game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : 'Wave cleared');
+    setText('zombies-left', game.phase === 'tutorial' ? 'Tutorial' : game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : game.phase === 'prep' ? `Wave ${game.wave + 1} · get ready` : 'Wave cleared');
     setText('score', String(game.score));
     setText('kills', `${game.kills} kills`);
     setText('run-coins', `🪙 +${coinsForRun({ mode: 'solo', wave: game.wave, kills: game.kills, headshots: game.headshots })}`);
@@ -2168,13 +2237,15 @@ function startGame(save = null, name = null) {
     applyShop();
     persistRun(); // it shows up in Saved Games straight away
   }
+  toPrep(5);
   tut.on = false;
   $('tutorial').classList.add('hidden');
   if (!save && tutorialWanted()) startTutorial();
   $('run-name').textContent = game.runName;
   $('banner').className = '';
   $('subbanner').className = '';
-  pauseFor(game.runName.toUpperCase(), save ? `Continuing · wave ${game.wave + 1} starts in 5 seconds` : tut.on ? `${world.theme.name} · a quick tutorial first (you can skip it)` : `${world.theme.name} · the first wave comes in 5 seconds`);
+  const when = autoWaves() ? 'in 5 seconds' : 'when you press E';
+  pauseFor(game.runName.toUpperCase(), save ? `Continuing · wave ${game.wave + 1} starts ${when}` : tut.on ? `${world.theme.name} · a quick tutorial first (you can skip it)` : `${world.theme.name} · the first wave comes ${when}`);
   lock();
 }
 
@@ -2306,6 +2377,7 @@ const mp = new Multiplayer({
     clearMedkits();
     player.reset(100);
     Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0, night: false });
+    if (MODES[mode].coop) toPrep(8);
     structures.clear();
     setBuild(false);
     $('banner').className = '';
@@ -2784,7 +2856,7 @@ const _fwd = new THREE.Vector3();
 // ---------------------------------------------------------------- admin (solo only; the account must be verified by the server)
 let adminBossN = 0;
 let adminSoloMap = SOLO_MAP;
-const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false, grenades: false, build: false, turrets: false, instabuild: false };
+const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false, grenades: false, build: false, turrets: false };
 const cheatsOn = () => account.admin && game.mode === 'solo';
 // a cheat that changes the game is on (keeps you off the live leaderboard)
 const usingCheats = () => cheatsOn() && Object.entries(cheats).some(([k, v]) => v && k !== 'nohud');
@@ -2925,9 +2997,8 @@ function endTutorial(skipped) {
   $('tutorial').classList.add('hidden');
   if (tut.dummy && tut.dummy.alive) zombies.damage(tut.dummy, 1e9);
   setBuild(false);
-  game.phase = 'countdown';
-  game.timer = 5;
-  banner(skipped ? 'TUTORIAL SKIPPED' : "YOU'RE READY", 'The first wave is coming', 'gold', 2.2);
+  toPrep(5);
+  banner(skipped ? 'TUTORIAL SKIPPED' : "YOU'RE READY", autoWaves() ? 'The first wave is coming' : 'Press E when you want the first wave', 'gold', 2.2);
 }
 
 function renderTutorial() {
@@ -3154,7 +3225,7 @@ function nextSpectate() {
 // ---------------------------------------------------------------- settings (saved in this browser)
 const SETTINGS_KEY = 'deadplains.settings';
 const DEFAULT_SETTINGS = {
-  sens: 1, padSens: 1, invertY: false, fov: 75, volume: 0.8, quality: 'high', dmgNumbers: true, fps: false, tutorial: true,
+  sens: 1, padSens: 1, invertY: false, fov: 75, volume: 0.8, quality: 'high', dmgNumbers: true, fps: false, tutorial: true, autoWaves: false,
   // the extra ones behind "Show all settings"
   hudScale: 1, crosshairSize: 1, minimap: true, chat: true, hitmarkers: true, shake: 1, bob: true, toggleAim: false, bubbles: true, flashlight: true,
 };
@@ -3202,6 +3273,7 @@ const SETTING_ROWS = [
   ['dmgNumbers', 'Damage numbers', 'check'],
   ['fps', 'Show FPS', 'check'],
   ['tutorial', 'Tutorial wave for new games', 'check'],
+  ['autoWaves', 'Start waves by themselves (no READY button)', 'check'],
 ];
 // everything else, behind "Show all settings"
 const MORE_SETTING_ROWS = [
@@ -3465,6 +3537,16 @@ accountUI.adminActions = {
         }
         if (game.phase !== 'active') game.phase = 'active';
         return `${(BOSSES[value] || BOSSES.abomination).name} spawned.`;
+      case 'repairbuilds': {
+        const mine = structures.list.filter((st) => st.owner === myOwner());
+        for (const st of mine) structures.setHp(st.id, st.def.hp);
+        return `Repaired ${mine.length} build${mine.length === 1 ? '' : 's'} to full health.`;
+      }
+      case 'startwave':
+        if (game.phase !== 'prep') return 'No wave is waiting right now.';
+        game.phase = 'countdown';
+        game.timer = 1;
+        return `Wave ${game.wave + 1} is starting.`;
       case 'killall':
         for (const z of zombies.list) if (z.alive && zombies.damage(z, 1e9)) onKill(z, false);
         game.toSpawn = 0;
@@ -3590,6 +3672,7 @@ function update(dt) {
   if (build.on) updateBuildGhost();
   updateRevive(dt);
   updateMapProps(dt);
+  updateReadyUp();
   questFlushT -= dt;
   if (questFlushT <= 0) flushQuests();
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
@@ -3631,7 +3714,7 @@ function worldTick(dt) {
     if (mp.isHost() && coop.snapT <= 0) {
       coop.snapT = 0.1;
       const remaining = game.phase === 'active' ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : 0;
-      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.timer), z: zombies.snapshot(), pt: isDefend() ? defend.rows() : undefined, n: game.night ? 1 : 0 });
+      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.phase === 'prep' ? prep.t : game.timer), z: zombies.snapshot(), pt: isDefend() ? defend.rows() : undefined, n: game.night ? 1 : 0, rd: game.phase === 'prep' ? [prep.ready.size, prepNeeded().length] : undefined });
     }
     coop.scoreT -= dt;
     if (coop.scoreT <= 0) {
@@ -3651,8 +3734,12 @@ function onCoopRelay(from, d) {
       if (isDefend()) defend.apply(d.pt);
       game.wave = d.w | 0;
       coop.remaining = d.r | 0;
+      // a new break: everyone starts not ready
+      if (d.p === 'prep' && game.phase !== 'prep') prep.me = false;
       game.phase = d.p === 'picking' ? 'cleared' : d.p;
-      game.timer = d.t || 0;
+      game.timer = d.p === 'prep' ? 0 : d.t || 0;
+      if (Array.isArray(d.rd)) [prep.rd, prep.nd] = d.rd;
+      prep.left = d.p === 'prep' ? d.t : 0;
       break;
     case 'zhit': {
       // a guest shot one of our zombies
@@ -3708,6 +3795,14 @@ function onCoopRelay(from, d) {
       break;
     case 'ready':
       if (mp.isHost()) coop.ready.add(from);
+      break;
+    case 'waveready':
+      if (mp.isHost() && game.phase === 'prep') prep.ready.add(from);
+      break;
+    case 'wavego':
+      if (mp.isHost()) return;
+      prep.me = false;
+      banner('GET READY', `Wave ${d.wave | 0} in 3 seconds`, '', 1.4);
       break;
     case 'bossfx':
       if (mp.isHost()) return;

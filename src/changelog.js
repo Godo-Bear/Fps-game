@@ -2,6 +2,16 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.8', date: '14 Oct 2026', title: 'Ready up between waves & build as much as you like',
+    items: [
+      'The next wave waits for you: build, restock and get in position, then press E (controller X, ✚ on phones) when you\'re ready. It starts 3 seconds later.',
+      'In co-op every squadmate still standing has to be ready ("2/3 ready" shows on screen). If someone is away, the wave starts by itself after 2 minutes.',
+      'Prefer the old timer? Turn on "Start waves by themselves" in Settings, or pick "By itself (timer)" in the co-op room settings.',
+      'No more limit on barricades and turrets: build as many as your scrap pays for.',
+      'Admin: start the next wave now, and repair all your builds.',
+    ],
+  },
+  {
     v: '4.7', date: '14 Oct 2026', title: 'Busier maps: cover, red barrels & ammo crates',
     items: [
       'Every map has lots more cover out in the open: concrete barriers, half-fallen walls, stacked crates you can climb, tyre piles, dumpsters and sandbag nests.',

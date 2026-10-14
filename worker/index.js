@@ -1148,8 +1148,6 @@ export class Room extends DurableObject {
         if (!def || ![m.x, m.z, m.rot].every(Number.isFinite)) return;
         if (now - (p.lastBuild || 0) < 400) return;
         const all = this.match.structures;
-        const mine = [...all.values()].filter((o) => o.owner === p.id && o.kind === m.kind).length;
-        if (mine >= def.max) return this._send(p, { t: 'msg', text: `You can only have ${def.max} ${def.name.toLowerCase()}s` });
         if (all.size >= MAX_STRUCTURES) return this._send(p, { t: 'msg', text: 'This room has too many things built' });
         if (Math.hypot(m.x - p.pos[0], m.z - p.pos[2]) > BUILD_REACH + 2 || Math.hypot(m.x, m.z) > 112) return;
         p.lastBuild = now;

@@ -1992,7 +1992,8 @@ body.touch-mode #build-hud {
   background: rgba(93, 255, 106, 0.35);
 }
 body.can-revive .t-revive,
-body.can-use .t-revive {
+body.can-use .t-revive,
+body.can-ready .t-revive {
   display: block;
 }
 
@@ -3099,3 +3100,32 @@ body.infected #game::after {
 .fn-room:has(.fn-leave) { opacity: 1; }
 #party-bar .btn.fn-leave { pointer-events: auto; background: rgba(12, 14, 20, 0.78); color: #fff; border: 1px solid rgba(255, 255, 255, 0.35); text-shadow: none; }
 #party-bar .btn.fn-leave:hover { background: #c0392b; border-color: #c0392b; }
+
+/* waiting for READY between waves */
+#wave-ready {
+  position: absolute;
+  top: 24%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 211, 77, 0.45);
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+  max-width: min(92vw, 520px);
+}
+#wave-ready .wr-title {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: #ffd34d;
+  margin-bottom: 2px;
+  animation: wrPulse 1.6s ease-in-out infinite;
+}
+#wave-ready .wr-title.ok { color: #6dff7a; animation: none; }
+#wave-ready .wr-squad { margin-top: 4px; color: #cfd8e0; font-size: 13px; }
+@keyframes wrPulse { 50% { opacity: 0.6; } }
