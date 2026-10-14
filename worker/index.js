@@ -5,7 +5,11 @@ import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery } from '../shared/mastery.js';
-import { cleanQuick, cleanQuickText, refundOldEmotes, FFA_SPAWNS, FLAG_BASES, MAPS, MP_MAPS, MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, TEAM_SPAWNS } from '../shared/modes.js';
+import {
+  cleanQuick, cleanQuickText, cleanSettings, limitFor, refundOldEmotes, DEFEND_POINTS, FFA_SPAWNS, FLAG_BASES, GUN_LADDERS, INFECT_DELAY, INFECTED, MAPS, MODE_SETTINGS, MP_MAPS,
+  MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, SUPPLY_EVERY, SUPPLY_FALL, SUPPLY_FIRST, SUPPLY_GUNS, SUPPLY_LAST, SUPPLY_MAX, SUPPLY_REACH, SURVIVORS, TEAM_SPAWNS,
+} from '../shared/modes.js';
+import { cleanWords, filterText, makeFilter, nameBlocked } from '../shared/filter.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -15,6 +19,8 @@ const err = (msg, status = 400) => json({ error: msg }, status);
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    // the rooms and the database talk to each other with this header; nobody outside can send it
+    if (request.headers.has('x-internal')) return new Response('Forbidden', { status: 403 });
     const room = /^\/api\/room\/([A-Z0-9]{5})\/ws$/.exec(url.pathname);
     if (room) return env.ROOMS.get(env.ROOMS.idFromName(room[1])).fetch(request);
     if (url.pathname.startsWith('/api/')) return env.DB.get(env.DB.idFromName('global')).fetch(request);
@@ -44,6 +50,7 @@ function sameString(a, b) {
 const USERNAME = /^[A-Za-z0-9_]{3,16}$/;
 const DAY = 86400000;
 const ONLINE_MS = 3 * 60000;
+const LIVE_MS = 45000; // how long a live leaderboard entry lasts without an update
 const PARTY_MAX = 8;
 
 // ---------------------------------------------------------------- accounts, friends, progress
@@ -95,13 +102,20 @@ export class GameDB extends DurableObject {
     }
     // added later: the saved solo run (so you can continue on any device), coins and shop items
     // and later still: several named saved games (JSON object of id -> save)
-    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT', 'quests TEXT', 'mastery TEXT']) {
+    // and later: bans, timeouts, which room you're in (for admins) and your last IP (for bans)
+    for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT', 'quests TEXT', 'mastery TEXT',
+      'banned INTEGER NOT NULL DEFAULT 0', 'timeout_until INTEGER NOT NULL DEFAULT 0', 'room TEXT', 'last_ip TEXT',
+      'live_wave INTEGER NOT NULL DEFAULT 0', 'live_score INTEGER NOT NULL DEFAULT 0', 'live_at INTEGER NOT NULL DEFAULT 0']) {
       try {
         this.sql.exec(`ALTER TABLE users ADD COLUMN ${col}`);
       } catch {
         /* column already exists */
       }
     }
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS ip_bans (ip TEXT PRIMARY KEY, user INTEGER NOT NULL, created INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    `);
     this.adminTries = new Map(); // user id -> [count, windowStart]
     this.fails = new Map(); // username -> [count, windowStart]
     this.signups = new Map(); // ip -> [count, windowStart]
@@ -221,6 +235,8 @@ export class GameDB extends DurableObject {
       stats: { bestWave: u.best_wave, bestScore: u.best_score, kills: u.kills, headshots: u.headshots, games: u.games, pvpKills: u.pvp_kills, pvpWins: u.pvp_wins },
       online: Date.now() - u.last_seen < ONLINE_MS,
     };
+    // in a zombie run right now (the game sends its wave every few seconds)
+    if (Date.now() - (u.live_at || 0) < LIVE_MS) out.live = { wave: u.live_wave, score: u.live_score };
     if (self) {
       delete out.online;
       out.admin = !!u.admin;
@@ -262,6 +278,83 @@ export class GameDB extends DurableObject {
     return this.sql.exec('SELECT * FROM users WHERE username = ?', name).toArray()[0];
   }
 
+  // ---- blocked words (admins pick them; every room and friend chat hides them)
+  _words() {
+    if (!this.wordList) {
+      try {
+        this.wordList = cleanWords(JSON.parse(this.sql.exec("SELECT value FROM config WHERE key = 'words'").toArray()[0]?.value || '[]'));
+      } catch {
+        this.wordList = [];
+      }
+      this.wordRe = makeFilter(this.wordList);
+    }
+    return this.wordList;
+  }
+  _filter(text) {
+    this._words();
+    return filterText(text, this.wordRe);
+  }
+
+  // a banned player's last IP: no guest play or new accounts from it for a week
+  // (only a week, and other accounts there still work, since schools and homes share IPs)
+  _ipBanned(ip) {
+    return !!ip && ip !== 'local' && !!this.sql.exec('SELECT 1 FROM ip_bans WHERE ip = ? AND created > ?', ip, Date.now() - 7 * DAY).toArray()[0];
+  }
+  // why this account can't play online right now (or null)
+  _blocked(u, ip) {
+    if (u?.banned) return 'This account has been banned';
+    if (u && u.timeout_until > Date.now()) return `You're timed out for ${Math.ceil((u.timeout_until - Date.now()) / 60000)} more minute(s)`;
+    if (!u && this._ipBanned(ip)) return 'You have been banned from online play';
+    return null;
+  }
+
+  // tell the room someone is in to throw them out
+  async _kickFromRoom(u, msg) {
+    if (!u?.room) return false;
+    try {
+      const res = await this.env.ROOMS.get(this.env.ROOMS.idFromName(u.room)).fetch('https://room/internal/kick', {
+        method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ username: u.username, msg }),
+      });
+      return res.ok && (await res.json()).kicked;
+    } catch {
+      return false;
+    }
+  }
+
+  _adminRow(u) {
+    const now = Date.now();
+    return {
+      username: u.username, level: levelFromXp(u.xp), coins: u.coins || 0, admin: !!u.admin, online: now - u.last_seen < ONLINE_MS,
+      room: now - u.last_seen < ONLINE_MS ? u.room || null : null, banned: !!u.banned, timeoutMins: u.timeout_until > now ? Math.ceil((u.timeout_until - now) / 60000) : 0,
+    };
+  }
+
+  // A player joining a room: who they are, whether they're allowed in, and the blocked words.
+  async _joinRoom(body) {
+    const ip = typeof body.ip === 'string' ? body.ip.slice(0, 64) : '';
+    let u = null;
+    if (typeof body.token === 'string' && /^[a-f0-9]{64}$/.test(body.token)) {
+      u = await this._auth({ headers: new Headers({ authorization: `Bearer ${body.token}` }) });
+    }
+    const blocked = this._blocked(u, ip);
+    if (blocked) return json({ blocked });
+    if (u) {
+      const room = typeof body.room === 'string' && /^[A-Z0-9]{5}$/.test(body.room) ? body.room : null;
+      this.sql.exec('UPDATE users SET room = ?, last_ip = ? WHERE id = ?', room, ip && ip !== 'local' ? ip : u.last_ip, u.id);
+    }
+    return json({ user: u ? this._publicUser(u, true) : null, words: this._words() });
+  }
+
+  // Calls from the game rooms (never from players: the front door refuses the header).
+  _internal(path, body) {
+    if (path === '/internal/leave') {
+      this.sql.exec('UPDATE users SET room = NULL WHERE username = ? AND room = ?', String(body.username), String(body.room));
+      return json({ ok: true });
+    }
+    if (path === '/internal/words') return json({ words: this._words() });
+    return err('Not found', 404);
+  }
+
   async fetch(request) {
     try {
       return await this._route(request);
@@ -275,6 +368,7 @@ export class GameDB extends DurableObject {
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/api/, '');
     const method = request.method;
+    const ip = request.headers.get('cf-connecting-ip') || 'local';
     let body = {};
     if (method === 'POST' || method === 'PUT') {
       const text = await request.text();
@@ -286,11 +380,17 @@ export class GameDB extends DurableObject {
       }
     }
 
+    if (path.startsWith('/internal/') && request.headers.get('x-internal') === '1') {
+      if (path === '/internal/join') return this._joinRoom(body, ip);
+      return this._internal(path, body);
+    }
+
     if (path === '/register' && method === 'POST') {
       const { username, password } = body;
       if (typeof username !== 'string' || !USERNAME.test(username)) return err('Username must be 3-16 letters, numbers or _');
+      if (nameBlocked(username, this._words())) return err("That username isn't allowed");
+      if (this._ipBanned(ip)) return err('You have been banned', 403);
       if (typeof password !== 'string' || password.length < 6 || password.length > 128) return err('Password must be at least 6 characters');
-      const ip = request.headers.get('cf-connecting-ip') || 'local';
       if (!this._limit(this.signups, ip, 5, 3600000)) return err('Too many new accounts from here, try later', 429);
       if (this._byName(username)) return err('That username is taken', 409);
       const salt = randomHex(16);
@@ -314,18 +414,25 @@ export class GameDB extends DurableObject {
         return err('Wrong username or password', 401);
       }
       this.fails.delete(key);
-      this.sql.exec('UPDATE users SET last_seen = ? WHERE id = ?', Date.now(), user.id);
+      if (user.banned) return json({ error: 'This account has been banned', banned: true }, 403);
+      this.sql.exec('UPDATE users SET last_seen = ?, last_ip = ? WHERE id = ?', Date.now(), ip, user.id);
       return json({ token: await this._session(user), user: this._publicUser(user, true) });
     }
 
     if (path === '/leaderboard' && method === 'GET') {
-      const rows = this.sql.exec('SELECT * FROM users ORDER BY best_wave DESC, best_score DESC LIMIT 25').toArray();
-      return json({ players: rows.map((u) => this._publicUser(u)) });
+      const rows = this.sql.exec('SELECT * FROM users WHERE banned = 0 ORDER BY best_wave DESC, best_score DESC LIMIT 25').toArray();
+      const live = this.sql.exec('SELECT * FROM users WHERE banned = 0 AND live_at > ? ORDER BY live_wave DESC, live_score DESC LIMIT 15', Date.now() - LIVE_MS).toArray();
+      return json({ players: rows.map((u) => this._publicUser(u)), live: live.map((u) => this._publicUser(u)) });
     }
 
     // Everything below needs a logged-in user.
     const me = await this._auth(request);
     if (!me) return err('Not logged in', 401);
+    if (me.banned) {
+      this.sql.exec('DELETE FROM sessions WHERE user_id = ?', me.id);
+      return json({ error: 'This account has been banned', banned: true }, 403);
+    }
+    if (me.last_ip !== ip && ip !== 'local') this.sql.exec('UPDATE users SET last_ip = ? WHERE id = ?', ip, me.id);
 
     if (path === '/me' && method === 'GET') return json({ user: this._publicUser(me, true) });
 
@@ -341,6 +448,25 @@ export class GameDB extends DurableObject {
       return json({ user: this._publicUser({ ...me, profile: JSON.stringify(profile) }, true) });
     }
 
+    // Live leaderboard: the wave you're on, sent while you play. Raises your best wave and score
+    // straight away (XP and coins still come at the end of the run).
+    if (path === '/live' && method === 'POST') {
+      const now = Date.now();
+      if (now - (me.live_at || 0) < 4000) return err('Slow down', 429);
+      if (body.end) {
+        this.sql.exec('UPDATE users SET live_at = 0 WHERE id = ?', me.id);
+        return json({ ok: true });
+      }
+      const int = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
+      const wave = int(body.wave, 300);
+      const score = int(body.score, 2000000);
+      this.sql.exec(
+        'UPDATE users SET live_wave = ?, live_score = ?, live_at = ?, best_wave = MAX(best_wave, ?), best_score = MAX(best_score, ?), last_seen = ? WHERE id = ?',
+        wave, score, now, wave, score, now, me.id
+      );
+      return json({ ok: true });
+    }
+
     if (path === '/progress' && method === 'POST') {
       const now = Date.now();
       if (now - me.last_progress < 15000) return err('Slow down', 429);
@@ -354,7 +480,7 @@ export class GameDB extends DurableObject {
       const xp = xpForRun({ wave: pvp ? 0 : wave, score: pvp ? kills * 100 + won * 500 : score, kills });
       const coins = coinsForRun({ mode: pvp ? 'pvp' : 'solo', wave, kills, headshots, won: !!won });
       this.sql.exec(
-        `UPDATE users SET xp = xp + ?, coins = coins + ?, games = games + 1, kills = kills + ?, headshots = headshots + ?,
+        `UPDATE users SET live_at = 0, xp = xp + ?, coins = coins + ?, games = games + 1, kills = kills + ?, headshots = headshots + ?,
           best_wave = MAX(best_wave, ?), best_score = MAX(best_score, ?), pvp_kills = pvp_kills + ?, pvp_wins = pvp_wins + ?, last_progress = ?
          WHERE id = ?`,
         xp, coins, pvp ? 0 : kills, headshots, pvp ? 0 : wave, pvp ? 0 : score, pvp ? kills : 0, won, now, me.id
@@ -448,6 +574,68 @@ export class GameDB extends DurableObject {
       if (!me.admin) return err('Admins only', 403);
       const coins = Math.max(0, Math.min(100000000, Math.floor(Number(body.coins) || 0)));
       return saveItems(this._items(me), coins);
+    }
+    // admin: everyone online on every server (or a name search), plus who's banned
+    if (path === '/admin/players' && method === 'GET') {
+      if (!me.admin) return err('Admins only', 403);
+      const q = String(url.searchParams.get('q') || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
+      const rows = q
+        ? this.sql.exec("SELECT * FROM users WHERE username LIKE ? ESCAPE '\\' ORDER BY last_seen DESC LIMIT 40", `${q.replace(/_/g, '\\_')}%`).toArray()
+        : this.sql.exec('SELECT * FROM users WHERE last_seen > ? ORDER BY username LIMIT 200', Date.now() - ONLINE_MS).toArray();
+      const banned = this.sql.exec('SELECT * FROM users WHERE banned = 1 OR timeout_until > ? ORDER BY username LIMIT 100', Date.now()).toArray();
+      return json({ players: rows.map((u) => this._adminRow(u)), banned: banned.map((u) => this._adminRow(u)) });
+    }
+    if (path === '/admin/player' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const u = typeof body.username === 'string' ? this._byName(body.username) : null;
+      if (!u) return err('No player with that name', 404);
+      const action = String(body.action);
+      if (u.id === me.id && action !== 'give') return err("You can't do that to yourself");
+      if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
+      let note = '';
+      if (action === 'kick') {
+        note = (await this._kickFromRoom(u, `You were kicked by admin ${me.username}`)) ? `${u.username} was kicked from room ${u.room}.` : `${u.username} isn't in a room right now.`;
+      } else if (action === 'timeout') {
+        const minutes = Math.max(1, Math.min(10080, Math.floor(Number(body.minutes) || 5)));
+        this.sql.exec('UPDATE users SET timeout_until = ? WHERE id = ?', Date.now() + minutes * 60000, u.id);
+        await this._kickFromRoom(u, `You were timed out for ${minutes} minute(s) by admin ${me.username}`);
+        note = `${u.username} is timed out for ${minutes} minute(s): no online games or chat.`;
+      } else if (action === 'untimeout') {
+        this.sql.exec('UPDATE users SET timeout_until = 0 WHERE id = ?', u.id);
+        note = `${u.username}'s timeout is over.`;
+      } else if (action === 'ban') {
+        this.sql.exec('UPDATE users SET banned = 1 WHERE id = ?', u.id);
+        this.sql.exec('DELETE FROM sessions WHERE user_id = ?', u.id);
+        if (u.last_ip && u.last_ip !== 'local') this.sql.exec('INSERT OR REPLACE INTO ip_bans (ip, user, created) VALUES (?, ?, ?)', u.last_ip, u.id, Date.now());
+        await this._kickFromRoom(u, 'You have been banned');
+        note = `${u.username} is banned.`;
+      } else if (action === 'unban') {
+        this.sql.exec('UPDATE users SET banned = 0, timeout_until = 0 WHERE id = ?', u.id);
+        this.sql.exec('DELETE FROM ip_bans WHERE user = ?', u.id);
+        note = `${u.username} is unbanned.`;
+      } else if (action === 'give') {
+        // give (or take, with a minus number) coins
+        const amount = Math.max(-100000000, Math.min(100000000, Math.floor(Number(body.coins) || 0)));
+        if (!amount) return err('How many coins?');
+        const coins = Math.max(0, Math.min(1000000000, (u.coins || 0) + amount));
+        this.sql.exec('UPDATE users SET coins = ? WHERE id = ?', coins, u.id);
+        note = amount > 0 ? `Gave ${coins - (u.coins || 0)} coins to ${u.username} (they have ${coins}).` : `Took ${(u.coins || 0) - coins} coins from ${u.username} (they have ${coins}).`;
+      } else return err('Unknown action');
+      const after = this._byName(u.username);
+      const user = after.id === me.id ? this._publicUser(after, true) : undefined;
+      return json({ note, player: this._adminRow(after), user });
+    }
+    // admin: the words nobody on any server can say
+    if (path === '/admin/words' && method === 'GET') {
+      if (!me.admin) return err('Admins only', 403);
+      return json({ words: this._words() });
+    }
+    if (path === '/admin/words' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const words = cleanWords(body.words);
+      this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('words', ?)", JSON.stringify(words));
+      this.wordList = null;
+      return json({ words: this._words() });
     }
 
     // Saved solo games: up to MAX_SAVES named slots, keyed by run id.
@@ -586,7 +774,13 @@ export class GameDB extends DurableObject {
         .toArray();
       const unread = {};
       for (const r of rows) unread[r.username] = r.n;
-      return json({ unread });
+      // friend requests waiting for you (for the pop-up)
+      const requests = this.sql
+        .exec("SELECT u.username FROM friends f JOIN users u ON u.id = f.a WHERE f.b = ? AND f.status = 'pending' ORDER BY f.created DESC LIMIT 20", me.id)
+        .toArray()
+        .map((r) => r.username);
+      const t = me.timeout_until > Date.now() ? Math.ceil((me.timeout_until - Date.now()) / 60000) : 0;
+      return json({ unread, requests, timeoutMins: t });
     }
     if (path === '/messages' && (method === 'GET' || method === 'POST')) {
       const name = method === 'GET' ? url.searchParams.get('with') : body.to;
@@ -594,7 +788,9 @@ export class GameDB extends DurableObject {
       if (!other) return err('No player with that name', 404);
       if (!this._areFriends(me.id, other.id)) return err('You can only chat with friends', 403);
       if (method === 'POST') {
-        const text = typeof body.text === 'string' ? body.text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300) : '';
+        const timedOut = this._blocked(me, null);
+        if (timedOut) return err(timedOut, 403);
+        const text = typeof body.text === 'string' ? this._filter(body.text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300)) : '';
         if (!text) return err('Say something');
         if (!this._limit(this.dms, me.id, 20, 30000)) return err('Slow down a bit', 429);
         this.sql.exec('INSERT INTO messages (sender, recipient, text, created) VALUES (?, ?, ?, ?)', me.id, other.id, text, Date.now());
@@ -671,11 +867,54 @@ export class Room extends DurableObject {
     this.phase = 'lobby'; // lobby | playing | ended
     this.match = null;
     this.interval = null;
+    this.settings = {}; // mode -> the host's custom match settings
+    this.wordRe = null; // blocked words (from the database)
+    this.wordList = [];
+    this.wordsAt = 0;
+  }
+
+  get _db() {
+    return this.env.DB.get(this.env.DB.idFromName('global'));
+  }
+  _setWords(words) {
+    if (!Array.isArray(words)) return;
+    this.wordList = words;
+    this.wordRe = makeFilter(words);
+    this.wordsAt = Date.now();
+  }
+  // the blocked words change rarely: check for a new list once a minute
+  _freshWords() {
+    if (Date.now() - this.wordsAt < 60000) return;
+    this.wordsAt = Date.now();
+    this._db
+      .fetch('https://db/api/internal/words', { method: 'POST', headers: { 'x-internal': '1' }, body: '{}' })
+      .then((r) => r.json())
+      .then((d) => this._setWords(d.words))
+      .catch(() => {});
+  }
+  get _set() {
+    return cleanSettings(this.mode, this.settings[this.mode]);
   }
 
   async fetch(request) {
-    if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a websocket', { status: 426 });
     const url = new URL(request.url);
+    // an admin kicked, timed out or banned someone in this room
+    if (url.pathname === '/internal/kick' && request.headers.get('x-internal') === '1') {
+      const { username, msg } = await request.json();
+      const t = [...this.players.values()].find((o) => o.joined && o.username && o.username.toLowerCase() === String(username).toLowerCase());
+      if (t) {
+        this._send(t, { t: 'error', msg: String(msg || 'You were kicked by an admin').slice(0, 120) });
+        try {
+          t.ws.close(1000, 'kicked');
+        } catch {
+          /* already closed */
+        }
+        this._onClose(t);
+        this._broadcast({ t: 'msg', text: `${t.name} was removed by an admin` });
+      }
+      return Response.json({ kicked: !!t });
+    }
+    if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a websocket', { status: 426 });
     this.code = url.pathname.split('/')[3];
     const create = url.searchParams.get('create') === '1';
     const pair = new WebSocketPair();
@@ -693,7 +932,8 @@ export class Room extends DurableObject {
     const p = {
       id: this.nextId++, ws: server, joined: false, name: 'Player', avatar: '🧟', color: '#e9d9b8', account: false,
       team: 'red', alive: false, hp: MAX_HP, pos: [0, 0, 0], rot: [0, 0], gun: 'rifle', flags: 0,
-      kills: 0, deaths: 0, score: 0, respawnAt: 0, protectUntil: 0, hits: [0, 0], msgs: [0, 0],
+      kills: 0, deaths: 0, score: 0, respawnAt: 0, protectUntil: 0, hits: [0, 0], msgs: [0, 0], level: 0,
+      ip: request.headers.get('cf-connecting-ip') || 'local', username: null,
     };
     this.players.set(p.id, p);
     server.addEventListener('message', (e) => this._onMessage(p, e.data));
@@ -723,7 +963,7 @@ export class Room extends DurableObject {
 
   _lobby() {
     return {
-      t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId,
+      t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set,
       players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, team: p.team, account: p.account, admin: !!p.admin })),
     };
   }
@@ -753,22 +993,39 @@ export class Room extends DurableObject {
       case 'join': {
         if (p.joined) return;
         let name = typeof m.name === 'string' && NAME.test(m.name.trim()) ? m.name.trim() : `Guest${p.id}`;
-        if (typeof m.token === 'string' && /^[a-f0-9]{64}$/.test(m.token)) {
-          try {
-            const res = await this.env.DB.get(this.env.DB.idFromName('global')).fetch('https://db/api/me', { headers: { authorization: `Bearer ${m.token}` } });
-            if (res.ok) {
-              const { user } = await res.json();
-              name = user.username;
-              p.account = true;
-              p.admin = !!user.admin;
-              p.avatar = user.profile.avatar;
-              p.color = user.profile.color;
-              p.items = user.items || {};
+        // ask the database who this is, whether they're banned or timed out, and for the blocked words
+        try {
+          const res = await this._db.fetch('https://db/api/internal/join', {
+            method: 'POST',
+            headers: { 'x-internal': '1' },
+            body: JSON.stringify({ token: typeof m.token === 'string' ? m.token : null, ip: p.ip, room: this.code }),
+          });
+          const r = await res.json();
+          if (r.blocked) {
+            this._send(p, { t: 'error', msg: r.blocked });
+            try {
+              p.ws.close(1000, 'blocked');
+            } catch {
+              /* already closed */
             }
-          } catch {
-            /* fall back to guest */
+            this.players.delete(p.id);
+            return;
           }
+          this._setWords(r.words);
+          const user = r.user;
+          if (user) {
+            name = user.username;
+            p.username = user.username;
+            p.account = true;
+            p.admin = !!user.admin;
+            p.avatar = user.profile.avatar;
+            p.color = user.profile.color;
+            p.items = user.items || {};
+          }
+        } catch {
+          /* fall back to guest */
         }
+        if (!p.account && nameBlocked(name, this.wordList)) name = `Guest${p.id}`;
         if (!p.account) {
           if (typeof m.avatar === 'string' && m.avatar.length <= 8) p.avatar = m.avatar;
           if (typeof m.color === 'string' && /^#[0-9a-f]{6}$/i.test(m.color)) p.color = m.color;
@@ -779,6 +1036,9 @@ export class Room extends DurableObject {
         p.name = unique.slice(0, 18);
         const counts = this._teamCounts();
         p.team = counts.red <= counts.blue ? 'red' : 'blue';
+        // infection: late joiners are zombies once the infection has started
+        if (MODES[this.mode].infection) p.team = this.phase === 'playing' && this.match?.infected ? INFECTED : SURVIVORS;
+        p.level = 0;
         p.joined = true;
         if (!this.hostId || !this.players.get(this.hostId)?.joined) this.hostId = p.id;
         this._send(p, { t: 'welcome', id: p.id });
@@ -802,8 +1062,17 @@ export class Room extends DurableObject {
           this._broadcast(this._lobby());
         }
         break;
+      case 'set': {
+        // the host's custom settings for the current mode
+        if (p.id !== this.hostId || this.phase !== 'lobby') return;
+        const def = (MODE_SETTINGS[this.mode] || []).find((o) => o.key === m.key);
+        if (!def || !def.options.some(([v]) => v === m.value)) return;
+        this.settings[this.mode] = { ...this._set, [m.key]: m.value };
+        this._broadcast(this._lobby());
+        break;
+      }
       case 'team':
-        if (this.phase === 'lobby' && TEAMS.includes(m.team)) {
+        if (this.phase === 'lobby' && TEAMS.includes(m.team) && !MODES[this.mode].autoTeams) {
           p.team = m.team;
           this._broadcast(this._lobby());
         }
@@ -848,7 +1117,7 @@ export class Room extends DurableObject {
         if (now - (p.lastHeal || 0) < 8000) return;
         const amount = Math.max(0, Math.min(50, Number(m.amount) || 0));
         p.lastHeal = now;
-        p.hp = Math.min(MAX_HP, p.hp + amount);
+        p.hp = Math.min(this._maxHp(p), p.hp + amount);
         this._send(p, { t: 'healed', hp: p.hp });
         break;
       }
@@ -907,10 +1176,33 @@ export class Room extends DurableObject {
         this._broadcast({ t: 'announce', name: p.name, text });
         break;
       }
+      // ---- supply drops
+      case 'loot': {
+        if (this.phase !== 'playing' || !p.alive) return;
+        const d = this.match.drops.get(m.id);
+        if (!d || now < d.landAt - 400) return;
+        if (Math.hypot(p.pos[0] - d.x, p.pos[2] - d.z) > SUPPLY_REACH + 1.5) return;
+        this.match.drops.delete(d.id);
+        // zombie players get the health but can't use guns
+        const gun = MODES[this.mode].infection && p.team === INFECTED ? null : d.gun;
+        if (!this._coop) {
+          p.hp = this._maxHp(p);
+          this._send(p, { t: 'healed', hp: p.hp });
+        }
+        this._broadcast({ t: 'looted', id: d.id, by: p.id, gun });
+        break;
+      }
+      case 'admindrop':
+        // admins: a supply drop right next to you
+        if (!p.admin || this.phase !== 'playing' || now - (p.lastDrop || 0) < 1500) return;
+        p.lastDrop = now;
+        this._spawnDrop([p.pos[0] + 3, p.pos[2] + 1]);
+        break;
       case 'emote': {
         // quick chat wheel: cleaned like normal chat
         if (now - (p.lastEmote || 0) < 800 || typeof m.text !== 'string') return;
-        const text = cleanQuickText(m.text);
+        this._freshWords();
+        const text = filterText(cleanQuickText(m.text), this.wordRe);
         if (!text) return;
         p.lastEmote = now;
         this._broadcast({ t: 'emote', id: p.id, name: p.name, text });
@@ -919,7 +1211,8 @@ export class Room extends DurableObject {
       case 'chat': {
         // room chat: short messages, max ~1 per 0.7s each
         if (typeof m.text !== 'string') return;
-        const text = m.text.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 120);
+        this._freshWords();
+        const text = filterText(m.text.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 120), this.wordRe);
         if (!text || now - (p.lastChat || 0) < 700) return;
         p.lastChat = now;
         this._broadcast({ t: 'chat', id: p.id, name: p.name, team: p.team, admin: !!p.admin, text });
@@ -989,6 +1282,12 @@ export class Room extends DurableObject {
     if (!this.players.has(p.id)) return;
     this.players.delete(p.id);
     if (!p.joined) return;
+    if (p.username) {
+      // the admin list shows which room you're in
+      this._db
+        .fetch('https://db/api/internal/leave', { method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ username: p.username, room: this.code }) })
+        .catch(() => {});
+    }
     this._dropFlag(p);
     if (this.hostId === p.id) {
       const next = [...this.players.values()].find((o) => o.joined);
@@ -1033,15 +1332,97 @@ export class Room extends DurableObject {
   _matchStart() {
     return {
       t: 'start', mode: this.mode, map: this.map, weather: this.match.weather, endsAt: this.match.endsAt, now: Date.now(),
-      structures: [...this.match.structures.values()],
+      structures: [...this.match.structures.values()], settings: this.match.set,
+      drops: [...this.match.drops.values()].map((d) => this._dropMsg(d)),
     };
+  }
+
+  // most health this player can have (custom health setting; infection zombies have their own)
+  _maxHp(p) {
+    const set = this.match?.set || this._set;
+    if (MODES[this.mode]?.infection && p.team === INFECTED) return set.zhp || 150;
+    return set.hp || MAX_HP;
+  }
+
+  // ---- supply drops: open spots every map keeps clear
+  _spawnDrop(at = null) {
+    const now = Date.now();
+    let spot = at;
+    if (!spot) {
+      const spots = [...FFA_SPAWNS, [POINT.x + 4, POINT.z + 4], ...DEFEND_POINTS.map((d) => [d.x + 3, d.z - 3])];
+      // somewhere away from the crates already down
+      const far = spots.filter((s) => [...this.match.drops.values()].every((d) => Math.hypot(d.x - s[0], d.z - s[1]) > 20));
+      const list = far.length ? far : spots;
+      const s = list[Math.floor(Math.random() * list.length)];
+      spot = [s[0] + (Math.random() - 0.5) * 4, s[1] + (Math.random() - 0.5) * 4];
+    }
+    const gun = MODES[this.mode].gungame ? null : SUPPLY_GUNS[Math.floor(Math.random() * SUPPLY_GUNS.length)];
+    const d = { id: this.match.nextDrop++, x: Math.round(spot[0] * 100) / 100, z: Math.round(spot[1] * 100) / 100, gun, landAt: now + SUPPLY_FALL * 1000 };
+    this.match.drops.set(d.id, d);
+    this._broadcast({ t: 'drop', d: this._dropMsg(d) });
+  }
+  _dropMsg(d) {
+    return { id: d.id, x: d.x, z: d.z, gun: d.gun, land: Math.max(0, (d.landAt - Date.now()) / 1000) };
+  }
+  _tickDrops(now) {
+    const m = this.match;
+    for (const d of [...m.drops.values()]) {
+      if (now > d.landAt + SUPPLY_LAST * 1000) {
+        m.drops.delete(d.id);
+        this._broadcast({ t: 'looted', id: d.id, by: 0 });
+      }
+    }
+    const every = SUPPLY_EVERY[m.set.drops];
+    if (!every || now < m.dropAt) return;
+    m.dropAt = now + every * 1000;
+    if (m.drops.size < SUPPLY_MAX) this._spawnDrop();
+  }
+
+  // ---- infection: pick the first zombies once everyone's had a moment to spread out
+  _tickInfection(now) {
+    const m = this.match;
+    const joined = [...this.players.values()].filter((p) => p.joined);
+    if (!m.infected) {
+      if (now < m.infectAt) return;
+      if (joined.length < 2) {
+        m.infectAt = now + 5000;
+        if (!m.waitSaid) this._broadcast({ t: 'msg', text: 'Waiting for one more player before someone turns…' });
+        m.waitSaid = true;
+        return;
+      }
+      m.infected = true;
+      this._infect(Math.min(m.set.starters || 1, joined.length - 1));
+      return;
+    }
+    // every zombie left: someone else turns
+    if (!joined.some((p) => p.team === INFECTED) && joined.length >= 2) this._infect(1);
+  }
+  _infect(n) {
+    const pool = [...this.players.values()].filter((p) => p.joined && p.team === SURVIVORS).sort(() => Math.random() - 0.5);
+    const picked = pool.slice(0, n);
+    for (const p of picked) p.team = INFECTED;
+    this._broadcast(this._lobby());
+    for (const p of picked) {
+      this._dropFlag(p);
+      this._broadcast({ t: 'infected', id: p.id, first: true });
+      this._spawn(p);
+    }
+    if (picked.length) this._broadcast({ t: 'msg', text: `🧟 ${picked.map((p) => p.name).join(', ')} turned into ${picked.length > 1 ? 'zombies' : 'a zombie'}! RUN!`, big: true, team: INFECTED });
   }
 
   _startMatch() {
     const weathers = MAPS[this.map].weathers;
+    const set = this._set;
+    const now = Date.now();
     this.phase = 'playing';
     this.match = {
-      endsAt: Date.now() + (this._coop ? 24 * 3600 : MATCH_SECONDS) * 1000,
+      set,
+      endsAt: now + (this._coop ? 24 * 3600 : set.time ? set.time * 60 : MATCH_SECONDS) * 1000,
+      drops: new Map(), // supply drops: id -> { id, x, z, gun, landAt }
+      nextDrop: 1,
+      dropAt: now + SUPPLY_FIRST * 1000,
+      infectAt: now + INFECT_DELAY * 1000,
+      infected: false,
       wave: 0,
       weather: weathers[Math.floor(Math.random() * weathers.length)],
       scores: { red: 0, blue: 0 },
@@ -1055,7 +1436,8 @@ export class Room extends DurableObject {
       last: Date.now(),
     };
     for (const p of this.players.values()) {
-      p.kills = p.deaths = p.score = 0;
+      p.kills = p.deaths = p.score = p.level = 0;
+      if (MODES[this.mode].infection) p.team = SURVIVORS;
     }
     this._broadcast(this._lobby());
     this._broadcast(this._matchStart());
@@ -1076,9 +1458,11 @@ export class Room extends DurableObject {
       return;
     }
     // co-op squads start together
-    let list = mode.coop ? TEAM_SPAWNS.red : mode.teams ? TEAM_SPAWNS[p.team] : FFA_SPAWNS;
+    // infection: survivors scatter over the whole map, zombies come from the red side
+    const scatter = (!mode.teams && !mode.coop) || (mode.infection && p.team === SURVIVORS);
+    let list = mode.coop ? TEAM_SPAWNS.red : mode.infection ? (scatter ? FFA_SPAWNS : TEAM_SPAWNS.red) : mode.teams ? TEAM_SPAWNS[p.team] : FFA_SPAWNS;
     let pick = list[Math.floor(Math.random() * list.length)];
-    if (!mode.teams && !mode.coop) {
+    if (scatter) {
       // furthest spawn from everyone else
       let best = -1;
       for (const s of list) {
@@ -1093,11 +1477,11 @@ export class Room extends DurableObject {
     const x = pick[0] + (Math.random() - 0.5) * 3;
     const z = pick[1] + (Math.random() - 0.5) * 3;
     p.pos = [x, 0, z];
-    p.hp = MAX_HP;
+    p.hp = this._maxHp(p);
     p.alive = true;
     p.protectUntil = Date.now() + 1500;
     const yaw = mode.teams || mode.coop ? (p.team === 'red' || mode.coop ? -Math.PI / 2 : Math.PI / 2) : Math.atan2(x, z);
-    this._send(p, { t: 'spawn', p: [x, z], yaw, hp: MAX_HP });
+    this._send(p, { t: 'spawn', p: [x, z], yaw, hp: p.hp });
   }
 
   _hit(p, m) {
@@ -1111,20 +1495,42 @@ export class Room extends DurableObject {
     const now = Date.now();
     if (now - p.hits[1] > 1000) p.hits = [0, now];
     if (++p.hits[0] > 45) return; // faster than any gun can hit
-    if (Math.hypot(p.pos[0] - target.pos[0], p.pos[2] - target.pos[2]) > 320) return;
+    const dist = Math.hypot(p.pos[0] - target.pos[0], p.pos[2] - target.pos[2]);
+    if (dist > 320) return;
+    // infection zombies only have their claws (the knife): close up only
+    if (mode.infection && p.team === INFECTED && (!m.melee || dist > 5)) return;
     if (now < target.protectUntil) return;
     target.hp -= dmg;
     target.lastHurt = now;
     this._send(target, { t: 'hurt', by: p.id, dmg, from: p.pos, hp: Math.max(0, target.hp) });
     if (target.hp > 0) return;
+    const set = this.match.set;
     target.alive = false;
     target.deaths++;
-    target.respawnAt = now + RESPAWN_SECONDS * 1000;
+    target.respawnAt = now + (set.respawn || RESPAWN_SECONDS) * 1000;
     p.kills++;
     p.score += 100;
     if (this.mode === 'tdm') this.match.scores[p.team]++;
     this._dropFlag(target);
-    this._broadcast({ t: 'kill', k: p.id, v: target.id, head: !!m.head, g: p.gun });
+    this._broadcast({ t: 'kill', k: p.id, v: target.id, head: !!m.head, g: p.gun, mel: !!m.melee });
+    if (mode.gungame) {
+      // next gun; the last one (the knife) only counts with the knife
+      const ladder = GUN_LADDERS[set.ladder] || GUN_LADDERS.normal;
+      if (p.level < ladder.length - 1 || m.melee) p.level++;
+      if (p.level < ladder.length) this._send(p, { t: 'level', level: p.level });
+      if (m.melee && set.demote !== 'off' && target.level > 0) {
+        target.level--;
+        this._send(target, { t: 'level', level: target.level, demoted: p.name });
+      }
+    }
+    if (mode.infection && p.team === INFECTED && target.team === SURVIVORS) {
+      target.team = INFECTED;
+      p.score += 50;
+      this._broadcast(this._lobby());
+      this._broadcast({ t: 'infected', id: target.id, by: p.id });
+      const left = [...this.players.values()].filter((o) => o.joined && o.team === SURVIVORS);
+      if (left.length === 1) this._broadcast({ t: 'msg', text: `${left[0].name} is the LAST SURVIVOR!`, big: true, team: SURVIVORS });
+    }
     this._checkWin();
   }
 
@@ -1150,9 +1556,11 @@ export class Room extends DurableObject {
     for (const p of this.players.values()) {
       if (p.joined && !p.alive && p.respawnAt && now >= p.respawnAt) this._spawn(p);
       // health slowly comes back after 5 seconds without getting hit
-      if (!this._coop && p.alive && p.hp < MAX_HP && now - (p.lastHurt || 0) > 5000) p.hp = Math.min(MAX_HP, p.hp + 8 * dt);
+      if (!this._coop && p.alive && p.hp < this._maxHp(p) && now - (p.lastHurt || 0) > 5000) p.hp = Math.min(this._maxHp(p), p.hp + 8 * dt);
     }
 
+    this._tickDrops(now);
+    if (MODES[this.mode].infection) this._tickInfection(now);
     if (this.mode === 'koth') this._tickPoint(dt);
     if (this.mode === 'ctf') this._tickFlags(now);
     this._checkWin();
@@ -1162,7 +1570,7 @@ export class Room extends DurableObject {
       t: 'snap',
       ps: [...this.players.values()]
         .filter((p) => p.joined)
-        .map((p) => [p.id, +p.pos[0].toFixed(2), +p.pos[1].toFixed(2), +p.pos[2].toFixed(2), +p.rot[0].toFixed(3), +p.rot[1].toFixed(3), p.gun, Math.max(0, Math.round(p.hp)), p.flags, p.alive ? 1 : 0, p.kills, p.deaths, p.score]),
+        .map((p) => [p.id, +p.pos[0].toFixed(2), +p.pos[1].toFixed(2), +p.pos[2].toFixed(2), +p.rot[0].toFixed(3), +p.rot[1].toFixed(3), p.gun, Math.max(0, Math.round(p.hp)), p.flags, p.alive ? 1 : 0, p.kills, p.deaths, p.score, p.level]),
       sc: this.match.scores,
       left: Math.max(0, Math.round((this.match.endsAt - now) / 1000)),
     };
@@ -1275,16 +1683,27 @@ export class Room extends DurableObject {
     if (this.phase !== 'playing' || this._coop) return;
     const mode = MODES[this.mode];
     const s = this.match.scores;
+    const set = this.match.set;
+    const joined = [...this.players.values()].filter((p) => p.joined);
+    const timeUp = Date.now() >= this.match.endsAt;
     let winner = null;
-    if (this.mode === 'ffa') {
+    if (mode.gungame) {
+      const ladder = GUN_LADDERS[set.ladder] || GUN_LADDERS.normal;
+      const top = [...joined].sort((a, b) => b.level - a.level || b.kills - a.kills || a.deaths - b.deaths)[0];
+      if (top && (top.level >= ladder.length || timeUp)) winner = top.id;
+    } else if (mode.infection) {
+      // the zombies get everyone, or the survivors hold out until the time runs out
+      if (this.match.infected && joined.length && !joined.some((p) => p.team === SURVIVORS)) winner = INFECTED;
+      else if (timeUp) winner = SURVIVORS;
+    } else if (this.mode === 'ffa') {
       const top = [...this.players.values()].sort((a, b) => b.kills - a.kills)[0];
-      if (top && top.kills >= mode.killLimit) winner = top.id;
+      if (top && top.kills >= limitFor(this.mode, set)) winner = top.id;
     } else {
-      const limit = mode.killLimit ?? mode.scoreLimit;
+      const limit = limitFor(this.mode, set);
       if (s.red >= limit) winner = 'red';
       else if (s.blue >= limit) winner = 'blue';
     }
-    if (!winner && Date.now() >= this.match.endsAt) {
+    if (!winner && timeUp) {
       if (this.mode === 'ffa') winner = [...this.players.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)[0]?.id ?? null;
       else winner = s.red === s.blue ? 'draw' : s.red > s.blue ? 'red' : 'blue';
     }

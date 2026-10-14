@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
-import { MAPS, MODES, SOLO_MAP, quickWheel } from '../shared/modes.js';
+import { INFECTED, MAPS, MODES, SOLO_MAP, quickWheel } from '../shared/modes.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
@@ -17,6 +17,7 @@ import { Minimap } from './minimap.js';
 import { Multiplayer } from './multiplayer.js';
 import { NavGrid } from './navgrid.js';
 import { GunPickups } from './pickups.js';
+import { SupplyDrops } from './supply.js';
 import { Player } from './player.js';
 import { POWERUPS, RARITY_ODDS, RARITY_RANK, baseStats, rollOffer } from './powerups.js';
 import { heightAt } from './terrain.js';
@@ -55,6 +56,7 @@ const structures = new Structures(scene); // barricades and turrets
 let world = null;
 let zombies = null;
 let pickups = null;
+let supply = null; // supply drops
 let minimap = null;
 let weather = null;
 
@@ -138,6 +140,15 @@ function loadMap(id) {
   if (!pickups) pickups = new GunPickups(scene, world);
   pickups.clear();
   pickups.world = world;
+  if (!supply) {
+    supply = new SupplyDrops(scene, world);
+    supply.onLand = (d) => {
+      effects.dust(new THREE.Vector3(d.x, d.floor + 0.2, d.z));
+      audio.explosion(new THREE.Vector3(d.x, d.floor, d.z));
+    };
+  }
+  supply.clear();
+  supply.world = world;
   minimap = new Minimap($('minimap'), world);
   weather = new Weather(scene, world.atmosphere, audio);
   weather.set(world.theme.weather, true);
@@ -241,6 +252,14 @@ function beginWave() {
   }
 }
 
+// co-op rooms: the host's zombie health setting
+function roomZombieHp(z) {
+  const mul = isCoop() ? (mp.settings.zhp || 100) / 100 : 1;
+  if (mul === 1) return;
+  z.maxHp *= mul;
+  z.hp = z.maxHp;
+}
+
 // Zombies spawn around a random living player.
 function spawnAnchor() {
   const t = zombieTargets();
@@ -264,6 +283,7 @@ function updateWave(dt) {
     if (game.spawnT <= 0 && game.toSpawn > 0 && alive < cfg.maxAlive) {
       const z = zombies.spawn(game.night ? nightType(game.wave) : pickType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave) + (game.night ? NIGHT.mutated : 0));
       if (game.night) nightBuff(z);
+      roomZombieHp(z);
       game.toSpawn--;
       game.spawnT = cfg.interval * (0.5 + Math.random());
     }
@@ -272,6 +292,7 @@ function updateWave(dt) {
       const variant = game.bossToSpawn < game.cfg.boss ? BOSS_IDS[Math.floor(Math.random() * BOSS_IDS.length)] : game.bossVariant || 'abomination';
       const b = zombies.spawn('boss', game.wave, spawnAnchor(), game.wave >= 10, variant);
       if (game.night) nightBuff(b);
+      roomZombieHp(b);
       game.bossToSpawn--;
       bossBanner(variant);
     }
@@ -705,7 +726,7 @@ const myOwner = () => (game.mode === 'mp' ? mp.myId : 'me');
 const freeBuild = () => (cheatsOn() && cheats.build) || tut.on;
 
 function setBuild(on) {
-  build.on = on && !player.dead;
+  build.on = on && !player.dead && !mp.infected;
   if (!build.on) structures.hideGhost();
   trigger = false;
   aim = false;
@@ -908,7 +929,7 @@ function meleeAttack() {
   if (target.p !== undefined) {
     if (head) dmg *= 1.5;
     effects.blood(point, _dir, 1.2);
-    mp.reportHit(target.p, dmg, head);
+    mp.reportHit(target.p, dmg, head, true);
     audio.hit(head);
     showHit(head ? 'head' : '');
     damageNumber(point, dmg, head ? 'head' : '');
@@ -953,6 +974,7 @@ function giveGrenades(n) {
 
 function throwGrenade() {
   if (player.dead || throwCd > 0) return;
+  if (mp.infected) return subBanner('Zombies only have claws', 0.8);
   const free = cheatsOn() && cheats.grenades;
   if (game.grenades <= 0 && !free) {
     subBanner('No grenades', 0.8);
@@ -1033,7 +1055,108 @@ function grenadeBlast(at) {
   }
 }
 
+// ---------------------------------------------------------------- supply drops
+// Gun Game and Infection give you your guns: nothing to pick up there.
+const fixedGuns = () => game.mode === 'mp' && mp.inMatch && (!!MODES[mp.mode]?.gungame || mp.infected);
+let soloDropT = 50;
+let soloDropId = 1;
+function soloSupplyDrop(near = null) {
+  let spot = near;
+  if (!spot) {
+    const far = world.lootSpots.filter((s) => Math.hypot(s.x - player.pos.x, s.z - player.pos.z) > 18 && Math.hypot(s.x - player.pos.x, s.z - player.pos.z) < 70);
+    const list = far.length ? far : world.lootSpots;
+    const s = list[Math.floor(Math.random() * list.length)];
+    spot = { x: s.x + 1.5, z: s.z - 1.5 };
+  }
+  const guns = ['smg', 'shotgun', 'revolver', 'lmg', 'dmr', 'dmr', 'lmg', 'sniper', 'launcher'];
+  announceDrop();
+  supply.add({ id: soloDropId++, x: spot.x, z: spot.z, gun: guns[Math.floor(Math.random() * guns.length)], land: near ? 4 : undefined });
+}
+function announceDrop() {
+  subBanner('📦 SUPPLY DROP INCOMING · look for the red smoke', 2.6);
+  audio.waveStart?.();
+}
+// what you get from a crate: full health and a gun with lots of ammo
+function openSupply(gun) {
+  const coop = game.mode === 'solo' || isCoop();
+  if (coop) player.health = Math.max(player.health, stats.maxHealth);
+  let what = 'full health';
+  if (gun && GUNS[gun] && !fixedGuns()) {
+    weapon.give(gun, stats);
+    const slot = weapon.slots.find((s) => s.def.id === gun);
+    if (slot && slot.reserve !== Infinity) slot.reserve = Math.max(slot.reserve, weapon.magSize(stats, GUNS[gun]) * 6);
+    what = `${GUNS[gun].icon} ${GUNS[gun].name} + full health`;
+  }
+  if (!mp.infected) {
+    giveGrenades(1);
+    what += ' + a grenade';
+  }
+  audio.pickup();
+  banner('📦 SUPPLY DROP', what, 'gold', 2.2);
+  questAdd('medkits');
+}
+// Live leaderboard: logged-in players send the wave they're on while a zombie run is going.
+const live = { t: 0, wave: 0, on: false };
+function updateLive(dt) {
+  if (!account.loggedIn || !zombieGame() || usingCheats() || game.wave < 1) return;
+  live.t -= dt;
+  if (live.wave === game.wave && live.t > 0) return;
+  live.t = 15;
+  live.wave = game.wave;
+  live.on = true;
+  account.live(game.wave, game.score);
+}
+function endLive() {
+  if (live.on) account.liveEnd();
+  live.on = false;
+  live.wave = 0;
+  live.t = 0;
+}
+
+function updateSupply(dt) {
+  if (!supply) return;
+  supply.update(dt, player.pos, !player.dead, (d) => {
+    if (game.mode === 'mp') mp.send({ t: 'loot', id: d.id });
+    else {
+      supply.remove(d.id);
+      openSupply(d.gun);
+    }
+  });
+  // solo: a crate every minute or so while the waves are on
+  if (game.mode === 'solo' && !tut.on && game.wave >= 1) {
+    soloDropT -= dt;
+    if (soloDropT <= 0) {
+      soloDropT = 70 + Math.random() * 35;
+      if (supply.items.size < 2) soloSupplyDrop();
+    }
+  }
+}
+
+// ---- gun game and infection: the mode decides your guns
+function modeLoadout() {
+  if (game.mode !== 'mp' || !mp.inMatch) return false;
+  const mode = MODES[mp.mode];
+  document.body.classList.toggle('infected', mp.infected);
+  if (mode.gungame) {
+    const ladder = mp.ladder;
+    const id = ladder[Math.min(mp.myLevel || 0, ladder.length - 1)];
+    weapon.setOnly(id === 'knife' ? ['knife'] : [id, 'knife'], stats);
+    return true;
+  }
+  if (mode.infection) {
+    stats.speedMul = mp.infected ? 1.2 : 1;
+    if (mp.infected) {
+      weapon.setOnly(['knife'], stats);
+      game.grenades = 0;
+      setBuild(false);
+      return true;
+    }
+  }
+  return false;
+}
+
 function onPickGun(id, mut) {
+  if (fixedGuns()) return false; // gun game and zombie players keep what the mode gives them
   const def = GUNS[id];
   const result = weapon.give(id, stats, mut);
   if (result === 'new') questAdd('gunsPicked');
@@ -1230,7 +1353,7 @@ function updateMedkits(dt) {
       }
       const near = d < 1.6 && Math.abs(m.g.userData.base - player.pos.y) < 1.5 && !player.dead;
       const pvp = game.mode === 'mp' && !isCoop();
-      if (near && healCooldown <= 0 && player.health < (pvp ? 100 : overhealCap())) {
+      if (near && healCooldown <= 0 && player.health < (pvp ? stats.maxHealth : overhealCap())) {
         if (pvp) mp.send({ t: 'heal', amount: 40 });
         else player.heal(40, overhealCap());
         healCooldown = 8;
@@ -1615,6 +1738,7 @@ function updateHud(dt) {
   // minimap
   const marks = [];
   if (game.mode === 'mp') marks.push(...mp.minimapMarkers());
+  if (supply) marks.push(...supply.minimapMarkers());
   if (zombieGame()) {
     for (const z of zombies.list) {
       if (!z.alive) continue;
@@ -1923,6 +2047,8 @@ function startGame(save = null, name = null) {
   clearProjectiles();
   pickups.clear();
   pickups.topUp(5, player.pos, 0.06);
+  supply.clear();
+  soloDropT = 50;
   weather.set(world.theme.weather, true);
   structures.clear();
   setBuild(false);
@@ -1966,6 +2092,8 @@ async function gameOver() {
     <div id="xp-line" class="muted">Saving progress…</div>`;
   showOnly('gameover');
   renderBest();
+  live.on = false; // saving the run takes you off the live board
+  live.wave = 0;
   const r = await account.recordRun({ mode: 'solo', wave: game.wave, score: game.score, kills: game.kills, headshots: game.headshots });
   showXp(r);
 }
@@ -1980,6 +2108,7 @@ function showXp(r) {
 
 function toMenu() {
   flushQuests();
+  endLive();
   if (mp.lobby) mp.leave(true);
   game.state = 'menu';
   game.mode = 'solo';
@@ -1991,6 +2120,8 @@ function toMenu() {
   clearMedkits();
   clearProjectiles();
   pickups.clear();
+  supply.clear();
+  document.body.classList.remove('infected');
   defend.stop();
   structures.clear();
   setBuild(false);
@@ -2028,6 +2159,9 @@ const pointsBonus = (wave = game.wave) => (isDefend() ? 25 * wave * defend.heldC
 
 const mp = new Multiplayer({
   scene, effects, audio, account, player, weapon, banner, subBanner, defend,
+  onMatchCleared() {
+    supply?.clear();
+  },
   onLobby() {
     game.mode = 'mp';
     if (mp.lobby) account.setPartyRoom(mp.lobby.code); // party leader: bring everyone
@@ -2058,7 +2192,10 @@ const mp = new Multiplayer({
     weapon.reset(stats);
     applyProfile();
     pickups.clear();
-    pickups.topUp(7, null, 0.08);
+    supply.clear();
+    // gun game and infection hand out the guns; the host can also turn map guns off
+    const set = mp.settings;
+    if (!MODES[mode].gungame && !MODES[mode].infection && set.pickups !== 'off') pickups.topUp(7, null, 0.08);
     clearProjectiles();
     clearMedkits();
     player.reset(100);
@@ -2074,10 +2211,11 @@ const mp = new Multiplayer({
     if (MODES[mode].coop) {
       applyShop(); // shop upgrades count in co-op (it's you vs the zombies)
       player.health = stats.maxHealth;
+      if (mp.isHost() && set.wave > 1) game.wave = set.wave - 1; // the host's starting wave
     } else {
       spawnHealthPacks();
     }
-    giveLoadout();
+    if (!modeLoadout()) giveLoadout();
     player.dead = true; // until the server spawns us
     $('mp-end').classList.add('hidden');
     pauseFor(MODES[mode].name.toUpperCase(), `${MAPS[map].name} · ${MODES[mode].desc} Click to play. Hold Tab for scores.`);
@@ -2090,14 +2228,18 @@ const mp = new Multiplayer({
     player.yaw = yaw;
     player.dead = false;
     if (MODES[mp.mode]?.coop) player.health = revived ? Math.ceil(stats.maxHealth * 0.5) : stats.maxHealth;
-    else player.health = hp;
+    else {
+      // custom health (and zombie players' health) comes from the room
+      stats.maxHealth = hp;
+      player.health = hp;
+    }
     if (revived) banner('REVIVED', 'Back on your feet', 'gold', 1.6);
     // deathmatch and co-op: keep the guns you found (fresh mags); objective modes start you over
     if (['ffa', 'tdm', 'coop', 'defend'].includes(mp.mode)) weapon.refillMags(stats);
     else weapon.reset(stats);
-    giveLoadout();
     $('respawn').classList.add('hidden');
     game.grenades = Math.max(game.grenades, 2);
+    if (!modeLoadout()) giveLoadout();
     player.update(0, world.colliders, stats, false, audio, 1, world.ladders);
   },
   onHurt(dmg, hp, from) {
@@ -2117,8 +2259,9 @@ const mp = new Multiplayer({
     aim = false;
     const el = $('respawn');
     el.classList.remove('hidden');
-    let n = 4;
-    el.innerHTML = `Killed by <b>${esc(killer)}</b><br/><span>Respawning in ${n}</span>`;
+    let n = MODES[mp.mode]?.coop ? 4 : mp.settings.respawn || 4;
+    const turning = mp.infection && mp.myTeam !== INFECTED && mp.lobby?.players.some((p) => p.id === killerId && p.team === INFECTED);
+    el.innerHTML = `${turning ? '🧟 Infected by' : 'Killed by'} <b>${esc(killer)}</b><br/><span>Respawning in ${n}</span>`;
     const iv = setInterval(() => {
       n--;
       if (n <= 0 || !player.dead) return clearInterval(iv);
@@ -2131,6 +2274,26 @@ const mp = new Multiplayer({
   },
   onMyHp(hp) {
     if (!MODES[mp.mode]?.coop && !player.dead) player.health = hp;
+  },
+  onDrop(d, quiet) {
+    supply.add(d);
+    if (!quiet) announceDrop();
+  },
+  onLooted(id, by, gun) {
+    const d = supply.remove(id);
+    if (by === mp.myId) openSupply(gun);
+    else if (d && by) effects.dust(new THREE.Vector3(d.x, d.floor + 0.4, d.z));
+  },
+  onLevel(level, demoted) {
+    const ladder = mp.ladder;
+    const id = ladder[Math.min(level, ladder.length - 1)];
+    if (demoted) banner('KNIFED!', `${demoted} sent you back to the ${GUNS[id].name}`, 'red', 1.8);
+    else banner(id === 'knife' ? 'KNIFE ROUND' : `GUN ${level + 1}/${ladder.length}`, id === 'knife' ? 'Get one knife kill to win!' : `${GUNS[id].icon} ${GUNS[id].name}`, 'gold', 1.4);
+    if (!player.dead) modeLoadout();
+  },
+  onInfected(id, by, first) {
+    if (id !== mp.myId) return;
+    banner("🧟 YOU'VE BEEN INFECTED", first ? 'You start the horde: claw the survivors!' : 'Now get the rest of them', 'red', 2.6);
   },
   onStructures(list) {
     structures.clear();
@@ -2181,6 +2344,8 @@ const mp = new Multiplayer({
     const run = result.coop
       ? { mode: 'solo', wave: result.wave, score: game.score, kills: game.kills, headshots: game.headshots }
       : { mode: 'pvp', kills: result.kills, headshots: result.headshots, won: result.won };
+    live.on = false;
+    live.wave = 0;
     const r = await account.recordRun(run);
     $('mp-end-xp').innerHTML = r.error ? '' : `+${r.gained} XP · +${r.coins || 0} 🪙${r.levelAfter > r.levelBefore ? ` · <b class="lvlup">LEVEL UP! Level ${r.levelAfter}</b>` : ''} · back to the lobby in a moment…`;
   },
@@ -2272,7 +2437,7 @@ function renderModeCard() {
   const card = {
     continue: latest ? ['CONTINUE', `${esc(saveName(latest))} · wave ${latest.wave + 1}`, 'Dead Plains'] : null,
     solo: ['SOLO SURVIVAL', savedGames.length ? `New game or ${savedGames.length} saved game${savedGames.length === 1 ? '' : 's'}` : 'Start a new game', 'Dead Plains'],
-    mp: ['MULTIPLAYER', 'Co-op, Defend, FFA, TDM, Capture Point, CTF', 'Room codes · 4 maps'],
+    mp: ['MULTIPLAYER', 'Co-op, Defend, FFA, TDM, Capture Point, CTF, Gun Game, Infection', 'Room codes · 4 maps · custom settings'],
   }[mode];
   $('mode-card').innerHTML = card ? `<b>${card[0]}</b><span>${card[1]}</span><small>${card[2]}</small>` : '';
 }
@@ -2510,6 +2675,8 @@ let adminBossN = 0;
 let adminSoloMap = SOLO_MAP;
 const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false, grenades: false, build: false, turrets: false, instabuild: false };
 const cheatsOn = () => account.admin && game.mode === 'solo';
+// a cheat that changes the game is on (keeps you off the live leaderboard)
+const usingCheats = () => cheatsOn() && Object.entries(cheats).some(([k, v]) => v && k !== 'nohud');
 function flyUpdate(dt) {
   // noclip flight: look direction + Space up / C down
   const k = player.keys;
@@ -2580,10 +2747,23 @@ function renderPartyBar() {
   const el = $('party-bar');
   if (last.lineup !== html) {
     last.lineup = html;
-    el.innerHTML = html + (p?.room ? `<div class="fn-room">Party room <b>${esc(p.room)}</b></div>` : '');
+    // in a party: where it's playing, and a way out
+    el.innerHTML = html + (p ? `<div class="fn-room">${p.room ? `Party room <b>${esc(p.room)}</b>` : ''}<button class="btn small ghost fn-leave" data-leave-party>🚪 LEAVE PARTY</button></div>` : '');
   }
 }
-$('party-bar').addEventListener('click', (e) => {
+$('party-bar').addEventListener('click', async (e) => {
+  const leave = e.target.closest('[data-leave-party]');
+  if (leave) {
+    leave.disabled = true;
+    try {
+      await account.partyAction('leave');
+      accountUI.toast('🚪 You left the party', [], 3000);
+    } catch (err) {
+      accountUI.toast(esc(err.message), [], 4000);
+      leave.disabled = false;
+    }
+    return;
+  }
   if (!e.target.closest('[data-invite]')) return;
   accountUI.open(account.loggedIn ? 'friends' : 'login');
 });
@@ -3220,6 +3400,15 @@ accountUI.adminActions = {
     adminSoloMap = id;
     return `New solo games will be on ${MAPS[id].name}.`;
   },
+  supplyDrop() {
+    if (game.mode === 'mp' && mp.inMatch) {
+      mp.send({ t: 'admindrop' });
+      return 'Supply drop on its way to you (everyone sees it).';
+    }
+    if (game.mode !== 'solo' || inMenu()) return 'Start a game first.';
+    soloSupplyDrop({ x: player.pos.x + 3, z: player.pos.z + 1 });
+    return 'Supply drop on its way to you.';
+  },
   announce(text) {
     if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
     if (!String(text).trim()) return 'Type a message first.';
@@ -3265,6 +3454,8 @@ function update(dt) {
   questFlushT -= dt;
   if (questFlushT <= 0) flushQuests();
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
+  updateSupply(dt);
+  updateLive(dt);
   if (!isCoop()) worldTick(dt);
   else updateMedkits(dt); // co-op runs worldTick from the frame loop, even while paused
   explosionSoundT -= dt;
@@ -3467,6 +3658,10 @@ if (import.meta.env.DEV) {
     get zombies() {
       return zombies;
     },
+    get supply() {
+      return supply;
+    },
+    soloSupplyDrop,
     get pickups() {
       return pickups;
     },

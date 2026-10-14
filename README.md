@@ -171,8 +171,10 @@ Press Esc for the pause menu with **Resume** and **Exit**.
 ### Accounts, friends and progress
 - Play as a guest (progress saved in your browser) or **create an account** to save it on the server.
 - Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).
-- **Friends**: add people by username, accept requests, see who's online with their level and best wave.
-- **Leaderboard** of best waves.
+- **Friends**: add people by username, accept requests (a pop-up with ACCEPT / DECLINE appears when one comes in), see who's online with their level and best wave.
+- **Parties**: invite friends from the + spots on the home screen; **LEAVE PARTY** sits under the line-up.
+- **Live leaderboard**: a "Playing right now" list shows everyone in a zombie run and the wave they're on, and your
+  best wave and score count the moment you reach them. The tab refreshes itself every few seconds.
 
 ### Multiplayer
 Main menu → **Multiplayer** → **Create room** and send your friends the 5-letter code, or join with a code.
@@ -186,6 +188,14 @@ The host picks the mode and map, then starts. Up to 8 players.
 | Team Deathmatch | Red vs Blue, first team to 30 kills |
 | Capture Point | Stand in the zone in the middle to hold it; first to 150 points |
 | Capture the Flag | Bring the enemy flag to yours; first to 3 captures |
+| Gun Game | Every kill gives you the next gun on the ladder; the last level is the knife and needs a knife kill. Getting knifed sends you back a gun |
+| Infection | After 10 seconds someone turns into a zombie (knife/claws only, more health, faster). Anyone they kill joins them. Survivors win if anyone is left when time runs out |
+
+**Match settings**: under the modes the host can change that mode's settings (score limit, time, health, respawn time,
+supply drops, map guns, gun ladder, starting wave, zombie health and so on). **BACK TO NORMAL** puts them back.
+
+**Supply drops**: in every mode a crate parachutes down with red smoke (marked on the minimap). Walk into it to heal
+and get a gun with lots of ammo. Infected players can't open them.
 
 ### Admin
 An admin account has every customisation unlocked, can set its own level and coins, and gets an admin panel (**F2** in-game,
@@ -199,6 +209,11 @@ Newer admin tools: max or reset all **gun mastery** (every skin unlocked), finis
 replay or skip the **tutorial**, spawn a **specific boss**, **unlimited reserve for all your guns**, **infinite grenades**, **free building**, **unlimited builds**,
 **super turrets**, max / set **scrap**, refill / set **grenades**, remove all builds and zero scrap & grenades.
 Admins can also reset their quick chat wheel to the defaults.
+
+**Players on every server**: a list of everyone online (with the room they're in) and a search for any player, with
+**kick**, **timeout** (kicked and no online games, chat or messages for 5 minutes up to a week), **ban / unban** (bans the account and its IP), and
+**give or take coins** by name. **Blocked words**: type the words nobody may say; only those exact words are hidden as
+*** in every chat on every server, and new names can't use them. **Supply drop on me** drops a crate in any mode.
 
 To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:
 it lives in a Cloudflare secret called `ADMIN_CODE` (case and extra spaces don't matter). Set it in the Cloudflare dashboard

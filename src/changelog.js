@@ -2,6 +2,21 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '4.6', date: '14 Oct 2026', title: 'Supply drops, Gun Game, Infection & a live leaderboard',
+    items: [
+      'Supply drops: crates parachute down with red smoke in every mode. Walk into one to heal and grab a gun with lots of ammo.',
+      'New mode, Gun Game: every kill moves you to the next gun. Finish the ladder with a knife kill to win. A knife kill sends the victim back a gun.',
+      'New mode, Infection: after 10 seconds someone turns into a zombie. Zombies only have claws; every survivor they get joins them. Last until the timer runs out to win.',
+      'Match settings: the room host can change score limit, time, health, respawn time, supply drops, map guns, zombie health, starting wave and more for each mode. BACK TO NORMAL resets them.',
+      'The leaderboard is live: see who is playing right now and what wave they are on. Your best wave counts as soon as you reach it, not just when the run ends. It updates by itself.',
+      'Friend requests pop up with ACCEPT and DECLINE buttons.',
+      'LEAVE PARTY button under your party on the home screen.',
+      'Admin: see everyone online on every server, search any player, kick, time out, ban or unban them, and give or take coins by name.',
+      'Admin: choose blocked words. Only those exact words are hidden as *** in every chat on every server, and they can\'t be used in names.',
+      'Admin: drop a supply crate on yourself in any mode.',
+    ],
+  },
+  {
     v: '4.5', date: '14 Oct 2026', title: 'Lobby tabs, phone buttons & shop guns',
     items: [
       'Locker, Quests, Shop, Friends, Leaderboard, Updates and Settings now open as tabs under the top bar instead of pop-ups. PLAY or Esc takes you back.',

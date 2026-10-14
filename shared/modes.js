@@ -7,7 +7,73 @@ export const MODES = {
   tdm: { id: 'tdm', name: 'Team Deathmatch', short: 'TDM', teams: true, desc: 'Red vs Blue. First team to 30 kills wins.', killLimit: 30 },
   koth: { id: 'koth', name: 'Capture Point', short: 'CP', teams: true, desc: 'Hold the point in the middle of the map. First to 150 points wins.', scoreLimit: 150 },
   ctf: { id: 'ctf', name: 'Capture the Flag', short: 'CTF', teams: true, desc: "Steal the enemy flag and bring it to yours. First to 3 captures wins.", scoreLimit: 3 },
+  gungame: { id: 'gungame', name: 'Gun Game', short: 'GG', teams: false, gungame: true, desc: 'Every kill gives you the next gun. Get a kill with the last one, the knife, to win. Knife someone to send them back a gun.' },
+  infect: { id: 'infect', name: 'Infection', short: 'INF', teams: true, infection: true, autoTeams: true, desc: "After 10 seconds someone turns into a zombie. Anyone a zombie kills joins them. Survivors win if anyone is still standing when time runs out." },
 };
+
+// Gun Game: the guns you go through, one per kill. The last one is always the knife.
+export const GUN_LADDERS = {
+  short: ['rifle', 'shotgun', 'revolver', 'sniper', 'knife'],
+  normal: ['rifle', 'smg', 'shotgun', 'revolver', 'lmg', 'dmr', 'sniper', 'launcher', 'knife'],
+};
+// Infection: survivors are blue, the infected are red (shown as zombies)
+export const SURVIVORS = 'blue';
+export const INFECTED = 'red';
+export const INFECT_DELAY = 10; // seconds before the first zombie is picked
+
+// ---- custom match settings: the host picks these in the room lobby, per mode
+const opt = (vals, fmt = String) => vals.map((v) => [v, fmt(v)]);
+const mins = (v) => `${v} min`;
+const TIME = (def = 8, vals = [3, 5, 8, 10, 15]) => ({ key: 'time', label: '⏱️ Time limit', options: opt(vals, mins), def });
+const HP = { key: 'hp', label: '❤️ Player health', options: opt([50, 100, 150, 200], (v) => `${v} HP`), def: 100 };
+const RESPAWN = { key: 'respawn', label: '🔁 Respawn time', options: opt([2, 4, 8], (v) => `${v} s`), def: 4 };
+const DROPS = { key: 'drops', label: '📦 Supply drops', options: [['off', 'Off'], ['normal', 'Normal'], ['often', 'Often']], def: 'normal' };
+const PICKUPS = { key: 'pickups', label: '🔫 Guns on the map', options: [['on', 'On'], ['off', 'Off']], def: 'on' };
+const LIMIT = (label, vals, def) => ({ key: 'limit', label, options: opt(vals), def });
+export const MODE_SETTINGS = {
+  coop: [
+    { key: 'wave', label: '🌊 Starting wave', options: opt([1, 5, 10, 15, 20], (v) => `Wave ${v}`), def: 1 },
+    { key: 'zhp', label: '🧟 Zombie health', options: opt([50, 75, 100, 150, 200], (v) => `${v}%`), def: 100 },
+    DROPS,
+  ],
+  defend: [],
+  ffa: [LIMIT('🎯 Kills to win', [10, 20, 30, 50], 20), TIME(), HP, RESPAWN, DROPS, PICKUPS],
+  tdm: [LIMIT('🎯 Team kills to win', [20, 30, 50, 75], 30), TIME(), HP, RESPAWN, DROPS, PICKUPS],
+  koth: [LIMIT('🏁 Points to win', [100, 150, 250, 400], 150), TIME(), HP, RESPAWN, DROPS, PICKUPS],
+  ctf: [LIMIT('🚩 Captures to win', [1, 3, 5, 7], 3), TIME(), HP, RESPAWN, DROPS, PICKUPS],
+  gungame: [
+    { key: 'ladder', label: '🔫 Guns to get through', options: [['short', 'Short (5 guns)'], ['normal', 'Full (9 guns)']], def: 'normal' },
+    { key: 'demote', label: '🔪 Knife kills send them back', options: [['on', 'On'], ['off', 'Off']], def: 'on' },
+    TIME(10, [5, 8, 10, 15]), HP, RESPAWN, DROPS,
+  ],
+  infect: [
+    TIME(4, [2, 3, 4, 5, 8]),
+    { key: 'starters', label: '🧟 First zombies', options: opt([1, 2, 3]), def: 1 },
+    { key: 'zhp', label: '🧟 Zombie player health', options: opt([100, 150, 200, 300], (v) => `${v} HP`), def: 150 },
+    HP, DROPS,
+  ],
+};
+MODE_SETTINGS.defend = MODE_SETTINGS.coop;
+// every setting for a mode, with anything missing or not allowed set to its default
+export function cleanSettings(mode, raw) {
+  const out = {};
+  for (const s of MODE_SETTINGS[mode] || []) {
+    const v = raw?.[s.key];
+    out[s.key] = s.options.some(([o]) => o === v) ? v : s.def;
+  }
+  return out;
+}
+// the kill / score limit a match is played to
+export const limitFor = (mode, settings) => settings?.limit ?? MODES[mode]?.killLimit ?? MODES[mode]?.scoreLimit;
+
+// ---- supply drops: crates that parachute in with health and a good gun
+export const SUPPLY_GUNS = ['smg', 'shotgun', 'revolver', 'lmg', 'dmr', 'dmr', 'lmg', 'sniper', 'launcher'];
+export const SUPPLY_FALL = 7; // seconds from the sky to the ground
+export const SUPPLY_EVERY = { normal: 60, often: 30 }; // seconds between drops
+export const SUPPLY_FIRST = 35; // the first one comes this long into a match
+export const SUPPLY_LAST = 90; // a crate nobody opens goes away after this long on the ground
+export const SUPPLY_MAX = 3; // crates on the map at once
+export const SUPPLY_REACH = 3.2;
 
 export const MATCH_SECONDS = 8 * 60;
 export const RESPAWN_SECONDS = 4;

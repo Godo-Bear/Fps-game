@@ -2950,3 +2950,151 @@ body.touch-mode .tut-text {
     line-height: 16px;
   }
 }
+
+/* ---- v4.6: room match settings */
+.lobby-settings h4 {
+  margin-bottom: 6px;
+}
+.lset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px 10px;
+  margin-bottom: 8px;
+}
+.lset {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  color: rgba(233, 217, 184, 0.8);
+}
+.lset select {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: #e9d9b8;
+  background: rgba(20, 16, 12, 0.85);
+  border: 1px solid rgba(233, 217, 184, 0.3);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.lset select:disabled {
+  opacity: 0.75;
+}
+
+/* ---- infection: zombie players */
+.mp-score .zomb,
+.mp-team .zomb {
+  color: #8fd14a;
+}
+body.infected #game::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(70, 130, 20, 0.38) 100%);
+  z-index: 1;
+}
+
+/* ---- pop-ups in the corner (friend requests) */
+#toasts {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(12px + env(safe-area-inset-top));
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast {
+  position: relative;
+  pointer-events: auto;
+  background: linear-gradient(180deg, rgba(36, 28, 20, 0.97), rgba(20, 16, 12, 0.97));
+  border: 1px solid rgba(255, 176, 32, 0.6);
+  border-radius: 8px;
+  padding: 12px 34px 12px 14px;
+  color: #e9d9b8;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 17px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+  animation: toast-in 0.25s ease-out;
+}
+.toast-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.toast-btns .btn {
+  flex: 1;
+}
+.toast-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: none;
+  border: 0;
+  color: rgba(233, 217, 184, 0.7);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+/* ---- admin: players on every server */
+.admin-players {
+  max-height: 340px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.admin-player .actions {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.admin-player select {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 13px;
+  background: rgba(20, 16, 12, 0.9);
+  color: #e9d9b8;
+  border: 1px solid rgba(233, 217, 184, 0.3);
+  border-radius: 4px;
+}
+.admin-player .bad,
+.friend button.bad {
+  color: #ff6b5e;
+}
+.friend button.hot {
+  background: #ffb020;
+  color: #1a120c;
+}
+#admin-words {
+  width: 100%;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 15px;
+  background: rgba(20, 16, 12, 0.85);
+  color: #e9d9b8;
+  border: 1px solid rgba(233, 217, 184, 0.3);
+  border-radius: 4px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+/* live leaderboard */
+.live-head { display: flex; align-items: center; gap: 8px; }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 8px #ff3b3b; animation: livePulse 1.2s ease-in-out infinite; }
+@keyframes livePulse { 50% { opacity: 0.35; } }
+.live-tag { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #fff; background: #d62828; border-radius: 4px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
+.live-board { margin-bottom: 14px; }
+
+/* leave party, under the line-up */
+.fn-room { display: flex; align-items: center; gap: 10px; }
+.fn-room:has(.fn-leave) { opacity: 1; }
+#party-bar .btn.fn-leave { pointer-events: auto; background: rgba(12, 14, 20, 0.78); color: #fff; border: 1px solid rgba(255, 255, 255, 0.35); text-shadow: none; }
+#party-bar .btn.fn-leave:hover { background: #c0392b; border-color: #c0392b; }

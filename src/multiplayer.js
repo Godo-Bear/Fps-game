@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { MAPS, MODES, MP_MAPS, FLAG_BASES, POINT, makeRoomCode } from '../shared/modes.js';
+import { GUN_LADDERS, INFECTED, MAPS, MODES, MODE_SETTINGS, MP_MAPS, FLAG_BASES, POINT, SURVIVORS, cleanSettings, limitFor, makeRoomCode } from '../shared/modes.js';
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const TEAM_COLOR = { red: 0xc0392b, blue: 0x2f6fd0 };
+const ZOMBIE_GREEN = 0x5d8a2e; // infection: zombie players
 const TEAM_CSS = { red: '#ff5d4d', blue: '#5ea2ff' };
 export const FLAG_BITS = { crouch: 1, aim: 2, climb: 4, slide: 8 };
 
@@ -224,6 +225,20 @@ export class Multiplayer {
   get teams() {
     return MODES[this.mode]?.teams;
   }
+  // the custom settings of the match (or of the room, before it starts)
+  get settings() {
+    return (this.inMatch && this.matchSettings) || this.lobby?.settings || cleanSettings(this.mode, null);
+  }
+  get infection() {
+    return !!MODES[this.mode]?.infection;
+  }
+  // infection: am I a zombie?
+  get infected() {
+    return this.infection && this.inMatch && this.myTeam === INFECTED;
+  }
+  get ladder() {
+    return GUN_LADDERS[this.settings.ladder] || GUN_LADDERS.normal;
+  }
   isHost() {
     return this.lobby && this.lobby.host === this.myId;
   }
@@ -374,6 +389,8 @@ export class Multiplayer {
         this.map = m.map;
         teamsMode = !!MODES[m.mode].teams;
         this.inMatch = true;
+        this.matchSettings = cleanSettings(m.mode, m.settings);
+        this.myLevel = 0;
         this.endsAt = Date.now() + (m.endsAt - m.now);
         this.myStats = { kills: 0, deaths: 0, headshots: 0 };
         this.feed = [];
@@ -381,6 +398,21 @@ export class Multiplayer {
         this.ctx.onMatchStart(m.map, m.mode, m.weather);
         this._buildObjectives();
         this.ctx.onStructures?.(m.structures);
+        for (const d of m.drops || []) this.ctx.onDrop?.(d, true);
+        break;
+      case 'drop':
+        this.ctx.onDrop?.(m.d, false);
+        break;
+      case 'looted':
+        this.ctx.onLooted?.(m.id, m.by, m.gun);
+        break;
+      case 'level':
+        // gun game: your next gun (or back one, knifed)
+        this.myLevel = m.level;
+        this.ctx.onLevel?.(m.level, m.demoted);
+        break;
+      case 'infected':
+        this.ctx.onInfected?.(m.id, m.by, !!m.first);
         break;
       case 'built':
         this.ctx.onBuilt?.(m.s);
@@ -473,7 +505,8 @@ export class Multiplayer {
     const kc = this.teams ? TEAM_CSS[this._team(m.k)] : '#ffd38a';
     const vc = this.teams ? TEAM_CSS[this._team(m.v)] : '#e9d9b8';
     const gun = GUNS[m.g];
-    this._addFeed(`<b style="color:${kc}">${esc(killer)}</b> <span class="gun">${gun ? gun.icon : '🔫'}${m.head ? ' 🎯' : ''}</span> <b style="color:${vc}">${esc(victim)}</b>`);
+    const icon = this.infection && this._team(m.k) === INFECTED ? '🧟' : m.mel ? '🔪' : gun ? gun.icon : '🔫';
+    this._addFeed(`<b style="color:${kc}">${esc(killer)}</b> <span class="gun">${icon}${m.head ? ' 🎯' : ''}</span> <b style="color:${vc}">${esc(victim)}</b>`);
     if (m.k === this.myId) {
       this.myStats.kills++;
       if (m.head) this.myStats.headshots++;
@@ -511,10 +544,18 @@ export class Multiplayer {
       }
       let a = this.avatars.get(id);
       const info = this.lobby?.players.find((p) => p.id === id);
+      if (a && info && a.team !== info.team) {
+        // changed side (infection): rebuild them in their new colours
+        this.ctx.scene.remove(a.root);
+        a.dispose();
+        this.avatars.delete(id);
+        a = null;
+      }
       if (!a) {
         if (!info) continue;
-        const color = this.teams ? TEAM_COLOR[info.team] : new THREE.Color(info.color || '#888888').getHex();
+        const color = this.infection ? (info.team === INFECTED ? ZOMBIE_GREEN : TEAM_COLOR[SURVIVORS]) : this.teams ? TEAM_COLOR[info.team] : new THREE.Color(info.color || '#888888').getHex();
         a = new Avatar(info, color);
+        a.team = info.team;
         this.avatars.set(id, a);
         this.ctx.scene.add(a.root);
         this._rebuildParts();
@@ -531,6 +572,7 @@ export class Multiplayer {
       a.alive = !!alive;
       a.downed = !alive && !!MODES[this.mode]?.coop;
       a.setGun(gun);
+      a.level = row[13] || 0;
     }
     for (const id of [...this.avatars.keys()]) {
       if (!seen.has(id)) {
@@ -558,8 +600,8 @@ export class Multiplayer {
     return this.avatars.get(id)?.alive;
   }
 
-  reportHit(id, dmg, head) {
-    this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, head });
+  reportHit(id, dmg, head, melee = false) {
+    this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, head, melee });
   }
 
   reportShot(origin, end) {
@@ -636,6 +678,8 @@ export class Multiplayer {
     $('respawn').classList.add('hidden');
     $('scoreboard').classList.add('hidden');
     this.ctx.defend?.stop();
+    document.body.classList.remove('infected');
+    this.ctx.onMatchCleared?.();
   }
 
   // ---------------------------------------------------------------- per frame
@@ -723,13 +767,30 @@ export class Multiplayer {
     const left = s.left ?? 0;
     const time = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     let html = '';
-    if (MODES[this.mode]?.coop) {
+    const limit = limitFor(this.mode, this.settings);
+    if (this.infection) {
+      const team = (r) => this._team(r[0]);
+      const surv = s.ps.filter((r) => team(r) === SURVIVORS).length;
+      const inf = s.ps.length - surv;
+      const started = s.ps.some((r) => team(r) === INFECTED);
+      html = `<div class="mp-score"><span class="blue">${surv}</span><span class="time">${time}</span><span class="zomb">${inf}</span></div>
+        <div class="mp-obj">${started ? 'Survivors 🧍 vs Zombies 🧟 · survive until the time runs out' : 'Spread out! Someone is about to turn…'}</div>
+        <div class="mp-team">${this.infected ? '<b class="zomb">🧟 YOU ARE A ZOMBIE</b> · claw the survivors (knife)' : '<b style="color:#5ea2ff">🧍 SURVIVOR</b> · stay alive'}</div>`;
+    } else if (MODES[this.mode]?.gungame) {
+      const rows = [...s.ps].sort((a, b) => (b[13] || 0) - (a[13] || 0) || b[10] - a[10]);
+      const lead = rows[0];
+      const ladder = this.ladder;
+      const lvl = Math.min(this.myLevel || 0, ladder.length - 1);
+      const g = GUNS[ladder[lvl]];
+      html = `<div class="mp-score"><span class="time">${time}</span></div>
+        <div class="mp-obj">Gun ${lvl + 1}/${ladder.length}: <b>${g.icon} ${esc(g.name)}</b>${lvl < ladder.length - 1 ? ` · next ${GUNS[ladder[lvl + 1]].icon}` : ' · <b style="color:#ffd34d">knife kill to win!</b>'}</div>
+        <div class="mp-team">Leader: <b>${lead ? esc(this._name(lead[0])) : '-'}</b> (gun ${lead ? Math.min(ladder.length, (lead[13] || 0) + 1) : 1}/${ladder.length})</div>`;
+    } else if (MODES[this.mode]?.coop) {
       const up = s.ps.filter((r) => r[9]).length;
       html = `<div class="mp-obj">${MODES[this.mode].name.toUpperCase()} · ${up}/${s.ps.length} of the squad standing</div>${this.ctx.defend?.active ? this.ctx.defend.hudHtml() : ''}`;
     } else if (this.teams) {
       html = `<div class="mp-score"><span class="red">${s.sc.red}</span><span class="time">${time}</span><span class="blue">${s.sc.blue}</span></div>`;
       const mode = MODES[this.mode];
-      const limit = mode.killLimit ?? mode.scoreLimit;
       let obj = `${mode.name} · first to ${limit}`;
       if (this.mode === 'koth' && s.pt) {
         const prog = s.pt.progress;
@@ -749,7 +810,7 @@ export class Multiplayer {
       const rows = [...s.ps].sort((a, b) => b[10] - a[10]);
       const lead = rows[0];
       const mine = rows.find((r) => r[0] === this.myId);
-      html = `<div class="mp-score"><span class="time">${time}</span></div><div class="mp-obj">You: <b>${mine ? mine[10] : 0}</b> kills · Leader: <b>${lead ? esc(this._name(lead[0])) : '-'}</b> (${lead ? lead[10] : 0}) · first to ${MODES.ffa.killLimit}</div>`;
+      html = `<div class="mp-score"><span class="time">${time}</span></div><div class="mp-obj">You: <b>${mine ? mine[10] : 0}</b> kills · Leader: <b>${lead ? esc(this._name(lead[0])) : '-'}</b> (${lead ? lead[10] : 0}) · first to ${limit}</div>`;
     }
     if (this._hudHtml !== html) {
       this._hudHtml = html;
@@ -776,6 +837,10 @@ export class Multiplayer {
     let won = false;
     if (m.winner === 'coop') title = m.reason === 'points' ? `OVERRUN · WAVE ${m.wave}` : `RUN OVER · WAVE ${m.wave}`;
     else if (m.winner === 'draw') title = 'DRAW';
+    else if (this.infection) {
+      won = m.winner === this.myTeam;
+      title = m.winner === INFECTED ? 'THE ZOMBIES GOT EVERYONE' : 'THE SURVIVORS HELD OUT';
+    }
     else if (this.teams) {
       won = m.winner === this.myTeam;
       title = `${String(m.winner).toUpperCase()} TEAM WINS`;
@@ -802,6 +867,7 @@ export class Multiplayer {
       if (b.dataset.team) this.send({ t: 'team', team: b.dataset.team });
       if (b.dataset.kick) this.send({ t: 'kick', id: Number(b.dataset.kick) });
       if (b.id === 'lobby-start') this.send({ t: 'start' });
+      if (b.id === 'lobby-reset') for (const o of MODE_SETTINGS[this.mode] || []) this.send({ t: 'set', key: o.key, value: o.def });
       if (b.id === 'lobby-leave') this.leave();
       if (b.id === 'lobby-copy') {
         navigator.clipboard?.writeText(this.lobby.code).then(
@@ -810,6 +876,34 @@ export class Multiplayer {
         );
       }
     });
+  }
+
+  // the host's custom settings for this mode (everyone else just sees them)
+  _renderSettings(host) {
+    const list = MODE_SETTINGS[this.lobby.mode] || [];
+    const set = this.lobby.settings || {};
+    const el = $('lobby-settings');
+    if (!list.length) {
+      el.innerHTML = '';
+      return;
+    }
+    const key = JSON.stringify([this.lobby.mode, set, host]);
+    if (el.dataset.key === key) return;
+    el.dataset.key = key;
+    el.innerHTML = `<h4>Match settings${host ? '' : ' <span class="muted small">(the host picks these)</span>'}</h4><div class="lset-grid">${list
+      .map(
+        (o) => `<label class="lset"><span>${esc(o.label)}</span><select data-set="${o.key}" ${host ? '' : 'disabled'}>${o.options
+          .map(([v, n]) => `<option value="${esc(v)}" ${v === set[o.key] ? 'selected' : ''}>${esc(n)}${v === o.def ? ' ·' : ''}</option>`)
+          .join('')}</select></label>`,
+      )
+      .join('')}</div>${host ? '<button id="lobby-reset" class="btn small ghost">BACK TO NORMAL</button>' : ''}`;
+    el.querySelectorAll('select[data-set]').forEach((sel) =>
+      sel.addEventListener('change', () => {
+        const o = list.find((x) => x.key === sel.dataset.set);
+        const opt = o?.options.find(([v]) => String(v) === sel.value);
+        if (opt) this.send({ t: 'set', key: o.key, value: opt[0] });
+      }),
+    );
   }
 
   _renderLobby() {
@@ -821,7 +915,7 @@ export class Multiplayer {
     const player = (p) =>
       `<div class="lp ${p.id === this.myId ? 'me' : ''}"><span>${esc(p.avatar)}</span><b style="color:${esc(p.color)}">${esc(p.name)}</b>${p.admin ? '<i class="admin">⭐ADMIN</i>' : ''}${p.id === l.host ? '<i>HOST</i>' : ''}${p.account ? '' : '<em>guest</em>'}${canKick && p.id !== this.myId ? `<button class="kick" data-kick="${p.id}" title="Kick">✕</button>` : ''}</div>`;
     let roster;
-    if (mode.teams) {
+    if (mode.teams && !mode.autoTeams) {
       roster = ['red', 'blue']
         .map(
           (team) => `<div class="team ${team}"><h4>${team.toUpperCase()}</h4>${l.players.filter((p) => p.team === team).map(player).join('') || '<p class="muted">empty</p>'}
@@ -830,6 +924,7 @@ export class Multiplayer {
         .join('');
     } else {
       roster = `<div class="team ffa"><h4>${mode.coop ? 'SQUAD' : 'PLAYERS'}</h4>${l.players.map(player).join('')}</div>`;
+      if (mode.infection) roster += '<p class="muted small">Teams are picked by the game: everyone starts as a survivor.</p>';
     }
     $('lobby-code').textContent = l.code;
     $('lobby-modes').innerHTML = Object.values(MODES)
@@ -839,6 +934,7 @@ export class Multiplayer {
       .map(([id, m]) => `<button data-map="${id}" class="chipbtn ${id === l.map ? 'on' : ''}" ${host ? '' : 'disabled'}>${m.name}</button>`)
       .join('');
     $('lobby-desc').textContent = mode.desc;
+    this._renderSettings(host && l.phase === 'lobby');
     $('lobby-roster').innerHTML = roster;
     const start = $('lobby-start');
     start.style.display = host && l.phase === 'lobby' ? '' : 'none';

@@ -43,6 +43,10 @@ export class Account {
     this.partyInvites = [];
     this.partyListeners = [];
     this.unreadListeners = [];
+    this.requests = []; // friend requests waiting for you (usernames)
+    this.requestListeners = [];
+    this.timeoutMins = 0; // an admin timed you out
+    this.onNotice = null; // (message) the game shows it (e.g. you got banned)
     try {
       this.guest = { ...emptyGuest(), ...JSON.parse(store.get(GUEST_KEY) || '{}') };
       // emotes left the shop: give guests their coins back too
@@ -145,6 +149,10 @@ export class Account {
     }
     if (!res.ok) {
       if (res.status === 401 && path !== '/login') this._dropSession();
+      if (res.status === 403 && data.banned && path !== '/login') {
+        this._dropSession();
+        this.onNotice?.(data.error);
+      }
       throw new Error(data.error || `Error ${res.status}`);
     }
     return data;
@@ -203,6 +211,7 @@ export class Account {
     this._changed();
     this.loadQuests();
     this.loadParty();
+    this.pollUnread();
   }
   async logout() {
     try {
@@ -317,10 +326,23 @@ export class Account {
     this.unread = unread;
     if (JSON.stringify(before) !== JSON.stringify(unread)) for (const fn of this.unreadListeners) fn(unread, before);
   }
+  onRequests(fn) {
+    this.requestListeners.push(fn);
+  }
+  _setRequests(list) {
+    const before = this.requests;
+    this.requests = list;
+    if (JSON.stringify(before) !== JSON.stringify(list)) for (const fn of this.requestListeners) fn(list, before);
+  }
   async pollUnread() {
-    if (!this.user) return this._setUnread({});
+    if (!this.user) {
+      this._setRequests([]);
+      return this._setUnread({});
+    }
     try {
-      const { unread } = await this._api('/messages/unread');
+      const { unread, requests, timeoutMins } = await this._api('/messages/unread');
+      this.timeoutMins = timeoutMins || 0;
+      this._setRequests(requests || []);
       this._setUnread(unread || {});
     } catch {
       /* offline */
@@ -404,6 +426,24 @@ export class Account {
     this.quests = quests;
     this._changed();
   }
+  // admin: players on every server
+  adminPlayers(q = '') {
+    return this._api(`/admin/players?q=${encodeURIComponent(q)}`);
+  }
+  async adminPlayer(username, action, extra = {}) {
+    const r = await this._api('/admin/player', { method: 'POST', body: { username, action, ...extra } });
+    if (r.user) {
+      this.user = r.user;
+      this._changed();
+    }
+    return r;
+  }
+  adminWords() {
+    return this._api('/admin/words');
+  }
+  adminSetWords(words) {
+    return this._api('/admin/words', { method: 'POST', body: { words } });
+  }
   async adminSetCoins(coins) {
     const { user } = await this._api('/admin/coins', { method: 'POST', body: { coins } });
     this.user = user;
@@ -476,6 +516,13 @@ export class Account {
   leaderboard() {
     return this._api('/leaderboard');
   }
+  // tells the live leaderboard which wave you're on (logged-in players only)
+  live(wave, score) {
+    if (this.user) this._api('/live', { method: 'POST', body: { wave, score } }).catch(() => {});
+  }
+  liveEnd() {
+    if (this.user) this._api('/live', { method: 'POST', body: { end: true } }).catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------- UI
@@ -509,6 +556,22 @@ export class AccountUI {
       this.renderCard();
       if (!this.modal.classList.contains('hidden') && this.tab === 'friends' && !this.chatWith) this._loadFriends();
     });
+    // a pop-up when someone sends you a friend request
+    this.toasts = document.createElement('div');
+    this.toasts.id = 'toasts';
+    document.body.appendChild(this.toasts);
+    this.shownRequests = new Set();
+    account.onRequests((list) => {
+      this.renderCard();
+      for (const name of list) {
+        if (this.shownRequests.has(name)) continue;
+        this.shownRequests.add(name);
+        this._friendToast(name);
+      }
+      for (const el of this.toasts.querySelectorAll('[data-req]')) if (!list.includes(el.dataset.req)) el.remove();
+      if (!this.modal.classList.contains('hidden') && this.tab === 'friends' && !this.chatWith) this._loadFriends();
+    });
+    account.onNotice = (msg) => this.toast(`<b>⛔ ${esc(msg)}</b>`, [], 12000);
     account.onUnread(() => {
       this.renderCard();
       if (!this.modal.classList.contains('hidden')) this._renderTabs();
@@ -533,6 +596,50 @@ export class AccountUI {
       if (b) this.open(b.dataset.open);
     });
     this.renderCard();
+  }
+
+  // a small card in the corner; buttons: [label, class, onClick]
+  toast(html, buttons = [], ms = 20000, key = null) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    if (key) el.dataset.req = key;
+    el.innerHTML = `<button class="toast-x" title="Close">✕</button><div class="toast-body">${html}</div><div class="toast-btns"></div>`;
+    const row = el.querySelector('.toast-btns');
+    for (const [label, cls, fn] of buttons) {
+      const b = document.createElement('button');
+      b.className = `btn small ${cls || ''}`;
+      b.textContent = label;
+      b.onclick = async () => {
+        row.querySelectorAll('button').forEach((x) => (x.disabled = true));
+        const after = await fn();
+        if (after) el.querySelector('.toast-body').innerHTML = after;
+        row.remove();
+        setTimeout(() => el.remove(), after ? 2500 : 0);
+      };
+      row.appendChild(b);
+    }
+    el.querySelector('.toast-x').onclick = () => el.remove();
+    this.toasts.appendChild(el);
+    while (this.toasts.children.length > 4) this.toasts.firstChild.remove();
+    setTimeout(() => el.remove(), ms);
+    return el;
+  }
+
+  _friendToast(name) {
+    const a = this.account;
+    const done = async (action) => {
+      try {
+        await a.friendAction(action, name);
+        a._setRequests(a.requests.filter((n) => n !== name));
+        return action === 'accept' ? `🎉 You and <b>${esc(name)}</b> are now friends!` : `Request from <b>${esc(name)}</b> declined.`;
+      } catch (e) {
+        return esc(e.message);
+      }
+    };
+    this.toast(`👋 <b>${esc(name)}</b> wants to be your friend`, [
+      ['ACCEPT', 'hot', () => done('accept')],
+      ['DECLINE', 'ghost', () => done('remove')],
+    ], 30000, name);
   }
 
   open(tab = 'profile', keepChat = false) {
@@ -567,7 +674,7 @@ export class AccountUI {
       if (el) el.dataset.badge = n ? String(n) : '';
     };
     badge('quests-btn', a.questsReady);
-    badge('friends-btn', a.unreadTotal + a.partyInvites.length);
+    badge('friends-btn', a.unreadTotal + a.partyInvites.length + a.requests.length);
     if (this.onCard) this.onCard();
     const p = a.profile;
     const lvl = a.level;
@@ -808,6 +915,13 @@ export class AccountUI {
         <button class="btn small" data-acc="guns-all">🔫 OWN EVERY SHOP GUN</button>
         <button class="btn small ghost" data-acc="guns-none">REMOVE MY SHOP GUNS</button>
       </div>
+      <h4>👥 Players on every server</h4>
+      <form class="auth inline admin-row" id="admin-find"><input name="q" maxlength="16" placeholder="Search any player (or leave empty: everyone online)" /><button class="btn small">FIND</button></form>
+      <div id="admin-players" class="admin-players muted">Loading…</div>
+      <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="16" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
+      <h4>🚫 Blocked words <span class="muted small">(only these exact words: hidden as *** in every chat on every server, and not allowed in names)</span></h4>
+      <textarea id="admin-words" rows="3" maxlength="7000" placeholder="One word or phrase per line (or split them with commas)"></textarea>
+      <div class="auth inline admin-row"><button class="btn small" id="admin-words-save">SAVE BLOCKED WORDS</button><span id="admin-words-n" class="muted small"></span></div>
       <div class="auth inline admin-row">
         <span>🔫 Spawn with:</span>
         <select id="admin-loadout"><option value="">Nothing (rifle)</option>${SHOP.filter((d) => d.kind === 'gun' && a.items[d.id])
@@ -868,6 +982,7 @@ export class AccountUI {
       </div>
       <h4>Multiplayer</h4>
       <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="80" placeholder="Announce to everyone in your room" ${mp ? '' : 'disabled'} /><button class="btn small" ${mp ? '' : 'disabled'}>📢 ANNOUNCE</button></form>
+      <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
       ${mp ? '' : '<p class="muted small">Join or create a room to send announcements.</p>'}
       <h4>Solo game</h4>
       <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCORE</button></form>
@@ -877,6 +992,42 @@ export class AccountUI {
       <div id="admin-msg" class="msg"></div>
       <p class="muted small">Press F2 in-game to open this panel. In multiplayer you get an ADMIN badge, and as host you can kick players.</p>`;
     const msg = (t) => (document.getElementById('admin-msg').textContent = t);
+    document.getElementById('admin-drop').onclick = () => msg(act.supplyDrop());
+    this._adminPlayers('');
+    document.getElementById('admin-find').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this._adminPlayers(new FormData(e.target).get('q'));
+    });
+    document.getElementById('admin-give').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      try {
+        const r = await a.adminPlayer(String(f.get('u')).trim(), 'give', { coins: Number(f.get('c')) });
+        msg(r.note);
+        e.target.reset();
+        this._adminPlayers(this.adminQuery || '');
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    const words = document.getElementById('admin-words');
+    a.adminWords().then(
+      (r) => {
+        words.value = r.words.join('\n');
+        document.getElementById('admin-words-n').textContent = `${r.words.length} blocked`;
+      },
+      () => {},
+    );
+    document.getElementById('admin-words-save').onclick = async () => {
+      try {
+        const r = await a.adminSetWords(words.value);
+        words.value = r.words.join('\n');
+        document.getElementById('admin-words-n').textContent = `${r.words.length} blocked`;
+        msg(`Saved: ${r.words.length} blocked word(s). Every room picks them up within a minute.`);
+      } catch (err) {
+        msg(err.message);
+      }
+    };
     const spawn = document.getElementById('admin-spawn');
     if (spawn) spawn.onclick = () => msg(act.run('spawn', document.getElementById('admin-zombie').value));
     document.getElementById('admin-announce').addEventListener('submit', (e) => {
@@ -941,6 +1092,64 @@ export class AccountUI {
           }
         } else msg(act.run(f.dataset.act, v));
       })
+    );
+  }
+
+  // admin: the players list with kick / timeout / ban / coins
+  async _adminPlayers(q) {
+    this.adminQuery = q;
+    const el = document.getElementById('admin-players');
+    if (!el) return;
+    const a = this.account;
+    let r;
+    try {
+      r = await a.adminPlayers(q);
+    } catch (err) {
+      el.textContent = err.message;
+      return;
+    }
+    const row = (u) => {
+      const status = u.banned ? '<b class="bad">BANNED</b>' : u.timeoutMins ? `<b class="bad">timed out ${u.timeoutMins}m</b>` : u.room ? `in room <b>${esc(u.room)}</b>` : u.online ? 'online (menus)' : 'offline';
+      const me = u.username === a.name;
+      const btns = me || u.admin
+        ? `<span class="muted small">${me ? 'you' : 'admin'}</span>`
+        : `<button data-pa="kick" ${u.room ? '' : 'disabled'} title="Throw them out of their room">KICK</button>
+           <select data-pa-mins>${[[5, '5 min'], [30, '30 min'], [60, '1 hour'], [1440, '1 day'], [10080, '1 week']].map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select>
+           ${u.timeoutMins ? '<button data-pa="untimeout">END TIMEOUT</button>' : '<button data-pa="timeout" title="No online games or chat until it runs out">TIMEOUT</button>'}
+           ${u.banned ? '<button data-pa="unban" class="hot">UNBAN</button>' : '<button data-pa="ban" class="bad">BAN</button>'}`;
+      return `<div class="friend admin-player" data-u="${esc(u.username)}"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b>${u.admin ? ' ⭐' : ''}
+        <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${status}</span>
+        <span class="actions"><button data-pa="give100" title="Give 100 coins">+100 🪙</button>${btns}</span></div>`;
+    };
+    const list = r.players.length ? r.players.map(row).join('') : `<p class="muted small">${q ? 'Nobody with that name.' : 'Nobody else is online right now.'}</p>`;
+    const banned = r.banned.filter((u) => !r.players.some((p) => p.username === u.username));
+    el.innerHTML = `<p class="muted small">${q ? `Players starting with "${esc(q)}"` : `${r.players.length} online on every server`} · <a href="#" data-pa-refresh>refresh</a></p>${list}
+      ${banned.length ? `<h5>Banned / timed out</h5>${banned.map(row).join('')}` : ''}`;
+    el.querySelector('[data-pa-refresh]').onclick = (e) => {
+      e.preventDefault();
+      this._adminPlayers(q);
+    };
+    el.querySelectorAll('[data-pa]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const rowEl = b.closest('[data-u]');
+        const name = rowEl.dataset.u;
+        let action = b.dataset.pa;
+        const extra = {};
+        if (action === 'give100') {
+          action = 'give';
+          extra.coins = 100;
+        }
+        if (action === 'timeout') extra.minutes = Number(rowEl.querySelector('[data-pa-mins]').value);
+        if (action === 'ban' && !confirm(`Ban ${name}? They can't log in or play online until you unban them.`)) return;
+        const m = document.getElementById('admin-msg');
+        try {
+          const res = await a.adminPlayer(name, action, extra);
+          if (m) m.textContent = res.note;
+          this._adminPlayers(q);
+        } catch (err) {
+          if (m) m.textContent = err.message;
+        }
+      }),
     );
   }
 
@@ -1223,17 +1432,37 @@ export class AccountUI {
   }
 
   async _leaderboard() {
-    this.body.innerHTML = '<div class="muted">Loading…</div>';
+    if (!this.body.querySelector('.board')) this.body.innerHTML = '<div class="muted">Loading…</div>';
     try {
-      const { players } = await this.account.leaderboard();
+      const { players, live = [] } = await this.account.leaderboard();
+      if (this.tab !== 'leaderboard') return;
+      const me = (u) => (u.username === this.account.name ? 'me' : '');
       this.body.innerHTML = `
+        <h3 class="live-head"><span class="live-dot"></span> Playing right now</h3>
+        ${live.length
+          ? `<table class="board live-board">
+              <tr><th>Player</th><th>Lv</th><th>Wave now</th><th>Score now</th></tr>
+              ${live.map((u) => `<tr class="${me(u)}"><td>${nameTag(u)}</td><td>${u.level}</td><td><b>${u.live.wave}</b></td><td>${u.live.score}</td></tr>`).join('')}
+            </table>`
+          : '<p class="muted">Nobody is in a zombie run right now.</p>'}
+        <h3>All time</h3>
         <table class="board">
           <tr><th>#</th><th>Player</th><th>Lv</th><th>Best wave</th><th>Best score</th><th>PvP kills</th></tr>
-          ${players.map((u, i) => `<tr class="${u.username === this.account.name ? 'me' : ''}"><td>${i + 1}</td><td>${nameTag(u)}</td><td>${u.level}</td><td>${u.stats.bestWave}</td><td>${u.stats.bestScore}</td><td>${u.stats.pvpKills}</td></tr>`).join('')}
+          ${players.map((u, i) => `<tr class="${me(u)}"><td>${i + 1}</td><td>${nameTag(u)}${u.live ? ' <span class="live-tag">LIVE</span>' : ''}</td><td>${u.level}</td><td>${u.stats.bestWave}</td><td>${u.stats.bestScore}</td><td>${u.stats.pvpKills}</td></tr>`).join('')}
         </table>
-        ${players.length ? '' : '<p class="muted">Nobody yet. Be the first!</p>'}`;
+        ${players.length ? '' : '<p class="muted">Nobody yet. Be the first!</p>'}
+        <p class="muted small">Updates by itself every few seconds.</p>`;
     } catch (err) {
       this.body.innerHTML = `<p class="muted">${esc(err.message)}</p>`;
     }
+    // keep it live while the tab is open
+    clearTimeout(this.boardTimer);
+    const again = () => {
+      if (this.tab !== 'leaderboard' || this.modal.classList.contains('hidden')) return;
+      if (document.visibilityState === 'visible') this._leaderboard();
+      else this.boardTimer = setTimeout(again, 5000);
+    };
+    this.boardTimer = setTimeout(again, 5000);
   }
+
 }

@@ -204,6 +204,15 @@ export class Weapon {
     this._show(i);
   }
 
+  // Only these guns, with endless ammo (Gun Game, Infection zombies).
+  setOnly(ids, stats) {
+    this.slots = ids.map((id) => ({ def: GUNS[id], ammo: GUNS[id].melee ? 1 : this.magSize(stats, GUNS[id]), reserve: Infinity, mut: null }));
+    this.cur = 0;
+    this.last = 0;
+    this.ads = 0;
+    this.holdNow(0);
+  }
+
   equip(i) {
     if (i < 0 || i >= this.slots.length || i === (this.pending >= 0 ? this.pending : this.cur)) return;
     this.pending = i;
