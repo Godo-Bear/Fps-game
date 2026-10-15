@@ -1136,6 +1136,44 @@ export class Room extends DurableObject {
           this._broadcast(this._lobby());
         }
         break;
+      case 'shield': {
+        // force field: 8 seconds of no damage, every 45 seconds
+        if (this.phase !== 'playing' || !p.alive || now - (p.lastShield || 0) < 44000) return;
+        if (MODES[this.mode].infection && p.team === INFECTED) return;
+        p.lastShield = now;
+        p.shieldUntil = now + 8000;
+        const msg = JSON.stringify({ t: 'shield', id: p.id });
+        for (const o of this.players.values()) if (o !== p && o.joined) o.ws.send(msg);
+        break;
+      }
+      case 'setteam': {
+        // admins can put anyone on either team, in the lobby or mid-match
+        const target = this.players.get(m.id);
+        if (!p.admin || !target || !target.joined || !TEAMS.includes(m.team) || target.team === m.team) return;
+        this._moveTeam(target, m.team);
+        this._broadcast(this._lobby());
+        this._broadcast({ t: 'msg', text: `${p.name} moved ${target.name} to ${m.team.toUpperCase()}`, team: m.team });
+        break;
+      }
+      case 'teamops': {
+        // admins: shuffle, balance or swap the teams
+        if (!p.admin) return;
+        const list = [...this.players.values()].filter((o) => o.joined);
+        if (m.op === 'shuffle') {
+          const order = list.sort(() => Math.random() - 0.5);
+          order.forEach((o, i) => this._moveTeam(o, TEAMS[i % 2]));
+        } else if (m.op === 'swap') {
+          for (const o of list) this._moveTeam(o, o.team === 'red' ? 'blue' : 'red');
+        } else if (m.op === 'balance') {
+          const red = list.filter((o) => o.team === 'red');
+          const blue = list.filter((o) => o.team === 'blue');
+          const [big, small] = red.length > blue.length ? [red, 'blue'] : [blue, 'red'];
+          for (let n = Math.floor(Math.abs(red.length - blue.length) / 2); n > 0; n--) this._moveTeam(big.pop(), small);
+        } else return;
+        this._broadcast(this._lobby());
+        this._broadcast({ t: 'msg', text: `${p.name} ${m.op === 'shuffle' ? 'shuffled' : m.op === 'swap' ? 'swapped' : 'balanced'} the teams` });
+        break;
+      }
       case 'kick': {
         // the host (or an admin) can remove someone from the room
         const target = this.players.get(m.id);
@@ -1541,6 +1579,18 @@ export class Room extends DurableObject {
   }
 
   // at: [x, y, z] to come back where you are (a co-op revive)
+  // a player changes side; mid-match they drop any flag and respawn on their new side
+  _moveTeam(target, team) {
+    if (!target || target.team === team) return;
+    target.team = team;
+    if (this.phase !== 'playing') return;
+    this._dropFlag(target);
+    if (target.alive && !this._coop) {
+      target.hp = this._maxHp(target);
+      this._spawn(target);
+    }
+  }
+
   _spawn(p, at = null) {
     const mode = MODES[this.mode];
     if (at) {
@@ -1593,7 +1643,7 @@ export class Room extends DurableObject {
     if (dist > 320) return;
     // infection zombies only have their claws (the knife): close up only
     if (mode.infection && p.team === INFECTED && (!m.melee || dist > 5)) return;
-    if (now < target.protectUntil) return;
+    if (now < target.protectUntil || now < (target.shieldUntil || 0)) return;
     // one in the chamber: every bullet kills
     target.hp -= mode.oitc && !m.melee ? target.hp : dmg;
     target.lastHurt = now;

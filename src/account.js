@@ -975,7 +975,7 @@ export class AccountUI {
         ${[
           ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
           ['speed', '2× move speed'], ['freeze', 'Freeze zombies'], ['slowmo', 'Slow motion'], ['nohud', 'Hide HUD (screenshots)'],
-          ['grenades', 'Infinite grenades'], ['build', 'Free building (no scrap)'], ['turrets', 'Super turrets (5× damage)'],
+          ['grenades', 'Infinite grenades'], ['build', 'Free building (no scrap)'], ['turrets', 'Super turrets (5× damage)'], ['shield', 'Force field never runs out'],
         ]
           .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${mp ? 'disabled' : ''} /> ${label}</label>`)
           .join('')}
@@ -1025,6 +1025,8 @@ export class AccountUI {
       <h4>Multiplayer</h4>
       <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="80" placeholder="Announce to everyone in your room" ${mp ? '' : 'disabled'} /><button class="btn small" ${mp ? '' : 'disabled'}>📢 ANNOUNCE</button></form>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
+      <h4>👥 Teams in this room</h4>
+      <div id="admin-teams" class="admin-players"></div>
       <h4>🛢️ Map props <span class="muted small">(solo games)</span></h4>
       <div class="admin-grid">
         <button class="btn small" data-barrels="place">🛢️ RED BARREL IN FRONT OF ME</button>
@@ -1043,6 +1045,7 @@ export class AccountUI {
       <p class="muted small">Press F2 in-game to open this panel. In multiplayer you get an ADMIN badge, and as host you can kick players.</p>`;
     const msg = (t) => (document.getElementById('admin-msg').textContent = t);
     document.getElementById('admin-drop').onclick = () => msg(act.supplyDrop());
+    this._adminTeams(msg);
     for (const btn of this.body.querySelectorAll('[data-barrels]')) btn.onclick = () => msg(act.barrels(btn.dataset.barrels));
     this._adminPlayers('');
     document.getElementById('admin-find').addEventListener('submit', (e) => {
@@ -1144,6 +1147,36 @@ export class AccountUI {
         } else msg(act.run(f.dataset.act, v));
       })
     );
+  }
+
+  // admin: move players between teams in the room you're in (lobby or mid-match)
+  _adminTeams(msg) {
+    const el = document.getElementById('admin-teams');
+    if (!el) return;
+    const act = this.adminActions;
+    const r = act.roomTeams?.();
+    if (!r) {
+      el.innerHTML = '<p class="muted small">Join a room to move players between teams.</p>';
+      return;
+    }
+    if (!r.teams) {
+      el.innerHTML = '<p class="muted small">This mode has no teams. Pick Team Deathmatch, Capture Point, Capture the Flag or Infection.</p>';
+      return;
+    }
+    const col = { red: '#ff5d4d', blue: '#5ea2ff' };
+    el.innerHTML = `${r.players
+      .map((p) => `<div class="apl"><b style="color:${col[p.team] || '#ddd'}">${esc(p.name)}${p.me ? ' (you)' : ''}</b><span class="muted small">${String(p.team || '').toUpperCase()}</span>
+        <button class="btn small ${p.team === 'red' ? 'on' : 'ghost'}" data-tm="red" data-id="${p.id}">RED</button><button class="btn small ${p.team === 'blue' ? 'on' : 'ghost'}" data-tm="blue" data-id="${p.id}">BLUE</button></div>`)
+      .join('')}
+      <div class="admin-grid"><button class="btn small" data-top="shuffle">🔀 SHUFFLE TEAMS</button><button class="btn small" data-top="balance">⚖️ BALANCE</button><button class="btn small" data-top="swap">⇄ SWAP SIDES</button></div>`;
+    el.querySelectorAll('[data-tm]').forEach((b) => (b.onclick = () => {
+      msg(act.setTeam(Number(b.dataset.id), b.dataset.tm));
+      setTimeout(() => this._adminTeams(msg), 600);
+    }));
+    el.querySelectorAll('[data-top]').forEach((b) => (b.onclick = () => {
+      msg(act.teamOp(b.dataset.top));
+      setTimeout(() => this._adminTeams(msg), 600);
+    }));
   }
 
   // admin: the players list with kick / timeout / ban / coins

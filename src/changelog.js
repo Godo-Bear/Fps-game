@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.1', date: '15 Oct 2026', title: 'Force field & admin team control',
+    items: [
+      'Force field: press F (controller D-pad left, 🛡️ on phones) for an 8 second bubble zombies can\'t get into and bullets can\'t get through. It recharges for 45 seconds, and everyone sees yours.',
+      'Admin: move any player to red or blue, right in the room lobby or from the admin panel mid-match. Shuffle, balance or swap the teams with one button.',
+      'Admin: a force field that never runs out (solo cheat).',
+    ],
+  },
+  {
     v: '5.0', date: '15 Oct 2026', title: 'Twists, perks, new modes & more',
     items: [
       'Wave twists: every 3rd wave gets one (Headshots Only, Volatile, Low Gravity, Double Score, Sprinters, Thick Skin, Bloodthirst). You see it while you get ready.',

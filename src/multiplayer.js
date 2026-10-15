@@ -422,6 +422,9 @@ export class Multiplayer {
       case 'infected':
         this.ctx.onInfected?.(m.id, m.by, !!m.first);
         break;
+      case 'shield':
+        this.ctx.onShield?.(m.id);
+        break;
       case 'ammo':
         this.ctx.onAmmo?.(m.n | 0);
         break;
@@ -896,6 +899,8 @@ export class Multiplayer {
       if (b.dataset.map) this.send({ t: 'map', map: b.dataset.map });
       if (b.dataset.team) this.send({ t: 'team', team: b.dataset.team });
       if (b.dataset.kick) this.send({ t: 'kick', id: Number(b.dataset.kick) });
+      if (b.dataset.moveteam) this.send({ t: 'setteam', id: Number(b.dataset.pid), team: b.dataset.moveteam });
+      if (b.dataset.teamop) this.send({ t: 'teamops', op: b.dataset.teamop });
       if (b.id === 'lobby-start') this.send({ t: 'start' });
       if (b.id === 'lobby-reset') for (const o of MODE_SETTINGS[this.mode] || []) this.send({ t: 'set', key: o.key, value: o.def });
       if (b.id === 'lobby-leave') this.leave();
@@ -943,8 +948,11 @@ export class Multiplayer {
     const host = this.isHost();
     const mode = MODES[l.mode];
     const canKick = host || this.me?.admin;
+    const admin = !!this.me?.admin;
+    // admins can move anyone between teams
+    const mover = (p) => (admin && mode.teams ? ['red', 'blue'].filter((t) => t !== p.team).map((t) => `<button class="kick tmove ${t}" data-moveteam="${t}" data-pid="${p.id}" title="Move to ${t}">→${t === 'red' ? 'R' : 'B'}</button>`).join('') : '');
     const player = (p) =>
-      `<div class="lp ${p.id === this.myId ? 'me' : ''}"><span>${esc(p.avatar)}</span><b style="color:${esc(p.color)}">${esc(p.name)}</b>${p.admin ? '<i class="admin">⭐ADMIN</i>' : ''}${p.id === l.host ? '<i>HOST</i>' : ''}${p.account ? '' : '<em>guest</em>'}${canKick && p.id !== this.myId ? `<button class="kick" data-kick="${p.id}" title="Kick">✕</button>` : ''}</div>`;
+      `<div class="lp ${p.id === this.myId ? 'me' : ''}"><span>${esc(p.avatar)}</span><b style="color:${esc(p.color)}">${esc(p.name)}</b>${p.admin ? '<i class="admin">⭐ADMIN</i>' : ''}${p.id === l.host ? '<i>HOST</i>' : ''}${p.account ? '' : '<em>guest</em>'}${mover(p)}${canKick && p.id !== this.myId ? `<button class="kick" data-kick="${p.id}" title="Kick">✕</button>` : ''}</div>`;
     let roster;
     if (mode.teams && !mode.autoTeams) {
       roster = ['red', 'blue']
@@ -957,6 +965,7 @@ export class Multiplayer {
       roster = `<div class="team ffa"><h4>${mode.coop ? 'SQUAD' : 'PLAYERS'}</h4>${l.players.map(player).join('')}</div>`;
       if (mode.infection) roster += '<p class="muted small">Teams are picked by the game: everyone starts as a survivor.</p>';
     }
+    if (admin && mode.teams) roster += `<div class="admin-teams"><span class="muted small">⭐ Admin teams:</span><button class="btn small ghost" data-teamop="shuffle">🔀 SHUFFLE</button><button class="btn small ghost" data-teamop="balance">⚖️ BALANCE</button><button class="btn small ghost" data-teamop="swap">⇄ SWAP SIDES</button></div>`;
     $('lobby-code').textContent = l.code;
     $('lobby-modes').innerHTML = Object.values(MODES)
       .map((m) => `<button data-mode="${m.id}" class="chipbtn ${m.id === l.mode ? 'on' : ''}" ${host ? '' : 'disabled'} title="${esc(m.desc)}">${m.name}</button>`)

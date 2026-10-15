@@ -25,6 +25,7 @@ const BUTTONS = [
   ['scores', '☰', 'hold:Tab'],
   ['revive', '✚', 'hold:KeyE'],
   ['emote', '💬', 'key:KeyZ'],
+  ['shield', '🛡️', 'key:KeyF'],
 ];
 
 // The right thumb's buttons sit in two arcs around FIRE: [id, size, radius, angle] (90° = straight up,
@@ -37,6 +38,7 @@ const ARCS = [
   ['reload', 56, 122, 192],
   ['build', 46, 198, 115],
   ['nade', 46, 198, 140],
+  ['shield', 46, 198, 215],
   ['knife', 46, 198, 165],
   ['swap', 46, 198, 190],
 ];
@@ -301,7 +303,7 @@ export class Controls {
       hold(10, 'ShiftLeft');
       if (pressed(12)) tap('KeyB');
       if (pressed(13)) tap(this.ctx.building() ? 'KeyR' : 'KeyQ');
-      if (pressed(14)) tap('Digit1');
+      if (pressed(14)) tap(this.ctx.building() ? 'Digit1' : 'KeyF');
       if (pressed(15)) tap('Digit2');
       hold(8, 'Tab');
       if (pressed(9)) this.ctx.pause();

@@ -118,6 +118,10 @@ you log in). Dying ends that game and deletes its save.
   zombie (or enemy player) in range. It works in every mode; online everyone sees the same builds, and in PvP you
   can shoot or blow up the other side's.
 
+### Force field
+Press **F** (controller **D-pad left**, **🛡️** on phones) for an 8 second bubble: zombies get pushed out of it and bullets
+can't get through. It recharges for 45 seconds. Other players see your bubble.
+
 ### Twists, perks, finishers, weekly challenge
 - **Wave twists** every 3rd wave (shown while you ready up): Headshots Only, Volatile, Low Gravity, Double Score,
   Sprinters, Thick Skin, Bloodthirst. **Special waves**: Horde Rush (all from one side) and Bounty (a golden zombie).
@@ -244,7 +248,7 @@ Admins can also reset their quick chat wheel to the defaults.
 **Players on every server**: a list of everyone online (with the room they're in) and a search for any player, with
 **kick**, **timeout** (kicked and no online games, chat or messages for 5 minutes up to a week), **ban / unban** (bans the account and its IP), and
 **give or take coins** by name. **Blocked words**: type the words nobody may say; only those exact words are hidden as
-*** in every chat on every server, and new names can't use them. **Supply drop on me** drops a crate in any mode.
+*** in every chat on every server, and new names can't use them. **Supply drop on me** drops a crate in any mode. **Teams**: move any player to red or blue (room lobby, or the admin panel mid-match), or shuffle / balance / swap the teams. A **force field that never runs out** is in the solo cheats.
 Map props (solo): a red barrel in front of you, blow up every barrel, bring them all back, refill every ammo crate.
 
 To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:

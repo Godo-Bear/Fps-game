@@ -1782,8 +1782,87 @@ function rewardKill({ type, mut, head, src = null, x, y, z, bounty = false }) {
   }
 }
 
+// ---------------------------------------------------------------- force field
+// F (controller D-pad left, 🛡️ on phones): a bubble for 8 seconds that zombies can't get into and
+// bullets can't get through. Recharges for 45 seconds. Other players see yours.
+const SHIELD_TIME = 8;
+const SHIELD_CD = 45;
+const SHIELD_R = 3.2;
+const shield = { cd: 0 };
+const shields = new Map(); // 'me' or a player id -> { until, mesh }
+const shieldGeo = new THREE.SphereGeometry(SHIELD_R, 24, 16);
+function raiseShield(id) {
+  let s = shields.get(id);
+  if (!s) {
+    const mesh = new THREE.Mesh(shieldGeo, new THREE.MeshBasicMaterial({ color: 0x6ad8ff, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
+    scene.add(mesh);
+    s = { mesh, until: 0 };
+    shields.set(id, s);
+  }
+  s.until = time + SHIELD_TIME;
+}
+const shieldUp = () => {
+  const s = shields.get('me');
+  return !!s && s.until > time;
+};
+function useShield() {
+  if (player.dead || game.state !== 'playing' || (mp.infection && mp.infected)) return;
+  const free = cheats.shield && cheatsOn();
+  if (shield.cd > 0 && !free) {
+    subBanner(`Force field recharging · ${Math.ceil(shield.cd)}s`, 1);
+    audio.empty();
+    return;
+  }
+  shield.cd = free ? 0 : SHIELD_CD;
+  raiseShield('me');
+  if (game.mode === 'mp') mp.send({ t: 'shield' });
+  audio.zap?.();
+  subBanner('🛡️ FORCE FIELD UP', 1.2);
+}
+function updateShields(dt) {
+  shield.cd = Math.max(0, shield.cd - dt);
+  for (const [id, s] of shields) {
+    const a = id === 'me' ? null : mp.avatars.get(id);
+    const pos = id === 'me' ? player.pos : a?.pos;
+    const on = s.until > time && pos && (id === 'me' ? !player.dead : a?.alive);
+    s.mesh.visible = !!on;
+    if (!on) continue;
+    s.mesh.position.set(pos.x, pos.y + 1, pos.z);
+    const left = s.until - time;
+    s.mesh.material.opacity = (0.14 + Math.sin(time * 6) * 0.04) * (left < 2 && Math.sin(time * 20) < 0 ? 0.3 : 1);
+    // zombies get pushed out of the bubble
+    if (zombieGame() && simHost()) {
+      for (const z of zombies.list) {
+        if (!z.alive) continue;
+        const zp = z.root.position;
+        const dx = zp.x - pos.x;
+        const dz = zp.z - pos.z;
+        const d = Math.hypot(dx, dz);
+        const r = SHIELD_R + z.radius;
+        if (d < r && d > 0.01) {
+          zp.x = pos.x + (dx / d) * r;
+          zp.z = pos.z + (dz / d) * r;
+        }
+      }
+    }
+  }
+  const el = $('shield-hud');
+  const html = shieldUp() ? `🛡️ ON ${Math.ceil(shields.get('me').until - time)}s` : shield.cd > 0 ? `🛡️ ${Math.ceil(shield.cd)}s` : `🛡️ <b>${controls.mode === 'pad' ? '◀' : controls.mode === 'touch' ? '' : 'F'}</b> ready`;
+  if (last.shieldHud !== html) {
+    last.shieldHud = html;
+    el.innerHTML = html;
+    el.classList.toggle('ready', shield.cd <= 0 && !shieldUp());
+  }
+}
+function clearShields() {
+  for (const s of shields.values()) scene.remove(s.mesh);
+  shields.clear();
+  shield.cd = 0;
+}
+
 function onPlayerHit(z, dmg, kind) {
   if (!zombieGame() || player.dead) return;
+  if (shieldUp()) return; // the force field takes it
   if (game.state !== 'playing' && !isCoop()) return;
   if (cheats.god && cheatsOn()) return;
   player.health -= dmg * (1 - stats.armor);
@@ -2628,6 +2707,7 @@ function startGame(save = null, name = null, { weekly = false } = {}) {
   setBuild(false);
   Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2), spent: 0, perks: new Set(), mod: null, special: null, forceMod: null });
   clearEvac();
+  clearShields();
   applyWaveTwist();
   game.runName = cleanSaveName(name || nextGameName());
   game.night = false;
@@ -2740,9 +2820,13 @@ const mp = new Multiplayer({
   scene, effects, audio, account, player, weapon, banner, subBanner, defend,
   onMatchCleared() {
     supply?.clear();
+    clearShields();
     clearEvac();
     game.mod = null;
     applyWaveTwist();
+  },
+  onShield(id) {
+    if (id !== mp.myId) raiseShield(id);
   },
   // one in the chamber: a kill gives you another bullet
   onAmmo(n) {
@@ -3281,6 +3365,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyQ') weapon.equipLast();
   if (e.code === 'KeyV' && !player.dead && weapon.quickMelee()) meleeAttack();
   if (e.code === 'KeyG') throwGrenade();
+  if (e.code === 'KeyF') useShield();
   const digit = /^Digit([1-9])$/.exec(e.code);
   if (digit) weapon.equip(Number(digit[1]) - 1);
 });
@@ -3305,7 +3390,7 @@ const _fwd = new THREE.Vector3();
 // ---------------------------------------------------------------- admin (solo only; the account must be verified by the server)
 let adminBossN = 0;
 let adminSoloMap = SOLO_MAP;
-const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false, grenades: false, build: false, turrets: false };
+const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false, grenades: false, build: false, turrets: false, shield: false };
 const cheatsOn = () => account.admin && game.mode === 'solo';
 // a cheat that changes the game is on (keeps you off the live leaderboard)
 const usingCheats = () => cheatsOn() && Object.entries(cheats).some(([k, v]) => v && k !== 'nohud');
@@ -4102,6 +4187,19 @@ accountUI.adminActions = {
     }
     return '';
   },
+  // admin: this room's players and teams (works mid-match too)
+  roomTeams() {
+    if (game.mode !== 'mp' || !mp.lobby) return null;
+    return { teams: !!MODES[mp.lobby.mode]?.teams, players: mp.lobby.players.map((p) => ({ id: p.id, name: p.name, team: p.team, me: p.id === mp.myId })) };
+  },
+  setTeam(id, team) {
+    mp.send({ t: 'setteam', id, team });
+    return `Moving to ${team.toUpperCase()}…`;
+  },
+  teamOp(op) {
+    mp.send({ t: 'teamops', op });
+    return 'Done.';
+  },
   announce(text) {
     if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
     if (!String(text).trim()) return 'Type a message first.';
@@ -4145,6 +4243,7 @@ function update(dt) {
   if (build.on) updateBuildGhost();
   updateRevive(dt);
   updateMapProps(dt);
+  updateShields(dt);
   updateReadyUp();
   questFlushT -= dt;
   if (questFlushT <= 0) flushQuests();
