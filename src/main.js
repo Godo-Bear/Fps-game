@@ -3101,19 +3101,102 @@ $('help-btn').addEventListener('click', () => showPage('help'));
 // 📰 Updates: everything that's changed, newest first; NEW until you've looked
 const SEEN_KEY = 'deadplains.seenVersion';
 function renderUpdatesBadge() {
-  $('updates-btn').dataset.badge = loadPref(SEEN_KEY, '') === LATEST_VERSION ? '' : 'NEW';
+  $('updates-btn').dataset.badge = loadPref(SEEN_KEY, '') === latestUpdate() ? '' : 'NEW';
 }
-$('updates-btn').addEventListener('click', () => {
-  $('updates-list').innerHTML = CHANGELOG.map(
-    (u, i) => `<div class="update ${i === 0 ? 'latest' : ''}">
-      <div class="u-head"><b>${esc(u.title)}</b><span class="muted small">v${u.v} · ${u.date}</span></div>
-      <ul>${u.items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
-    </div>`,
-  ).join('');
+// The Updates tab: the built-in list plus whatever admins changed (edited, removed or added) on the server.
+let updatesExtra = { edits: {}, hidden: [], added: [] };
+let showRemovedUpdates = false;
+let editingUpdate = null; // version being edited, or 'new'
+function mergedUpdates() {
+  const built = CHANGELOG.map((u) => ({ ...u, ...(updatesExtra.edits[u.v] || {}), builtIn: true }));
+  return [...updatesExtra.added.map((u) => ({ ...u, added: true })), ...built].map((u) => ({ ...u, hidden: updatesExtra.hidden.includes(u.v) }));
+}
+const latestUpdate = () => mergedUpdates().find((u) => !u.hidden)?.v || LATEST_VERSION;
+async function loadUpdates() {
+  try {
+    const r = await fetch('/api/updates');
+    if (r.ok) updatesExtra = await r.json();
+  } catch {
+    /* offline: the built-in list */
+  }
+}
+function updateForm(u) {
+  return `<form class="u-edit" data-uform="${esc(u?.v || 'new')}">
+    <input name="title" maxlength="120" placeholder="Title" value="${esc(u?.title || '')}" required />
+    <input name="date" maxlength="40" placeholder="Date (e.g. 16 Oct 2026)" value="${esc(u?.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}" />
+    <textarea name="items" rows="5" placeholder="One change per line">${esc((u?.items || []).join('\n'))}</textarea>
+    <div class="u-actions"><button class="btn small">SAVE</button><button type="button" class="btn small ghost" data-ucancel>CANCEL</button></div>
+  </form>`;
+}
+function renderUpdates() {
+  const admin = account.admin;
+  const list = mergedUpdates().filter((u) => !u.hidden || (admin && showRemovedUpdates));
+  const firstShown = list.find((u) => !u.hidden);
+  const tools = (u) =>
+    admin
+      ? `<span class="u-tools">${u.hidden ? `<button data-uact="restore" data-v="${esc(u.v)}">BRING BACK</button>` : `<button data-uact="edit" data-v="${esc(u.v)}">EDIT</button>${u.added ? `<button data-uact="delete" data-v="${esc(u.v)}" class="bad">DELETE</button>` : `<button data-uact="remove" data-v="${esc(u.v)}" class="bad">REMOVE</button>`}`}</span>`
+      : '';
+  $('updates-list').innerHTML = `${admin ? `<div class="u-admin">⭐ <button class="btn small" data-uact="add">+ ADD UPDATE</button><label class="muted small"><input type="checkbox" id="u-show-removed" ${showRemovedUpdates ? 'checked' : ''} /> Show removed (${updatesExtra.hidden.length})</label></div>${editingUpdate === 'new' ? updateForm(null) : ''}` : ''}
+    ${list
+      .map((u) =>
+        editingUpdate === u.v
+          ? updateForm(u)
+          : `<div class="update ${u === firstShown ? 'latest' : ''} ${u.hidden ? 'u-hidden' : ''}">
+        <div class="u-head"><b>${esc(u.title)}</b><span class="muted small">${u.added ? '' : `v${esc(u.v)} · `}${esc(u.date || '')}${u.hidden ? ' · removed' : ''}</span>${tools(u)}</div>
+        <ul>${(u.items || []).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+      </div>`,
+      )
+      .join('')}`;
+}
+$('updates-list').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-uact], [data-ucancel]');
+  if (!b) return;
+  if (b.dataset.ucancel !== undefined) {
+    editingUpdate = null;
+    return renderUpdates();
+  }
+  const act = b.dataset.uact;
+  if (act === 'add' || act === 'edit') {
+    editingUpdate = act === 'add' ? 'new' : b.dataset.v;
+    return renderUpdates();
+  }
+  if (act === 'delete' && !confirm('Delete this update for good?')) return;
+  try {
+    updatesExtra = await account.adminUpdates({ action: act, v: b.dataset.v });
+  } catch (err) {
+    subBanner(err.message, 2);
+  }
+  renderUpdates();
+});
+$('updates-list').addEventListener('change', (e) => {
+  if (e.target.id !== 'u-show-removed') return;
+  showRemovedUpdates = e.target.checked;
+  renderUpdates();
+});
+$('updates-list').addEventListener('submit', async (e) => {
+  const f = e.target.closest('[data-uform]');
+  if (!f) return;
+  e.preventDefault();
+  const d = new FormData(f);
+  const entry = { title: d.get('title'), date: d.get('date'), items: String(d.get('items') || '').split('\n') };
+  const v = f.dataset.uform;
+  try {
+    updatesExtra = await account.adminUpdates(v === 'new' ? { action: 'add', entry } : { action: 'edit', v, entry });
+    editingUpdate = null;
+  } catch (err) {
+    subBanner(err.message, 2);
+  }
+  renderUpdates();
+});
+$('updates-btn').addEventListener('click', async () => {
+  renderUpdates();
   showPage('updates');
-  savePref(SEEN_KEY, LATEST_VERSION);
+  await loadUpdates();
+  renderUpdates();
+  savePref(SEEN_KEY, latestUpdate());
   renderUpdatesBadge();
 });
+loadUpdates().then(renderUpdatesBadge);
 $('updates').addEventListener('click', (e) => {
   if ((e.target === $('updates') && !$('updates').classList.contains('docked')) || e.target.closest('[data-close-updates]')) hidePage('updates');
 });
@@ -3883,7 +3966,7 @@ function openSettings() {
       <div class="s-controls">${CONTROL_LIST.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>
       <p class="muted small">Controller and touch controls are in How to Play.</p>
     </div>
-    <details class="pay-terms settings-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(account.cfg?.price || '$3', account.cfg?.payNote || 'paid cash in hand to the site owner')}</details>`;
+    <details class="pay-terms settings-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(account.cfg?.price || '$3', account.cfg?.payNote || 'paid cash in hand to the site owner', account.cfg?.months === undefined ? 6 : Number(account.cfg.months) || 0)}</details>`;
   $('settings-all').addEventListener('click', () => {
     showAllSettings = !showAllSettings;
     openSettings();

@@ -180,7 +180,7 @@ Settings) open as pages under the top bar, like a game lobby; **Play** (or Esc) 
 still pop-ups.
 
 The **📰 Updates** tab on the home screen lists every update, newest first, with a **NEW** badge until you've
-looked. New updates go at the top of `src/changelog.js`.
+looked. New updates go at the top of `src/changelog.js`. Admins can **edit**, **remove** (and bring back) or **add** entries right on the Updates page; those changes are saved on the server, on top of the built-in list.
 
 ### Daily quests
 Three new quests every day (the same for everyone). Finish one, then claim its coins in **📜 Quests** on the menu.
@@ -199,7 +199,7 @@ and health packs around the map heal 40 HP (they come back 30 seconds later).
 Press Esc for the pause menu with **Resume** and **Exit**.
 
 ### Accounts, friends and progress
-- **Paid memberships (optional):** with Supabase set up, players sign up by email and you switch them on by setting `has_paid` to TRUE. Full step-by-step guide: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
+- **Paid access (optional, $3 for every 6 months):** with Supabase set up, players sign up by email and you switch them on by setting `has_paid` to TRUE. Full step-by-step guide: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
 - **You need a free account to play** (username + password). PLAY asks you to sign up or log in first.
 - Play as a guest (progress saved in your browser) or **create an account** to save it on the server.
 - Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).

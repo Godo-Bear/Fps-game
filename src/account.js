@@ -535,6 +535,9 @@ export class Account {
     }
     return r;
   }
+  adminUpdates(body) {
+    return this._api('/admin/updates', { method: 'POST', body });
+  }
   adminManage(username) {
     return this._api(`/admin/manage?u=${encodeURIComponent(username)}`);
   }
@@ -856,10 +859,10 @@ export class AccountUI {
     const c = a.cfg || {};
     const g = a.gate;
     const price = esc(c.price || '$3');
-    const months = Number(c.months) || 0;
-    // what you pay: once and forever (or for a set time, if the owner sets PAY_MONTHS)
-    const deal = months ? `${price} for ${months} months` : `a one-time ${price}, yours forever`;
-    const terms = `<details class="pay-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(price, esc(c.payNote || 'paid cash in hand to the site owner'))}<p class="muted small">You can read these any time in Settings.</p></details>`;
+    const months = c.months === undefined ? 6 : Number(c.months) || 0;
+    // what you pay: every few months (or once and forever, if the owner sets PAY_MONTHS to 0)
+    const deal = months ? `${price} for every ${months} months` : `a one-time ${price}, yours forever`;
+    const terms = `<details class="pay-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(price, esc(c.payNote || 'paid cash in hand to the site owner'), months)}<p class="muted small">You can read these any time in Settings.</p></details>`;
     const done = () => {
       if (this.mustLogin && a.loggedIn) {
         this.mustLogin = false;
@@ -912,7 +915,7 @@ export class AccountUI {
       ${g?.kind === 'confirm' ? `<p class="must-login">📧 We sent a link to <b>${esc(g.email)}</b>. Click it to confirm your email, then log in here.</p>` : ''}
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make an account (or log in) to start playing.</b></p>' : ''}
       <h2>Get Hollow Ground</h2>
-      <p class="muted">${months ? `${price} for ${months} months` : `One payment of ${price}, yours forever`}, ${esc(c.payNote || 'paid cash in hand to the site owner')}. No refunds. Make your account first, then pay the owner to have it switched on.</p>
+      <p class="muted">${months ? `${price} for every ${months} months` : `One payment of ${price}, yours forever`}, ${esc(c.payNote || 'paid cash in hand to the site owner')}. No refunds. Make your account first, then pay the owner to have it switched on.</p>
       <form id="pay-auth" class="auth">
         <input name="email" type="email" placeholder="Email" autocomplete="email" required />
         <input name="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required />
@@ -973,7 +976,7 @@ export class AccountUI {
         <div><b>${s.pvpKills}</b>PvP kills</div><div><b>${s.pvpWins}</b>PvP wins</div>
         <div><b>${s.games}</b>Games</div><div><b>${this.account.xp}</b>Total XP</div>
       </div>
-      ${this.account.paywall ? `<p class="muted small">Logged in as <b>${esc(this.account.email || '')}</b>${this.account.user?.paidUntil ? ` · access until <b>${esc(this.account.user.paidUntil)}</b>` : ' · access forever'}</p>` : ''}
+      ${this.account.paywall ? `<p class="muted small">Logged in as <b>${esc(this.account.email || '')}</b>${this.account.user?.paidUntil ? ` · access until <b>${esc(this.account.user.paidUntil)}</b>` : ''}</p>` : ''}
       <button id="logout-btn" class="btn small ghost">LOG OUT</button>
       ${this.account.admin ? '<div id="all-accounts"></div>' : ''}`;
     document.getElementById('logout-btn').onclick = () => this.account.logout().then(() => this.close());

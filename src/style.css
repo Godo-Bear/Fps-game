@@ -3220,3 +3220,14 @@ body.infected #game::after {
 .manage-grid label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .manage-grid input { font: inherit; padding: 5px 8px; border-radius: 5px; border: 1px solid rgba(233, 217, 184, 0.3); background: rgba(20, 16, 12, 0.9); color: #e9d9b8; min-width: 0; }
 .manage-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+
+/* admin: editing the Updates tab */
+.u-admin { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.u-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.u-tools { margin-left: auto; display: flex; gap: 6px; }
+.u-tools button { font: inherit; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(233, 217, 184, 0.3); background: rgba(20, 16, 12, 0.6); color: #e9d9b8; cursor: pointer; }
+.u-tools button.bad { color: #ff6b5e; }
+.update.u-hidden { opacity: 0.45; }
+.u-edit { display: flex; flex-direction: column; gap: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid rgba(255, 211, 77, 0.45); border-radius: 8px; background: rgba(255, 211, 77, 0.06); }
+.u-edit input, .u-edit textarea { font: inherit; padding: 6px 8px; border-radius: 5px; border: 1px solid rgba(233, 217, 184, 0.3); background: rgba(20, 16, 12, 0.9); color: #e9d9b8; }
+.u-actions { display: flex; gap: 8px; }

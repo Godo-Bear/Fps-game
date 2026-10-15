@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.8', date: '16 Oct 2026', title: 'New price & editable updates',
+    items: [
+      'Access is now $3 for every 6 months, paid cash to the site owner. No refunds.',
+      'Admin: edit, remove (and bring back) or add entries on this Updates page.',
+    ],
+  },
+  {
     v: '5.7', date: '16 Oct 2026', title: 'Admin: manage any player',
     items: [
       'Admin: every player in the list has a MANAGE button. Change their level, coins, player name, best wave, best score, kills, headshots, PvP kills and wins, and games played, or reset them to a fresh start.',

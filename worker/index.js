@@ -237,6 +237,15 @@ export class GameDB extends DurableObject {
     }
   }
 
+  _updates() {
+    try {
+      const u = JSON.parse(this.sql.exec("SELECT value FROM config WHERE key = 'updates'").toArray()[0]?.value || '{}');
+      return { edits: u.edits || {}, hidden: Array.isArray(u.hidden) ? u.hidden : [], added: Array.isArray(u.added) ? u.added : [] };
+    } catch {
+      return { edits: {}, hidden: [], added: [] };
+    }
+  }
+
   _badges(u) {
     try {
       const list = JSON.parse(u.achievements || '[]');
@@ -475,7 +484,7 @@ export class GameDB extends DurableObject {
       return json({
         supabase: this.paywall ? { url: this.env.SUPABASE_URL, anonKey: this.env.SUPABASE_ANON_KEY } : null,
         price: this.env.PAY_PRICE || '$3',
-        months: Number(this.env.PAY_MONTHS) || 0, // 0 = pay once, yours forever
+        months: this.env.PAY_MONTHS === undefined ? 6 : Number(this.env.PAY_MONTHS) || 0, // 0 = pay once, yours forever
         payNote: this.env.PAY_NOTE || 'paid cash in hand to the site owner',
       });
     }
@@ -561,6 +570,9 @@ export class GameDB extends DurableObject {
       );
       return json({ ok: true });
     }
+
+    // the Updates tab: admins' edits on top of the built-in list (anyone can read them)
+    if (path === '/updates' && method === 'GET') return json(this._updates());
 
     // quick play: an open room with space, busiest first (or none: the game makes a new open room)
     if (path === '/quickplay' && method === 'GET') {
@@ -905,6 +917,36 @@ export class GameDB extends DurableObject {
       const after = this._byName(u.username);
       const user = after.id === me.id ? this._publicUser(after, true) : undefined;
       return json({ note, player: this._adminRow(after), user });
+    }
+    // admin: edit, remove, bring back or add entries on the Updates tab
+    if (path === '/admin/updates' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const u = this._updates();
+      const v = String(body.v || '').slice(0, 40);
+      const clean = (e) => ({
+        title: String(e?.title || '').trim().slice(0, 120) || 'Update',
+        date: String(e?.date || '').trim().slice(0, 40),
+        items: (Array.isArray(e?.items) ? e.items : []).map((t) => String(t).trim().slice(0, 400)).filter(Boolean).slice(0, 30),
+      });
+      if (body.action === 'edit') {
+        if (!v) return err('Which update?');
+        const added = u.added.find((a) => a.v === v);
+        if (added) Object.assign(added, clean(body.entry));
+        else u.edits[v] = clean(body.entry);
+      } else if (body.action === 'remove') {
+        if (!u.hidden.includes(v)) u.hidden.push(v);
+      } else if (body.action === 'restore') {
+        u.hidden = u.hidden.filter((h) => h !== v);
+        delete u.edits[v];
+      } else if (body.action === 'add') {
+        if (u.added.length >= 100) return err('Too many added updates');
+        u.added.unshift({ v: `n${Date.now().toString(36)}`, ...clean(body.entry) });
+      } else if (body.action === 'delete') {
+        // an update an admin added: gone for good
+        u.added = u.added.filter((a) => a.v !== v);
+      } else return err('Unknown action');
+      this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('updates', ?)", JSON.stringify(u));
+      return json(u);
     }
     // admin: the words nobody on any server can say
     if (path === '/admin/words' && method === 'GET') {
