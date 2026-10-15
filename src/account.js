@@ -132,13 +132,18 @@ export class Account {
     return this.user ? this.user.stats : this.guest.stats;
   }
   // guests check in now and then (a random id, their level and stats) so admins can see them
-  pingGuest() {
-    if (this.user) return;
+  // this browser's random guest id (made the first time)
+  get guestId() {
     let id = store.get('deadplains.guestId');
     if (!id || !/^[a-f0-9]{24}$/.test(id)) {
       id = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
       store.set('deadplains.guestId', id);
     }
+    return id;
+  }
+  pingGuest() {
+    if (this.user) return;
+    const id = this.guestId;
     const s = this.guest.stats;
     fetch('/api/guest/ping', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, xp: this.guest.xp, bestWave: s.bestWave, games: s.games }) }).catch(() => {});
   }
@@ -458,6 +463,10 @@ export class Account {
     }
     return r;
   }
+  adminGuest(guest, action, extra = {}) {
+    return this._api('/admin/player', { method: 'POST', body: { guest, action, ...extra } });
+  }
+
   adminWords() {
     return this._api('/admin/words');
   }
@@ -840,7 +849,8 @@ export class AccountUI {
       .join('');
     const guests = r.guests
       .map((g) => `<div class="friend admin-player"><span class="dot ${g.online ? 'on' : ''}"></span><b class="muted">Guest #${esc(g.id)}</b>
-        <span class="muted">Lv ${g.level} · best wave ${g.bestWave} · ${g.games} games · first seen ${date(g.created)} · seen ${ago(g.lastSeen)}</span></div>`)
+        <span class="muted">Lv ${g.level} · best wave ${g.bestWave} · ${g.games} games · first seen ${date(g.created)} · seen ${ago(g.lastSeen)}</span>
+        <span class="actions"><button data-manage="${esc(g.id)}">MANAGE</button></span></div>`)
       .join('');
     const pages = Math.max(Math.ceil(r.total / 50), q ? 1 : Math.ceil(r.guestTotal / 50), 1);
     list.innerHTML = `<p class="muted small">${q ? `${r.total} account${r.total === 1 ? '' : 's'} starting with "${esc(q)}"` : `${r.total} accounts · ${r.guestTotal} guest browsers`} · page ${page + 1}/${pages}
@@ -1014,41 +1024,21 @@ export class AccountUI {
     const act = this.adminActions;
     const solo = act && act.inSolo();
     const mp = act && act.inMP();
+    const sec = this.adminSec || 'players';
+    const tabs = [['players', '👥 Players'], ['game', '🎮 Game'], ['mp', '🌐 Multiplayer'], ['me', '🛠️ Account & server']];
     this.body.innerHTML = `
-      <p class="muted">Admin account: every customisation is unlocked. Cheats work in solo games only (multiplayer stays fair).</p>
-      <h4>Account</h4>
-      <form class="auth inline admin-row" data-act="level"><input name="v" type="number" min="1" max="200" placeholder="Set level (1-200)" /><button class="btn small">SET LEVEL</button></form>
-      <form class="auth inline admin-row" data-act="coins"><input name="v" type="number" min="0" placeholder="Set coins" /><button class="btn small">SET COINS</button></form>
-      <div class="admin-grid">
-        <button class="btn small" data-acc="mastery-max">🏅 MAX ALL GUN MASTERY</button>
-        <button class="btn small ghost" data-acc="mastery-reset">RESET GUN MASTERY</button>
-        <button class="btn small" data-acc="quests-complete">📜 FINISH TODAY'S QUESTS</button>
-        <button class="btn small ghost" data-acc="quests-reset">RESET TODAY'S QUESTS</button>
-        <button class="btn small ghost" data-run="tutorial">REPLAY THE TUTORIAL</button>
-        <button class="btn small ghost" id="admin-quick-reset">RESET MY QUICK CHAT</button>
-        <button class="btn small" data-acc="guns-all">🔫 OWN EVERY SHOP GUN</button>
-        <button class="btn small ghost" data-acc="guns-none">REMOVE MY SHOP GUNS</button>
-      </div>
-      <h4>👥 Players on every server</h4>
-      <form class="auth inline admin-row" id="admin-find"><input name="q" maxlength="16" placeholder="Search any player (or leave empty: everyone online)" /><button class="btn small">FIND</button></form>
+      <div class="asubtabs">${tabs.map(([id, n]) => `<button class="chipbtn ${id === sec ? 'on' : ''}" data-asec="${id}">${n}</button>`).join('')}</div>
+      <div id="admin-msg" class="msg admin-msg"></div>
+    <section class="asec" data-sec="players">
+      <div class="acard"><h4>👥 Every player <span class="muted small">(online first)</span></h4>
+      <form class="auth inline admin-row" id="admin-find"><input name="q" maxlength="16" placeholder="Search by name (empty: everyone)" /><button class="btn small">FIND</button></form>
       <div id="admin-players" class="admin-players muted">Loading…</div>
       <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="16" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
-      <h4>🚫 Blocked words <span class="muted small">(only these exact words: hidden as *** in every chat on every server, and not allowed in names)</span></h4>
-      <textarea id="admin-words" rows="3" maxlength="7000" placeholder="One word or phrase per line (or split them with commas)"></textarea>
-      <div class="auth inline admin-row"><button class="btn small" id="admin-words-save">SAVE BLOCKED WORDS</button><span id="admin-words-n" class="muted small"></span></div>
-      <div class="auth inline admin-row">
-        <span>🔫 Spawn with:</span>
-        <select id="admin-loadout"><option value="">Nothing (rifle)</option>${SHOP.filter((d) => d.kind === 'gun' && a.items[d.id])
-          .map((d) => `<option value="${d.gun}" ${a.items.loadout === d.gun ? 'selected' : ''}>${esc(d.name)}</option>`)
-          .join('')}</select>
-        <span class="muted small">(every mode, unlimited ammo)</span>
       </div>
-      <div class="auth inline admin-row">
-        <span>🗺️ Solo map:</span>
-        <select id="admin-map">${(act?.maps() || []).map(([id, n]) => `<option value="${id}" ${act.soloMap === id ? 'selected' : ''}>${n}</option>`).join('')}</select>
-        <span class="muted small">(for your next new solo game)</span>
-      </div>
-      <h4>Solo cheats ${mp ? '<span class="muted">(off in multiplayer)</span>' : ''}</h4>
+    </section>
+    <section class="asec" data-sec="game">
+      ${solo ? '' : '<p class="muted small">Most of these need a solo game running: start one, then press F2.</p>'}
+      <div class="acard"><h4>Cheats ${mp ? '<span class="muted small">(off in multiplayer)</span>' : ''}</h4>
       <div class="admin-grid">
         ${[
           ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
@@ -1058,7 +1048,8 @@ export class AccountUI {
           .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${mp ? 'disabled' : ''} /> ${label}</label>`)
           .join('')}
       </div>
-      ${solo ? '' : '<p class="muted small">The buttons below need a solo game running: start one, then press F2.</p>'}
+      </div>
+      <div class="acard"><h4>Actions</h4>
       <div class="admin-grid">
         <button class="btn small" data-run="guns" ${solo ? '' : 'disabled'}>GIVE ALL GUNS</button>
         <button class="btn small" data-run="mutate" ${solo ? '' : 'disabled'}>MUTATE ALL MY GUNS</button>
@@ -1085,7 +1076,29 @@ export class AccountUI {
         <select id="admin-boss" ${solo ? '' : 'disabled'}>${(act?.bosses() || []).map(([id, n]) => `<option value="${id}">${n}</option>`).join('')}</select>
         <button class="btn small" id="admin-boss-btn" ${solo ? '' : 'disabled'}>SPAWN THIS BOSS</button>
       </div>
-      <h4>Undo</h4>
+      <div class="auth inline admin-row">
+        <select id="admin-zombie" ${solo ? '' : 'disabled'}>${(act?.zombieTypes() || []).map((t) => `<option>${t}</option>`).join('')}</select>
+        <button class="btn small" id="admin-spawn" ${solo ? '' : 'disabled'}>SPAWN 5</button>
+        <select id="admin-weather" ${solo ? '' : 'disabled'}>${solo ? act.weathers().map(([id, n]) => `<option value="${id}">${n}</option>`).join('') : ''}</select>
+        <button class="btn small" id="admin-weather-btn" ${solo ? '' : 'disabled'}>SET WEATHER</button>
+      </div>
+      </div>
+      <div class="acard"><h4>Numbers</h4>
+      <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCORE</button></form>
+      <form class="auth inline admin-row" data-act="setscrap"><input name="v" type="number" min="0" max="999" placeholder="Set scrap" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCRAP</button></form>
+      <form class="auth inline admin-row" data-act="setnades"><input name="v" type="number" min="0" max="20" placeholder="Set grenades" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET GRENADES</button></form>
+      <form class="auth inline admin-row" data-act="wavecap"><input name="v" type="number" min="5" max="300" placeholder="Max zombies per wave (50)" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET WAVE SIZE</button></form>
+      <form class="auth inline admin-row" data-act="wave"><input name="v" type="number" min="1" max="200" placeholder="Jump to wave" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET WAVE</button></form>
+      </div>
+      <div class="acard"><h4>🛢️ Map props</h4>
+      <div class="admin-grid">
+        <button class="btn small" data-barrels="place">🛢️ RED BARREL IN FRONT OF ME</button>
+        <button class="btn small bad" data-barrels="boom">💥 BLOW UP EVERY BARREL</button>
+        <button class="btn small" data-barrels="back">↩ BRING BACK ALL BARRELS</button>
+        <button class="btn small" data-barrels="ammo">🔫 REFILL ALL AMMO CRATES</button>
+      </div>
+      </div>
+      <div class="acard"><h4>Undo</h4>
       <div class="admin-grid">
         <button class="btn small ghost" data-run="removeguns" ${solo ? '' : 'disabled'}>REMOVE ALL GUNS</button>
         <button class="btn small ghost" data-run="unmutate" ${solo ? '' : 'disabled'}>UNMUTATE GUNS</button>
@@ -1094,33 +1107,58 @@ export class AccountUI {
         <button class="btn small ghost" data-run="noscrap" ${solo ? '' : 'disabled'}>ZERO SCRAP & GRENADES</button>
         <button class="btn small ghost" data-run="cheatsoff">TURN OFF ALL CHEATS</button>
       </div>
-      <div class="auth inline admin-row">
-        <select id="admin-zombie" ${solo ? '' : 'disabled'}>${(act?.zombieTypes() || []).map((t) => `<option>${t}</option>`).join('')}</select>
-        <button class="btn small" id="admin-spawn" ${solo ? '' : 'disabled'}>SPAWN 5</button>
-        <select id="admin-weather" ${solo ? '' : 'disabled'}>${solo ? act.weathers().map(([id, n]) => `<option value="${id}">${n}</option>`).join('') : ''}</select>
-        <button class="btn small" id="admin-weather-btn" ${solo ? '' : 'disabled'}>SET WEATHER</button>
       </div>
-      <h4>Multiplayer</h4>
+    </section>
+    <section class="asec" data-sec="mp">
+      ${mp ? '' : '<p class="muted small">Join or create a room to use these.</p>'}
+      <div class="acard"><h4>📢 Room</h4>
       <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="80" placeholder="Announce to everyone in your room" ${mp ? '' : 'disabled'} /><button class="btn small" ${mp ? '' : 'disabled'}>📢 ANNOUNCE</button></form>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
-      <h4>👥 Teams in this room</h4>
-      <div id="admin-teams" class="admin-players"></div>
-      <h4>🛢️ Map props <span class="muted small">(solo games)</span></h4>
-      <div class="admin-grid">
-        <button class="btn small" data-barrels="place">🛢️ RED BARREL IN FRONT OF ME</button>
-        <button class="btn small bad" data-barrels="boom">💥 BLOW UP EVERY BARREL</button>
-        <button class="btn small" data-barrels="back">↩ BRING BACK ALL BARRELS</button>
-        <button class="btn small" data-barrels="ammo">🔫 REFILL ALL AMMO CRATES</button>
       </div>
-      ${mp ? '' : '<p class="muted small">Join or create a room to send announcements.</p>'}
-      <h4>Solo game</h4>
-      <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCORE</button></form>
-      <form class="auth inline admin-row" data-act="setscrap"><input name="v" type="number" min="0" max="999" placeholder="Set scrap" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCRAP</button></form>
-      <form class="auth inline admin-row" data-act="setnades"><input name="v" type="number" min="0" max="20" placeholder="Set grenades" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET GRENADES</button></form>
-      <form class="auth inline admin-row" data-act="wavecap"><input name="v" type="number" min="5" max="300" placeholder="Max zombies per wave (50)" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET WAVE SIZE</button></form>
-      <form class="auth inline admin-row" data-act="wave"><input name="v" type="number" min="1" max="200" placeholder="Jump to wave" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET WAVE</button></form>
-      <div id="admin-msg" class="msg"></div>
+      <div class="acard"><h4>👥 Teams in this room</h4>
+      <div id="admin-teams" class="admin-players"></div>
+      </div>
+    </section>
+    <section class="asec" data-sec="me">
+      <div class="acard"><h4>My account</h4>
+      <form class="auth inline admin-row" data-act="level"><input name="v" type="number" min="1" max="200" placeholder="Set level (1-200)" /><button class="btn small">SET LEVEL</button></form>
+      <form class="auth inline admin-row" data-act="coins"><input name="v" type="number" min="0" placeholder="Set coins" /><button class="btn small">SET COINS</button></form>
+      <div class="admin-grid">
+        <button class="btn small" data-acc="mastery-max">🏅 MAX ALL GUN MASTERY</button>
+        <button class="btn small ghost" data-acc="mastery-reset">RESET GUN MASTERY</button>
+        <button class="btn small" data-acc="quests-complete">📜 FINISH TODAY'S QUESTS</button>
+        <button class="btn small ghost" data-acc="quests-reset">RESET TODAY'S QUESTS</button>
+        <button class="btn small ghost" data-run="tutorial">REPLAY THE TUTORIAL</button>
+        <button class="btn small ghost" id="admin-quick-reset">RESET MY QUICK CHAT</button>
+        <button class="btn small" data-acc="guns-all">🔫 OWN EVERY SHOP GUN</button>
+        <button class="btn small ghost" data-acc="guns-none">REMOVE MY SHOP GUNS</button>
+      </div>
+      <div class="auth inline admin-row">
+        <span>🔫 Spawn with:</span>
+        <select id="admin-loadout"><option value="">Nothing (rifle)</option>${SHOP.filter((d) => d.kind === 'gun' && a.items[d.id])
+          .map((d) => `<option value="${d.gun}" ${a.items.loadout === d.gun ? 'selected' : ''}>${esc(d.name)}</option>`)
+          .join('')}</select>
+        <span class="muted small">(every mode, unlimited ammo)</span>
+      </div>
+      <div class="auth inline admin-row">
+        <span>🗺️ Solo map:</span>
+        <select id="admin-map">${(act?.maps() || []).map(([id, n]) => `<option value="${id}" ${act.soloMap === id ? 'selected' : ''}>${n}</option>`).join('')}</select>
+        <span class="muted small">(for your next new solo game)</span>
+      </div>
+      </div>
+      <div class="acard"><h4>🚫 Blocked words <span class="muted small">(only these exact words: hidden as *** in every chat on every server, and not allowed in names)</span></h4>
+      <textarea id="admin-words" rows="3" maxlength="7000" placeholder="One word or phrase per line (or split them with commas)"></textarea>
+      <div class="auth inline admin-row"><button class="btn small" id="admin-words-save">SAVE BLOCKED WORDS</button><span id="admin-words-n" class="muted small"></span></div>
+      </div>
+    </section>
       <p class="muted small">Press F2 in-game to open this panel. In multiplayer you get an ADMIN badge, and as host you can kick players.</p>`;
+    const showSec = (id) => {
+      this.adminSec = id;
+      for (const b of this.body.querySelectorAll('[data-asec]')) b.classList.toggle('on', b.dataset.asec === id);
+      for (const el of this.body.querySelectorAll('.asec')) el.classList.toggle('hidden', el.dataset.sec !== id);
+    };
+    for (const b of this.body.querySelectorAll('[data-asec]')) b.onclick = () => showSec(b.dataset.asec);
+    showSec(sec);
     const msg = (t) => (document.getElementById('admin-msg').textContent = t);
     document.getElementById('admin-drop').onclick = () => msg(act.supplyDrop());
     this._adminTeams(msg);
@@ -1271,21 +1309,31 @@ export class AccountUI {
       return;
     }
     const row = (u) => {
-      const status = u.banned ? '<b class="bad">BANNED</b>' : u.timeoutMins ? `<b class="bad">timed out ${u.timeoutMins}m</b>` : u.room ? `in room <b>${esc(u.room)}</b>` : u.online ? 'online (menus)' : 'offline';
-      const me = u.username === a.name;
+      const mins = Math.round((Date.now() - (u.lastSeen || 0)) / 60000);
+      const seen = mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`;
+      const status = u.banned ? '<b class="bad">BANNED</b>' : u.timeoutMins ? `<b class="bad">timed out ${u.timeoutMins}m</b>` : u.room ? `in room <b>${esc(u.room)}</b>` : u.online ? 'online (menus)' : `offline · seen ${seen} ago`;
+      const me = !u.guest && u.username === a.name;
       const btns = me || u.admin
         ? `<span class="muted small">${me ? 'you' : 'admin'}</span>`
         : `<button data-pa="kick" ${u.room ? '' : 'disabled'} title="Throw them out of their room">KICK</button>
            <select data-pa-mins>${[[5, '5 min'], [30, '30 min'], [60, '1 hour'], [1440, '1 day'], [10080, '1 week']].map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select>
            ${u.timeoutMins ? '<button data-pa="untimeout">END TIMEOUT</button>' : '<button data-pa="timeout" title="No online games or chat until it runs out">TIMEOUT</button>'}
            ${u.banned ? '<button data-pa="unban" class="hot">UNBAN</button>' : '<button data-pa="ban" class="bad">BAN</button>'}`;
+      if (u.guest)
+        return `<div class="friend admin-player guest-row" data-u="${esc(u.username)}" data-g="${esc(u.guest)}"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b> <i class="gtag">guest</i>
+        <span class="muted">Lv ${u.level} · ${status}</span>
+        <span class="actions">${btns}</span></div>`;
       return `<div class="friend admin-player" data-u="${esc(u.username)}"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b>${u.admin ? ' ⭐' : ''}
         <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${status}</span>
         <span class="actions"><button data-pa="give100" title="Give 100 coins">+100 🪙</button>${btns}</span></div>`;
     };
-    const list = r.players.length ? r.players.map(row).join('') : `<p class="muted small">${q ? 'Nobody with that name.' : 'Nobody else is online right now.'}</p>`;
+    const list = r.players.length ? r.players.map(row).join('') : `<p class="muted small">${q ? 'Nobody with that name.' : 'No players yet.'}</p>`;
     const banned = r.banned.filter((u) => !r.players.some((p) => p.username === u.username));
-    el.innerHTML = `<p class="muted small">${q ? `Players starting with "${esc(q)}"` : `${r.players.length} online on every server`} · <a href="#" data-pa-refresh>refresh</a></p>${list}
+    const guests = r.guests || [];
+    const online = r.players.filter((u) => u.online).length + guests.filter((g) => g.online).length;
+    el.innerHTML = `<p class="muted small">${q ? `Players matching "${esc(q)}"` : `${r.players.length} accounts · ${guests.length} guests · <b>${online} online</b>`} · <a href="#" data-pa-refresh>refresh</a></p>
+      <h5>Accounts</h5>${list}
+      <h5>Guests (no account)</h5>${guests.length ? guests.map(row).join('') : '<p class="muted small">None.</p>'}
       ${banned.length ? `<h5>Banned / timed out</h5>${banned.map(row).join('')}` : ''}`;
     el.querySelector('[data-pa-refresh]').onclick = (e) => {
       e.preventDefault();
@@ -1305,7 +1353,7 @@ export class AccountUI {
         if (action === 'ban' && !confirm(`Ban ${name}? They can't log in or play online until you unban them.`)) return;
         const m = document.getElementById('admin-msg');
         try {
-          const res = await a.adminPlayer(name, action, extra);
+          const res = rowEl.dataset.g ? await a.adminGuest(rowEl.dataset.g, action, extra) : await a.adminPlayer(name, action, extra);
           if (m) m.textContent = res.note;
           this._adminPlayers(q);
         } catch (err) {

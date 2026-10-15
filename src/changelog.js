@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.3', date: '15 Oct 2026', title: 'Spawn force field & a tidier admin panel',
+    items: [
+      'Multiplayer: you spawn inside a force field. Nothing can hurt you for 4 seconds, or until you shoot. Everyone can see it.',
+      'Admin panel split into tabs (Players, Game, Multiplayer, Account & server) with each group in its own box.',
+      'Admin: the player list shows everybody (online first, with when offline players were last seen), not just who is online.',
+      'Admin: guests are in the list too. Kick them from their room, time them out, or ban them (their browser and connection), just like accounts.',
+    ],
+  },
+  {
     v: '5.2', date: '15 Oct 2026', title: 'Admin: every account',
     items: [
       'Admin: the Account tab lists every account on the site (search by name, newest activity first) with level, coins, best wave, games, when they joined and when they were last on. MANAGE opens the kick / timeout / ban / coins tools for them.',

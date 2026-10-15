@@ -3168,3 +3168,14 @@ body.infected #game::after {
 
 .acc-list { max-height: 460px; }
 .acc-list h5 { margin: 10px 0 4px; }
+
+/* admin panel: sub-tabs and cards */
+.asubtabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; position: sticky; top: 0; z-index: 2; padding: 6px 0; background: inherit; }
+.admin-msg:empty { display: none; }
+.admin-msg { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; background: rgba(255, 211, 77, 0.1); border: 1px solid rgba(255, 211, 77, 0.3); }
+.acard { background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px 14px 12px; margin-bottom: 12px; }
+.acard > h4 { margin: 0 0 8px; }
+.acard .admin-grid { margin: 6px 0; }
+.acard .admin-row { margin: 6px 0; }
+.asec .admin-players { max-height: 420px; }
+.gtag { font-size: 10px; font-style: normal; padding: 0 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); margin-left: 4px; }

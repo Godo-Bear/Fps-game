@@ -288,7 +288,7 @@ export class Multiplayer {
       const timer = setTimeout(() => done('Connection timed out'), 8000);
       ws.onopen = () => {
         const a = this.ctx.account;
-        ws.send(JSON.stringify({ t: 'join', name: a.loggedIn ? a.name : this._guestName(), token: a.token, avatar: a.profile.avatar, color: a.profile.color }));
+        ws.send(JSON.stringify({ t: 'join', name: a.loggedIn ? a.name : this._guestName(), token: a.token, guest: a.loggedIn ? null : a.guestId, avatar: a.profile.avatar, color: a.profile.color }));
       };
       ws.onmessage = (e) => {
         let m;
@@ -423,7 +423,7 @@ export class Multiplayer {
         this.ctx.onInfected?.(m.id, m.by, !!m.first);
         break;
       case 'shield':
-        this.ctx.onShield?.(m.id);
+        this.ctx.onShield?.(m.id, m.ms);
         break;
       case 'ammo':
         this.ctx.onAmmo?.(m.n | 0);

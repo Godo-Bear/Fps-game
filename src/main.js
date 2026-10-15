@@ -1791,7 +1791,7 @@ const SHIELD_R = 3.2;
 const shield = { cd: 0 };
 const shields = new Map(); // 'me' or a player id -> { until, mesh }
 const shieldGeo = new THREE.SphereGeometry(SHIELD_R, 24, 16);
-function raiseShield(id) {
+function raiseShield(id, secs = SHIELD_TIME) {
   let s = shields.get(id);
   if (!s) {
     const mesh = new THREE.Mesh(shieldGeo, new THREE.MeshBasicMaterial({ color: 0x6ad8ff, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
@@ -1799,7 +1799,7 @@ function raiseShield(id) {
     s = { mesh, until: 0 };
     shields.set(id, s);
   }
-  s.until = time + SHIELD_TIME;
+  s.until = secs > 0 ? time + secs : 0;
 }
 const shieldUp = () => {
   const s = shields.get('me');
@@ -2825,8 +2825,14 @@ const mp = new Multiplayer({
     game.mod = null;
     applyWaveTwist();
   },
-  onShield(id) {
-    if (id !== mp.myId) raiseShield(id);
+  // a force field: someone pressed F, or the spawn one (ms says how long; 0 = it's gone)
+  onShield(id, ms) {
+    const secs = ms === undefined ? SHIELD_TIME : ms / 1000;
+    if (id === mp.myId) {
+      if (ms === undefined) return;
+      raiseShield('me', secs);
+      if (secs > 0) subBanner('🛡️ Spawn force field · shoot to drop it', 1.6);
+    } else raiseShield(id, secs);
   },
   // one in the chamber: a kill gives you another bullet
   onAmmo(n) {

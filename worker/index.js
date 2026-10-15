@@ -122,6 +122,14 @@ export class GameDB extends DurableObject {
       CREATE TABLE IF NOT EXISTS guests (id TEXT PRIMARY KEY, level INTEGER NOT NULL, best_wave INTEGER NOT NULL, games INTEGER NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS weekly (week INTEGER NOT NULL, user INTEGER NOT NULL, wave INTEGER NOT NULL, score INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (week, user));
     `);
+    // guests: kept so admins can kick, time out and ban them too
+    for (const col of ['banned INTEGER NOT NULL DEFAULT 0', 'timeout_until INTEGER NOT NULL DEFAULT 0', 'room TEXT', 'name TEXT', 'ip TEXT']) {
+      try {
+        this.sql.exec(`ALTER TABLE guests ADD COLUMN ${col}`);
+      } catch {
+        /* column already exists */
+      }
+    }
     this.adminTries = new Map(); // user id -> [count, windowStart]
     this.fails = new Map(); // username -> [count, windowStart]
     this.signups = new Map(); // ip -> [count, windowStart]
@@ -329,7 +337,7 @@ export class GameDB extends DurableObject {
     if (!u?.room) return false;
     try {
       const res = await this.env.ROOMS.get(this.env.ROOMS.idFromName(u.room)).fetch('https://room/internal/kick', {
-        method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ username: u.username, msg }),
+        method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ username: u.username, guest: u.guest, msg }),
       });
       return res.ok && (await res.json()).kicked;
     } catch {
@@ -337,11 +345,20 @@ export class GameDB extends DurableObject {
     }
   }
 
+  _guestRow(g) {
+    const now = Date.now();
+    const online = now - g.last_seen < ONLINE_MS;
+    return {
+      guest: g.id, username: `${g.name || 'Guest'} #${g.id.slice(0, 6)}`, level: g.level, coins: 0, admin: false, online,
+      room: online ? g.room || null : null, banned: !!g.banned, timeoutMins: g.timeout_until > now ? Math.ceil((g.timeout_until - now) / 60000) : 0, lastSeen: g.last_seen,
+    };
+  }
+
   _adminRow(u) {
     const now = Date.now();
     return {
       username: u.username, level: levelFromXp(u.xp), coins: u.coins || 0, admin: !!u.admin, online: now - u.last_seen < ONLINE_MS,
-      room: now - u.last_seen < ONLINE_MS ? u.room || null : null, banned: !!u.banned, timeoutMins: u.timeout_until > now ? Math.ceil((u.timeout_until - now) / 60000) : 0,
+      room: now - u.last_seen < ONLINE_MS ? u.room || null : null, banned: !!u.banned, lastSeen: u.last_seen, timeoutMins: u.timeout_until > now ? Math.ceil((u.timeout_until - now) / 60000) : 0,
     };
   }
 
@@ -354,6 +371,20 @@ export class GameDB extends DurableObject {
     }
     const blocked = this._blocked(u, ip);
     if (blocked) return json({ blocked });
+    const gid = !u && typeof body.guest === 'string' && /^[a-f0-9]{24}$/.test(body.guest) ? body.guest : null;
+    if (gid) {
+      const g = this.sql.exec('SELECT * FROM guests WHERE id = ?', gid).toArray()[0];
+      if (g?.banned) return json({ blocked: 'You have been banned from online play' });
+      if (g && g.timeout_until > Date.now()) return json({ blocked: `You're timed out for ${Math.ceil((g.timeout_until - Date.now()) / 60000)} more minute(s)` });
+      const room = typeof body.room === 'string' && /^[A-Z0-9]{5}$/.test(body.room) ? body.room : null;
+      const name = typeof body.name === 'string' ? body.name.slice(0, 16) : null;
+      const now = Date.now();
+      this.sql.exec(
+        `INSERT INTO guests (id, level, best_wave, games, first_seen, last_seen, room, name, ip) VALUES (?, 1, 0, 0, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET last_seen = excluded.last_seen, room = excluded.room, name = excluded.name, ip = excluded.ip`,
+        gid, now, now, room, name, ip
+      );
+    }
     if (u) {
       const room = typeof body.room === 'string' && /^[A-Z0-9]{5}$/.test(body.room) ? body.room : null;
       this.sql.exec('UPDATE users SET room = ?, last_ip = ? WHERE id = ?', room, ip && ip !== 'local' ? ip : u.last_ip, u.id);
@@ -364,7 +395,8 @@ export class GameDB extends DurableObject {
   // Calls from the game rooms (never from players: the front door refuses the header).
   _internal(path, body) {
     if (path === '/internal/leave') {
-      this.sql.exec('UPDATE users SET room = NULL WHERE username = ? AND room = ?', String(body.username), String(body.room));
+      if (body.guest) this.sql.exec('UPDATE guests SET room = NULL WHERE id = ? AND room = ?', String(body.guest), String(body.room));
+      else this.sql.exec('UPDATE users SET room = NULL WHERE username = ? AND room = ?', String(body.username), String(body.room));
       return json({ ok: true });
     }
     if (path === '/internal/words') return json({ words: this._words() });
@@ -450,9 +482,9 @@ export class GameDB extends DurableObject {
       const int = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
       const now = Date.now();
       this.sql.exec(
-        `INSERT INTO guests (id, level, best_wave, games, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET level = excluded.level, best_wave = excluded.best_wave, games = excluded.games, last_seen = excluded.last_seen`,
-        id, levelFromXp(int(body.xp, 1e8)), int(body.bestWave, 300), int(body.games, 1e6), now, now
+        `INSERT INTO guests (id, level, best_wave, games, first_seen, last_seen, ip) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET level = excluded.level, best_wave = excluded.best_wave, games = excluded.games, last_seen = excluded.last_seen, ip = excluded.ip`,
+        id, levelFromXp(int(body.xp, 1e8)), int(body.bestWave, 300), int(body.games, 1e6), now, now, ip
       );
       return json({ ok: true });
     }
@@ -654,9 +686,14 @@ export class GameDB extends DurableObject {
       const q = String(url.searchParams.get('q') || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
       const rows = q
         ? this.sql.exec("SELECT * FROM users WHERE username LIKE ? ESCAPE '\\' ORDER BY last_seen DESC LIMIT 40", `${q.replace(/_/g, '\\_')}%`).toArray()
-        : this.sql.exec('SELECT * FROM users WHERE last_seen > ? ORDER BY username LIMIT 200', Date.now() - ONLINE_MS).toArray();
+        : this.sql.exec('SELECT * FROM users ORDER BY (last_seen > ?) DESC, last_seen DESC LIMIT 300', Date.now() - ONLINE_MS).toArray();
       const banned = this.sql.exec('SELECT * FROM users WHERE banned = 1 OR timeout_until > ? ORDER BY username LIMIT 100', Date.now()).toArray();
-      return json({ players: rows.map((u) => this._adminRow(u)), banned: banned.map((u) => this._adminRow(u)) });
+      // guests (no account): everyone, or the ones whose room name / id matches
+      const gq = q.toLowerCase();
+      const guests = gq
+        ? this.sql.exec("SELECT * FROM guests WHERE lower(name) LIKE ? OR id LIKE ? ORDER BY last_seen DESC LIMIT 40", `%${gq}%`, `${gq}%`).toArray()
+        : this.sql.exec('SELECT * FROM guests ORDER BY (last_seen > ?) DESC, last_seen DESC LIMIT 300', Date.now() - ONLINE_MS).toArray();
+      return json({ players: rows.map((u) => this._adminRow(u)), guests: guests.map((g) => this._guestRow(g)), banned: banned.map((u) => this._adminRow(u)) });
     }
     // admin: every account on the site (newest activity first), plus every guest browser
     if (path === '/admin/accounts' && method === 'GET') {
@@ -678,6 +715,38 @@ export class GameDB extends DurableObject {
         accounts: rows.map((u) => ({ ...this._adminRow(u), created: u.created, lastSeen: u.last_seen, bestWave: u.best_wave, games: u.games })),
         guests: guests.map((g) => ({ id: g.id.slice(0, 8), level: g.level, bestWave: g.best_wave, games: g.games, created: g.first_seen, lastSeen: g.last_seen, online: now - g.last_seen < ONLINE_MS })),
       });
+    }
+    if (path === '/admin/player' && method === 'POST' && typeof body.guest === 'string') {
+      if (!me.admin) return err('Admins only', 403);
+      const g = this.sql.exec('SELECT * FROM guests WHERE id = ?', body.guest).toArray()[0];
+      if (!g) return err('No guest with that id', 404);
+      const who = `${g.name || 'Guest'} #${g.id.slice(0, 6)}`;
+      const target = { room: g.room, guest: g.id };
+      const action = String(body.action);
+      let note = '';
+      if (action === 'kick') {
+        note = (await this._kickFromRoom(target, `You were kicked by admin ${me.username}`)) ? `${who} was kicked from room ${g.room}.` : `${who} isn't in a room right now.`;
+      } else if (action === 'timeout') {
+        const minutes = Math.max(1, Math.min(10080, Math.floor(Number(body.minutes) || 5)));
+        this.sql.exec('UPDATE guests SET timeout_until = ? WHERE id = ?', Date.now() + minutes * 60000, g.id);
+        await this._kickFromRoom(target, `You were timed out for ${minutes} minute(s) by admin ${me.username}`);
+        note = `${who} is timed out for ${minutes} minute(s): no online games.`;
+      } else if (action === 'untimeout') {
+        this.sql.exec('UPDATE guests SET timeout_until = 0 WHERE id = ?', g.id);
+        note = `${who}'s timeout is over.`;
+      } else if (action === 'ban') {
+        // the guest id and their internet address: a new browser on the same connection is blocked too
+        this.sql.exec('UPDATE guests SET banned = 1 WHERE id = ?', g.id);
+        if (g.ip && g.ip !== 'local') this.sql.exec('INSERT OR REPLACE INTO ip_bans (ip, user, created) VALUES (?, 0, ?)', g.ip, Date.now());
+        await this._kickFromRoom(target, 'You have been banned');
+        note = `${who} is banned.`;
+      } else if (action === 'unban') {
+        this.sql.exec('UPDATE guests SET banned = 0, timeout_until = 0 WHERE id = ?', g.id);
+        if (g.ip) this.sql.exec('DELETE FROM ip_bans WHERE ip = ? AND user = 0', g.ip);
+        note = `${who} is unbanned.`;
+      } else return err("Guests don't have coins or accounts");
+      const after = this.sql.exec('SELECT * FROM guests WHERE id = ?', g.id).toArray()[0];
+      return json({ note, player: this._guestRow(after) });
     }
     if (path === '/admin/player' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);
@@ -947,6 +1016,7 @@ export class GameDB extends DurableObject {
 
 // ---------------------------------------------------------------- multiplayer rooms
 const TEAMS = ['red', 'blue'];
+const SPAWN_SHIELD_MS = 4000; // multiplayer spawn force field
 const MAX_HIT = 520; // biggest single hit (sniper headshot) with a little slack
 const NAME = /^[A-Za-z0-9_ ]{1,16}$/;
 
@@ -994,8 +1064,8 @@ export class Room extends DurableObject {
     const url = new URL(request.url);
     // an admin kicked, timed out or banned someone in this room
     if (url.pathname === '/internal/kick' && request.headers.get('x-internal') === '1') {
-      const { username, msg } = await request.json();
-      const t = [...this.players.values()].find((o) => o.joined && o.username && o.username.toLowerCase() === String(username).toLowerCase());
+      const { username, guest, msg } = await request.json();
+      const t = [...this.players.values()].find((o) => o.joined && (guest ? o.guestId === guest : o.username && o.username.toLowerCase() === String(username).toLowerCase()));
       if (t) {
         this._send(t, { t: 'error', msg: String(msg || 'You were kicked by an admin').slice(0, 120) });
         try {
@@ -1093,7 +1163,7 @@ export class Room extends DurableObject {
           const res = await this._db.fetch('https://db/api/internal/join', {
             method: 'POST',
             headers: { 'x-internal': '1' },
-            body: JSON.stringify({ token: typeof m.token === 'string' ? m.token : null, ip: p.ip, room: this.code }),
+            body: JSON.stringify({ token: typeof m.token === 'string' ? m.token : null, ip: p.ip, room: this.code, guest: typeof m.guest === 'string' ? m.guest : null, name }),
           });
           const r = await res.json();
           if (r.blocked) {
@@ -1108,6 +1178,7 @@ export class Room extends DurableObject {
           }
           this._setWords(r.words);
           const user = r.user;
+          if (!user && typeof m.guest === 'string' && /^[a-f0-9]{24}$/.test(m.guest)) p.guestId = m.guest;
           if (user) {
             name = user.username;
             p.username = user.username;
@@ -1235,6 +1306,7 @@ export class Room extends DurableObject {
         break;
       case 'shot': // tracer for everyone else to see
         if (this.phase === 'playing' && p.alive) {
+          this._dropSpawnShield(p);
           const vec = (v) => (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) ? v.map((n) => Math.max(-600, Math.min(600, n))) : null);
           const o = vec(m.o);
           const e = vec(m.e);
@@ -1449,7 +1521,7 @@ export class Room extends DurableObject {
     if (p.username) {
       // the admin list shows which room you're in
       this._db
-        .fetch('https://db/api/internal/leave', { method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ username: p.username, room: this.code }) })
+        .fetch('https://db/api/internal/leave', { method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ username: p.username, guest: p.username ? null : p.guestId, room: this.code }) })
         .catch(() => {});
     }
     this._dropFlag(p);
@@ -1659,13 +1731,23 @@ export class Room extends DurableObject {
     p.pos = [x, 0, z];
     p.hp = this._maxHp(p);
     p.alive = true;
-    p.protectUntil = Date.now() + 1500;
+    // spawn force field (PvP): nothing hurts you for a few seconds, until you shoot
+    p.protectUntil = Date.now() + (this._coop ? 1500 : SPAWN_SHIELD_MS);
+    if (!this._coop) this._broadcast({ t: 'shield', id: p.id, ms: SPAWN_SHIELD_MS });
     const yaw = mode.teams || mode.coop ? (p.team === 'red' || mode.coop ? -Math.PI / 2 : Math.PI / 2) : Math.atan2(x, z);
     this._send(p, { t: 'spawn', p: [x, z], yaw, hp: p.hp });
   }
 
+  // shooting (or hitting someone) ends your spawn force field
+  _dropSpawnShield(p) {
+    if (this._coop || !(Date.now() < p.protectUntil)) return;
+    p.protectUntil = 0;
+    this._broadcast({ t: 'shield', id: p.id, ms: 0 });
+  }
+
   _hit(p, m) {
     if (this.phase !== 'playing' || !p.alive || this._coop) return;
+    this._dropSpawnShield(p);
     const target = this.players.get(m.id);
     if (!target || !target.alive || target === p) return;
     const mode = MODES[this.mode];
