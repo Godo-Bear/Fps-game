@@ -143,6 +143,29 @@ they link their old player name to keep their progress.
 To take someone's access away: set **has_paid** to **FALSE**. They're locked out the next time they
 open the site. (To kick them out of a match right now, use the admin panel's KICK / BAN too.)
 
+## When someone's 6 months run out (automatic)
+
+You don't need to do anything: the game checks `paid_until` all the time. The moment the date has passed
+(the end of that day), the player is logged out, taken out of any game they're in, and shown **"Access ended"**.
+When they pay again, set `paid_until` 6 months on and they press **I've paid — check again**.
+
+**Optional:** to also have Supabase switch `has_paid` back to **FALSE** by itself (so the table shows who has run
+out), set up a daily job:
+
+1. Supabase → **Integrations** → **Cron** → enable it (or **Database → Extensions**, turn on `pg_cron`).
+2. **SQL Editor** → **New query** → paste and **Run**:
+
+```sql
+select cron.schedule(
+  'switch-off-expired',          -- the job's name
+  '5 0 * * *',                   -- every day at 00:05 (UTC)
+  $$ update public.profiles set has_paid = false
+     where has_paid and paid_until is not null and paid_until < current_date $$
+);
+```
+
+To stop it later: `select cron.unschedule('switch-off-expired');`
+
 ## Things to know
 
 - **Changing the price or how long it lasts**: change `PAY_PRICE` / `PAY_MONTHS` in Cloudflare (step 5) and redeploy. No code changes needed.

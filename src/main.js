@@ -3249,6 +3249,12 @@ function renderPlayButton() {
 account.onChange(renderPlayButton);
 renderPlayButton();
 accountUI.onLoggedIn = () => lobbyHome();
+// paid access ran out while playing: back to the lobby, onto the "Access ended" screen
+account.onAccessEnded = () => {
+  if (game.mode === 'mp' && (mp.lobby || mp.inMatch)) mp.leave(true);
+  else if (!inMenu()) toMenu();
+  needAccount();
+};
 $('play-big').addEventListener('click', () => {
   if (needAccount()) return;
   const mode = currentMode();

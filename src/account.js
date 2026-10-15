@@ -169,7 +169,15 @@ export class Account {
       if (!res.ok) throw new Error('Online features need the Cloudflare backend');
     }
     if (!res.ok) {
-      if (res.status === 401 && path !== '/login') this._dropSession();
+      if (res.status === 401 && path !== '/login') {
+        const was = !!this.user;
+        this._dropSession();
+        // paid access: maybe their time ran out; ask again so the right screen shows
+        if (was && this.paywall) {
+          this.wasPlaying = true;
+          this.supaSync().catch(() => {});
+        }
+      }
       if (res.status === 403 && data.banned && path !== '/login') {
         this._dropSession();
         this.onNotice?.(data.error);
@@ -218,8 +226,11 @@ export class Account {
       throw new Error("Can't reach the server");
     }
     if (res.status === 402) {
+      const was = !!this.user || this.wasPlaying;
+      this.wasPlaying = false;
       this.gate = { kind: 'unpaid', email: r.email, expired: r.expired, paidUntil: r.paidUntil };
       this._dropSession();
+      if (was) this.onAccessEnded?.();
     } else if (r.needName) {
       this.gate = { kind: 'name', email: r.email };
     } else if (r.token) {
@@ -1487,8 +1498,20 @@ export class AccountUI {
       ['games', 'Games played', p.games],
     ];
     const joined = p.created ? new Date(p.created).toLocaleDateString() : '?';
+    const me = p.username === this.account.name;
+    const mins = [[5, '5 min'], [30, '30 min'], [60, '1 hour'], [1440, '1 day'], [10080, '1 week']];
+    const mod = `<div class="manage-mod">
+        <button type="button" data-mod="give100">+100 🪙</button>
+        ${me || p.admin
+          ? `<span class="muted small">${me ? "That's you" : 'Admins'}: no kick, timeout or ban</span>`
+          : `<button type="button" data-mod="kick" ${p.room ? '' : 'disabled'} title="${p.room ? 'Throw them out of their room' : "They aren't in a room"}">KICK</button>
+             <select data-mod-mins>${mins.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select>
+             ${p.timeoutMins ? '<button type="button" data-mod="untimeout">END TIMEOUT</button>' : '<button type="button" data-mod="timeout">TIMEOUT</button>'}
+             ${p.banned ? '<button type="button" data-mod="unban" class="hot">UNBAN</button>' : '<button type="button" data-mod="ban" class="bad">BAN</button>'}`}
+      </div>`;
     box.innerHTML = `
       <p class="muted small">Joined ${esc(joined)} · ${p.xp} XP · ${p.badges} achievements · ${p.items} shop items${p.admin ? ' · ⭐ admin' : ''}</p>
+      ${mod}
       <form class="manage-grid">${fields
         .map(([k, label, v, type]) => `<label><span>${label}</span><input name="${k}" type="${type || 'number'}" ${type ? 'maxlength="16"' : 'min="0"'} value="${esc(v)}" /></label>`)
         .join('')}
@@ -1518,6 +1541,27 @@ export class AccountUI {
       if (!Object.keys(set).length) return (msg.textContent = 'Nothing changed.');
       save(set);
     });
+    box.querySelectorAll('[data-mod]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        let action = b.dataset.mod;
+        const extra = {};
+        if (action === 'give100') {
+          action = 'give';
+          extra.coins = 100;
+        }
+        if (action === 'timeout') extra.minutes = Number(box.querySelector('[data-mod-mins]').value);
+        if (action === 'ban' && !confirm(`Ban ${name}? They can't log in or play online until you unban them.`)) return;
+        msg.textContent = '…';
+        try {
+          const r = await this.account.adminPlayer(name, action, extra);
+          const m = document.getElementById('admin-msg');
+          if (m) m.textContent = r.note;
+          reload();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      }),
+    );
     box.querySelector('[data-reset]').onclick = () => {
       if (confirm(`Reset ${name} to a fresh start? Level, coins, stats, shop items, mastery and achievements go back to zero.`)) save({ reset: true });
     };
@@ -1553,7 +1597,7 @@ export class AccountUI {
         <span class="actions">${btns}</span></div>`;
       return `<div class="friend admin-player" data-u="${esc(u.username)}"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b>${u.admin ? ' ⭐' : ''}
         <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${status}</span>
-        <span class="actions"><button data-mng title="Change their level, coins, name and stats">MANAGE</button><button data-pa="give100" title="Give 100 coins">+100 🪙</button>${btns}</span></div>
+        <span class="actions"><button data-mng title="Coins, kick, timeout, ban, level, name and stats">MANAGE</button></span></div>
         <div class="manage-box hidden" data-box="${esc(u.username)}"></div>`;
     };
     const list = r.players.length ? r.players.map(row).join('') : `<p class="muted small">${q ? 'Nobody with that name.' : 'No players yet.'}</p>`;

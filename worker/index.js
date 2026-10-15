@@ -53,6 +53,13 @@ const DAY = 86400000;
 const ONLINE_MS = 3 * 60000;
 const LIVE_MS = 45000;
 // weeks since 5 Jan 2026 (a Monday): the weekly challenge resets every Monday 00:00 UTC
+// paid access: a paid_until date means "until the end of that day" (UTC); empty = no end
+const accessEnded = (paidUntil) => {
+  if (!paidUntil) return false;
+  const s = String(paidUntil);
+  const t = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T23:59:59Z` : s);
+  return Number.isFinite(t) && t < Date.now();
+};
 const weekNumber = (t = Date.now()) => Math.floor((t - Date.UTC(2026, 0, 5)) / (7 * 86400000)); // how long a live leaderboard entry lasts without an update
 const PARTY_MAX = 8;
 
@@ -303,8 +310,7 @@ export class GameDB extends DurableObject {
     // the profiles table only lets people read their own row (row level security)
     const pr = await fetch(`${base}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=has_paid,paid_until`, { headers });
     const row = pr.ok ? (await pr.json())[0] : null;
-    const until = row?.paid_until ? Date.parse(row.paid_until) : null;
-    const expired = !!(row?.has_paid && until && until < Date.now());
+    const expired = !!(row?.has_paid && accessEnded(row.paid_until));
     return { id: user.id, email: user.email || '', paid: !!row?.has_paid && !expired, expired, paidUntil: row?.paid_until || null, profile: !!row };
   }
 
@@ -317,6 +323,12 @@ export class GameDB extends DurableObject {
       .toArray()[0];
     // with paid access on, a game session only counts for a Supabase login the owner has marked as paid
     if (row && this.paywall && !(row.sb_id && row.paid)) return null;
+    // their paid time ran out: switched off straight away (and thrown out of any match)
+    if (row && this.paywall && accessEnded(row.paid_until)) {
+      this.sql.exec('UPDATE users SET paid = 0 WHERE id = ?', row.id);
+      this._kickFromRoom(row, 'Your access has ended. Pay again to keep playing.').catch(() => {});
+      return null;
+    }
     if (row) this.sql.exec('UPDATE users SET last_seen = ? WHERE id = ?', Date.now(), row.id);
     if (row && /"emote/.test(row.items || '')) {
       // emotes left the shop: give the coins back (once)

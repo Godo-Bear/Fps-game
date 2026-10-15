@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.9', date: '16 Oct 2026', title: 'Access ends by itself',
+    items: [
+      'When your paid time runs out, the game switches you off by itself, even mid-game, and shows "Access ended". Pay again to keep playing.',
+      'Admin: the player list is tidier. Each player just has MANAGE, which now holds +100 coins, kick, timeout and ban as well as their level, coins, name and stats.',
+    ],
+  },
+  {
     v: '5.8', date: '16 Oct 2026', title: 'New price & editable updates',
     items: [
       'Access is now $3 for every 6 months, paid cash to the site owner. No refunds.',
