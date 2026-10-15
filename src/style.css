@@ -3237,3 +3237,8 @@ body.infected #game::after {
 .manage-mod button.bad { color: #ff6b5e; }
 .manage-mod button.hot { color: #ffd34d; }
 .manage-mod button:disabled { opacity: 0.4; cursor: default; }
+
+/* settings: your access and the fee */
+.access-box { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 20px; padding: 12px 14px; margin-bottom: 14px; border: 1px solid rgba(255, 211, 77, 0.45); border-radius: 8px; background: rgba(255, 211, 77, 0.07); }
+.access-box b { font-size: 17px; }
+.access-box .acc-low { color: #ff8a5e; }

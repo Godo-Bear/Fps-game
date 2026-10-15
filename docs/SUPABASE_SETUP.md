@@ -143,6 +143,32 @@ they link their old player name to keep their progress.
 To take someone's access away: set **has_paid** to **FALSE**. They're locked out the next time they
 open the site. (To kick them out of a match right now, use the admin panel's KICK / BAN too.)
 
+## Fill in paid_until automatically (recommended)
+
+So you never have to work out dates: run this once (SQL Editor → New query → paste → **Run**; name it e.g.
+"Auto paid_until (6 months)"). From then on, setting **has_paid** to **TRUE** fills in **paid_until** as
+6 months from today.
+
+```sql
+create or replace function public.set_paid_until()
+returns trigger language plpgsql as $$
+begin
+  if new.has_paid and (new.paid_until is null or new.paid_until < current_date) then
+    new.paid_until := current_date + interval '6 months';
+  end if;
+  return new;
+end; $$;
+
+create trigger auto_paid_until
+  before insert or update on public.profiles
+  for each row execute function public.set_paid_until();
+```
+
+Renewing: when someone pays again after their time ran out, set **has_paid** to **TRUE** again (or clear
+**paid_until**) and a new date 6 months on is filled in. A date you type yourself that's still in the future is left alone.
+
+Players can see how many days they have left (and the fee) at the top of **Settings** in the game.
+
 ## When someone's 6 months run out (automatic)
 
 You don't need to do anything: the game checks `paid_until` all the time. The moment the date has passed

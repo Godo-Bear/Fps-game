@@ -280,6 +280,7 @@ export class GameDB extends DurableObject {
     if (self) {
       delete out.online;
       out.admin = !!u.admin;
+      out.paidUntil = u.paid_until || null;
       out.coins = u.coins || 0;
       out.items = items;
       out.mastery = this._mastery(u);

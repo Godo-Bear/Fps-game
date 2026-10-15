@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.10', date: '16 Oct 2026', title: 'See your days left',
+    items: [
+      'Settings now shows how many days of access you have left, the date it ends, and the fee ($3 for every 6 months).',
+    ],
+  },
+  {
     v: '5.9', date: '16 Oct 2026', title: 'Access ends by itself',
     items: [
       'When your paid time runs out, the game switches you off by itself, even mid-game, and shows "Access ended". Pay again to keep playing.',

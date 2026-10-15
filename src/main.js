@@ -3953,6 +3953,26 @@ const CONTROL_LIST = [
   ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
   ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];
+// Settings: how long your paid access has left, and what it costs
+function accessBox() {
+  const c = account.cfg || {};
+  if (!account.paywall) return '';
+  const price = esc(c.price || '$3');
+  const months = c.months === undefined ? 6 : Number(c.months) || 0;
+  const fee = months ? `${price} for every ${months} months` : `${price} once, yours forever`;
+  let status;
+  if (!account.loggedIn) status = '<b>Not active</b> · log in, or pay the owner to switch your account on';
+  else if (!account.user?.paidUntil) status = '<b>Active</b> · no end date';
+  else {
+    const s = String(account.user.paidUntil);
+    const end = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T23:59:59Z` : s);
+    const days = Math.max(0, Math.ceil((end - Date.now()) / 86400000));
+    const date = new Date(end).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+    status = `<b class="${days <= 14 ? 'acc-low' : ''}">${days} day${days === 1 ? '' : 's'} left</b> · until ${esc(date)}`;
+  }
+  return `<div class="access-box"><div><span class="muted small">YOUR ACCESS</span><div>${status}</div></div><div><span class="muted small">FEE</span><div><b>${fee}</b>, ${esc(c.payNote || 'paid cash in hand to the site owner')}</div></div></div>`;
+}
+
 function openSettings() {
   const fmt = (k, v) => ((k === 'volume' || k === 'music') ? `${Math.round(v * 100)}%` : k === 'fov' ? `${v}°` : `${Number(v).toFixed(2)}x`);
   const row = ([k, label, type, a, b, step]) => {
@@ -3963,7 +3983,7 @@ function openSettings() {
     if (type === 'select') input = `<select data-k="${k}">${a.map((o) => `<option ${o === v ? 'selected' : ''} value="${o}">${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}</select>`;
     return `<label class="s-row"><span>${label}</span><span class="s-in">${input}</span></label>`;
   };
-  $('settings-body').innerHTML = `${SETTING_ROWS.map(row).join('')}
+  $('settings-body').innerHTML = `${accessBox()}${SETTING_ROWS.map(row).join('')}
     <button id="settings-all" class="btn small ghost settings-all">${showAllSettings ? 'HIDE EXTRA SETTINGS ▴' : 'SHOW ALL SETTINGS ▾'}</button>
     <div class="settings-more ${showAllSettings ? '' : 'hidden'}">
       <h4>More settings</h4>
