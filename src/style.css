@@ -3191,3 +3191,25 @@ body.infected #game::after {
 .pay-terms { text-align: left; margin: 10px 0; }
 .pay-terms summary { cursor: pointer; text-align: center; color: #7fd4e6; text-decoration: underline; }
 .pay-terms p { font-size: 13px; opacity: 0.85; }
+
+/* the lobby tabs always fit: a little smaller on mid-size screens, and their own row under the logo when needed */
+.fn-nav button {
+  font-size: clamp(14px, 1.05vw, 17px);
+  padding: 10px clamp(7px, 0.65vw, 12px) 12px;
+}
+@media (max-width: 1400px) and (min-width: 761px) and (min-height: 521px) {
+  .fn-top {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .fn-nav {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: center;
+    margin-top: -4px;
+  }
+  .fn-right {
+    margin-left: auto;
+  }
+}
+.settings-terms { margin-top: 14px; }

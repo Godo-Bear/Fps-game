@@ -4,9 +4,9 @@ How it works once it's set up:
 
 1. A player signs up on the game with their **email + password** (Supabase handles this).
 2. Supabase makes a row for them in a table called **profiles** with `has_paid = FALSE`.
-3. The game shows them the **"Almost there"** screen ($5 for 8 months, paid cash in hand).
-4. They pay you. You open the **profiles** table in Supabase and switch their `has_paid` to **TRUE**
-   (and optionally set `paid_until` to the date their 8 months end).
+3. The game shows them the **"Almost there"** screen ($3 once, yours forever, paid cash in hand, no refunds).
+4. They pay you. You open the **profiles** table in Supabase and switch their `has_paid` to **TRUE**.
+   That's it: it's for life, so leave `paid_until` empty.
 5. They press **"I've paid — check again"**, pick a player name, and they're in.
 
 The game checks `has_paid` every time the site is opened, so setting it back to `FALSE` (or
@@ -40,7 +40,7 @@ create table public.profiles (
   email text,
   has_paid boolean not null default false,
   paid_until date,               -- optional: the day their membership ends
-  note text,                     -- optional: e.g. "paid $5 cash 15 Oct"
+  note text,                     -- optional: e.g. "paid $3 cash 15 Oct"
   created_at timestamptz not null default now()
 );
 
@@ -106,8 +106,7 @@ are what keep `has_paid` locked). **Never** use the `service_role` / **Secret** 
    | --- | --- | --- |
    | Secret | `SUPABASE_URL` | the Project URL from step 4 |
    | Secret | `SUPABASE_ANON_KEY` | the anon / publishable key from step 4 |
-   | Secret (optional) | `PAY_PRICE` | `$5` (that's the default) |
-   | Secret (optional) | `PAY_MONTHS` | `8` (that's the default) |
+   | Secret (optional) | `PAY_PRICE` | `$3` (that's the default) |
    | Secret (optional) | `PAY_NOTE` | `paid cash in hand to the site owner` (default) |
 
 3. Click **Deploy** (or **Save and deploy**). From now on the game asks for an email login, and
@@ -134,10 +133,9 @@ they link their old player name to keep their progress.
 1. Supabase → **Table Editor** → **profiles**.
 2. Find their email (use the search / filter at the top if there are lots).
 3. Set **has_paid** to **TRUE**.
-4. Optional but recommended: set **paid_until** to 8 months from today (e.g. `2027-06-15`). When that
-   day passes, the game shows them "Membership ended" and you can set a new date when they pay again.
-   Leave it empty for no end date.
-5. Optional: write something in **note** like `$5 cash 15 Oct`.
+4. Leave **paid_until** empty: access is for life. (If you ever want someone's access to end on a certain
+   day, put that date in `paid_until`.)
+5. Optional: write something in **note** like `$3 cash 15 Oct`.
 6. Tell them to press **I've paid — check again**.
 
 To take someone's access away: set **has_paid** to **FALSE**. They're locked out the next time they
@@ -145,8 +143,8 @@ open the site. (To kick them out of a match right now, use the admin panel's KIC
 
 ## Things to know
 
-- **Changing the price or length**: change `PAY_PRICE` / `PAY_MONTHS` in Cloudflare (step 5) and redeploy.
-  No code changes needed.
+- **Changing the price**: change `PAY_PRICE` in Cloudflare (step 5) and redeploy. No code changes needed.
+  The Terms & Conditions (with no refunds) are in the game's **Settings** and on the sign-up screen.
 - **Forgotten passwords**: Supabase can send reset emails (Authentication → Users → the user → *Send password
   recovery*). The game doesn't have a "forgot password" button yet.
 - **Emails**: Supabase's built-in email sender is limited to a few emails an hour on the free plan. If lots of

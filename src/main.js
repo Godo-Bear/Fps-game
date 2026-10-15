@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
 import { EVAC_HOLD, INFECTED, JUGG_HP, MAPS, MODES, SOLO_MAP, SURVIVORS, quickWheel } from '../shared/modes.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../shared/achievements.js';
+import { termsHtml } from '../shared/terms.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
@@ -3864,7 +3865,7 @@ const CONTROL_LIST = [
   ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];
 function openSettings() {
-  const fmt = (k, v) => (k === 'volume' ? `${Math.round(v * 100)}%` : k === 'fov' ? `${v}°` : `${Number(v).toFixed(2)}x`);
+  const fmt = (k, v) => ((k === 'volume' || k === 'music') ? `${Math.round(v * 100)}%` : k === 'fov' ? `${v}°` : `${Number(v).toFixed(2)}x`);
   const row = ([k, label, type, a, b, step]) => {
     const v = settings[k];
     let input = '';
@@ -3881,7 +3882,8 @@ function openSettings() {
       <h4>Controls</h4>
       <div class="s-controls">${CONTROL_LIST.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>
       <p class="muted small">Controller and touch controls are in How to Play.</p>
-    </div>`;
+    </div>
+    <details class="pay-terms settings-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(account.cfg?.price || '$3', account.cfg?.payNote || 'paid cash in hand to the site owner')}</details>`;
   $('settings-all').addEventListener('click', () => {
     showAllSettings = !showAllSettings;
     openSettings();
@@ -3895,7 +3897,7 @@ $('settings-body').addEventListener('input', (e) => {
   const row = ALL_SETTING_ROWS.find((r) => r[0] === k);
   settings[k] = row[2] === 'check' ? el.checked : row[2] === 'select' ? el.value : Number(el.value);
   const val = el.parentElement.querySelector('.s-val');
-  if (val) val.textContent = k === 'volume' ? `${Math.round(settings[k] * 100)}%` : k === 'fov' ? `${settings[k]}°` : `${settings[k].toFixed(2)}x`;
+  if (val) val.textContent = (k === 'volume' || k === 'music') ? `${Math.round(settings[k] * 100)}%` : k === 'fov' ? `${settings[k]}°` : `${settings[k].toFixed(2)}x`;
   applySettings();
 });
 $('settings-reset').addEventListener('click', () => {

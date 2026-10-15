@@ -467,8 +467,8 @@ export class GameDB extends DurableObject {
     if (path === '/config' && method === 'GET') {
       return json({
         supabase: this.paywall ? { url: this.env.SUPABASE_URL, anonKey: this.env.SUPABASE_ANON_KEY } : null,
-        price: this.env.PAY_PRICE || '$5',
-        months: Number(this.env.PAY_MONTHS) || 8,
+        price: this.env.PAY_PRICE || '$3',
+        months: Number(this.env.PAY_MONTHS) || 0, // 0 = pay once, yours forever
         payNote: this.env.PAY_NOTE || 'paid cash in hand to the site owner',
       });
     }

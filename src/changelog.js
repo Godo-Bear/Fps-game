@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.6', date: '16 Oct 2026', title: 'One price, forever',
+    items: [
+      'Hollow Ground is now a one-time $3, yours forever: no membership to renew.',
+      'Terms & Conditions are in Settings (and on the sign-up screen). All payments are final: no refunds.',
+      'The tabs along the top of the home screen always fit now, How to Play included.',
+      'Music volume shows as a percentage.',
+    ],
+  },
+  {
     v: '5.5', date: '15 Oct 2026', title: 'Memberships',
     items: [
       'Sign up with your email. Membership is paid to the site owner, who switches your account on by hand; until then you see an "Almost there" screen with a button to check again.',

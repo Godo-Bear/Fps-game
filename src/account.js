@@ -5,6 +5,7 @@ import { addProgress, claimQuest as claimQuestState, questView } from '../shared
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
 import { GUNS } from './guns.js';
 import { ACHIEVEMENTS } from '../shared/achievements.js';
+import { termsHtml } from '../shared/terms.js';
 
 const TOKEN_KEY = 'deadplains.token';
 const GUEST_KEY = 'deadplains.guest';
@@ -843,12 +844,11 @@ export class AccountUI {
     const a = this.account;
     const c = a.cfg || {};
     const g = a.gate;
-    const price = esc(c.price || '$5');
-    const months = Number(c.months) || 8;
-    const terms = `<details class="pay-terms"><summary>Terms &amp; Conditions</summary>
-      <p>Access to Hollow Ground costs ${price} for ${months} months, ${esc(c.payNote || 'paid cash in hand to the site owner')}. Your account is turned on by hand once the owner has your payment, and stays on until the end of your membership.</p>
-      <p>Payments are not refundable. The owner can turn off or ban accounts that cheat, harass other players or break the rules, without a refund. One account per person; don't share your login.</p>
-      <p>The game is provided as it is: it may change, have downtime, or have progress reset. Your email is only used to log you in.</p></details>`;
+    const price = esc(c.price || '$3');
+    const months = Number(c.months) || 0;
+    // what you pay: once and forever (or for a set time, if the owner sets PAY_MONTHS)
+    const deal = months ? `${price} for ${months} months` : `a one-time ${price}, yours forever`;
+    const terms = `<details class="pay-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(price, esc(c.payNote || 'paid cash in hand to the site owner'))}<p class="muted small">You can read these any time in Settings.</p></details>`;
     const done = () => {
       if (this.mustLogin && a.loggedIn) {
         this.mustLogin = false;
@@ -873,8 +873,8 @@ export class AccountUI {
     };
     if (g?.kind === 'unpaid') {
       this.body.innerHTML = `<div class="paygate">
-        <h2>${g.expired ? 'Membership ended' : 'Almost there'}</h2>
-        <p>Your account (<b>${esc(g.email)}</b>) ${g.expired ? `ran out${g.paidUntil ? ` on ${esc(g.paidUntil)}` : ''}` : "isn't active yet"}. Access is <b>${price} for ${months} months, ${esc(c.payNote || 'paid cash in hand to the site owner')}</b>. The owner unlocks accounts by hand, so it may take a while after you've paid. Once it's unlocked, check again.</p>
+        <h2>${g.expired ? 'Access ended' : 'Almost there'}</h2>
+        <p>Your account (<b>${esc(g.email)}</b>) ${g.expired ? `ran out${g.paidUntil ? ` on ${esc(g.paidUntil)}` : ''}` : "isn't active yet"}. Access is <b>${deal}, ${esc(c.payNote || 'paid cash in hand to the site owner')}</b>. The owner unlocks accounts by hand, so it may take a while after you've paid. Once it's unlocked, check again.</p>
         ${terms}
         <form id="pay-check"><button class="btn pay-main">I've paid — check again</button></form>
         <button class="btn ghost" id="pay-out">Log out</button>
@@ -900,8 +900,8 @@ export class AccountUI {
     this.body.innerHTML = `<div class="paygate">
       ${g?.kind === 'confirm' ? `<p class="must-login">📧 We sent a link to <b>${esc(g.email)}</b>. Click it to confirm your email, then log in here.</p>` : ''}
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make an account (or log in) to start playing.</b></p>' : ''}
-      <h2>Hollow Ground membership</h2>
-      <p class="muted">${price} for ${months} months, ${esc(c.payNote || 'paid cash in hand to the site owner')}. Make your account first, then pay the owner to have it switched on.</p>
+      <h2>Get Hollow Ground</h2>
+      <p class="muted">${months ? `${price} for ${months} months` : `One payment of ${price}, yours forever`}, ${esc(c.payNote || 'paid cash in hand to the site owner')}. No refunds. Make your account first, then pay the owner to have it switched on.</p>
       <form id="pay-auth" class="auth">
         <input name="email" type="email" placeholder="Email" autocomplete="email" required />
         <input name="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required />
@@ -962,7 +962,7 @@ export class AccountUI {
         <div><b>${s.pvpKills}</b>PvP kills</div><div><b>${s.pvpWins}</b>PvP wins</div>
         <div><b>${s.games}</b>Games</div><div><b>${this.account.xp}</b>Total XP</div>
       </div>
-      ${this.account.paywall ? `<p class="muted small">Logged in as <b>${esc(this.account.email || '')}</b>${this.account.user?.paidUntil ? ` · membership until <b>${esc(this.account.user.paidUntil)}</b>` : ''}</p>` : ''}
+      ${this.account.paywall ? `<p class="muted small">Logged in as <b>${esc(this.account.email || '')}</b>${this.account.user?.paidUntil ? ` · access until <b>${esc(this.account.user.paidUntil)}</b>` : ' · access forever'}</p>` : ''}
       <button id="logout-btn" class="btn small ghost">LOG OUT</button>
       ${this.account.admin ? '<div id="all-accounts"></div>' : ''}`;
     document.getElementById('logout-btn').onclick = () => this.account.logout().then(() => this.close());
