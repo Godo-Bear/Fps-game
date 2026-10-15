@@ -2,6 +2,22 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.0', date: '15 Oct 2026', title: 'Twists, perks, new modes & more',
+    items: [
+      'Wave twists: every 3rd wave gets one (Headshots Only, Volatile, Low Gravity, Double Score, Sprinters, Thick Skin, Bloodthirst). You see it while you get ready.',
+      'Special waves: Horde Rush (they all come from one side) and Bounty (a golden zombie worth a fortune).',
+      'Perk machines and wall-buy guns on every map: spend your points with E. Spending doesn\'t lower your score on the leaderboard.',
+      'Finishers: knife a badly hurt zombie to finish it for full mags and +15 HP.',
+      'Weekly challenge: the same map and a twist every wave for everyone, with its own board in the Leaderboard tab.',
+      '21 achievements, shown as badges in Customise.',
+      'New modes: One in the Chamber, Juggernaut, and Extraction (co-op: survive, then hold the helicopter landing zone).',
+      'Vote for the next map at the end of a match, and Quick Play drops you into an open room (hosts choose if their room is open).',
+      'Music that follows the fight: calm between waves, drums as the horde grows (volume in Settings).',
+      'Weather matters: zombies lose you in fog, deep snow slows everyone, and lightning strikes the dead in storms.',
+      'Admin: random twist for the next wave, spawn a bounty zombie, +5000 points, unlock all achievements.',
+    ],
+  },
+  {
     v: '4.9', date: '14 Oct 2026', title: 'Smaller, nastier waves',
     items: [
       'A wave never has more than 50 zombies now (bosses come on top), so late waves don\'t flood the map or slow your game down.',

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
-import { INFECTED, MAPS, MODES, SOLO_MAP, quickWheel } from '../shared/modes.js';
+import { EVAC_HOLD, INFECTED, JUGG_HP, MAPS, MODES, SOLO_MAP, SURVIVORS, quickWheel } from '../shared/modes.js';
+import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../shared/achievements.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
@@ -138,6 +139,7 @@ function loadMap(id) {
   }
   zombies.world = world;
   zombies.structures = structures;
+  zombies.speedFor = weatherZombieSpeed;
   structures.setColliders(world.colliders);
   zombies.nav = new NavGrid(world.colliders);
   zombies.navT = 0;
@@ -156,6 +158,7 @@ function loadMap(id) {
   supply.world = world;
   minimap = new Minimap($('minimap'), world);
   weather = new Weather(scene, world.atmosphere, audio);
+  weather.onBolt = () => lightningStrike();
   weather.set(world.theme.weather, true);
   clearMedkits();
   clearProjectiles();
@@ -266,7 +269,16 @@ function beginWave() {
   game.wave++;
   game.cfg = waveConfig(game.wave);
   game.toSpawn = game.cfg.total;
-  game.deck = waveDeck(game.wave, game.cfg.total, game.cfg.pressure);
+  game.mod = game.nextMod || null;
+  game.special = game.nextSpecial || null;
+  game.nextMod = game.nextSpecial = null;
+  game.bountyLeft = game.special === 'bounty' ? 1 : 0;
+  game.hordeA = Math.random() * Math.PI * 2;
+  applyWaveTwist();
+  if (game.mod === 'rush') {
+    game.toSpawn = Math.ceil(game.cfg.total * 0.7);
+    game.deck = Array.from({ length: game.toSpawn }, () => (Math.random() < 0.6 ? 'runner' : 'crawler'));
+  } else game.deck = waveDeck(game.wave, game.cfg.total, game.cfg.pressure);
   game.bossToSpawn = game.cfg.boss;
   game.spawnT = 0.5;
   game.phase = 'active';
@@ -282,12 +294,16 @@ function beginWave() {
     }
   }
   if (game.wave === 3) sub += ' · Mutations detected';
+  if (game.special) sub = `${SPECIALS[game.special].name}: ${SPECIALS[game.special].desc}`;
+  if (game.mod) sub += ` · ${MODIFIERS[game.mod].name}`;
+  const wn = weatherNote(weather.id);
+  if (wn) sub += ` · ${wn}`;
   banner(`WAVE ${game.wave}`, sub, game.cfg.boss ? 'red' : '', 2.6);
   audio.waveStart();
   if (isCoop()) {
     // squad mates who went down come back for the new wave
     mp.send({ t: 'coopwave', wave: game.wave });
-    mp.relay('all', { k: 'wave', wave: game.wave, sub, boss: game.cfg.boss ? 1 : 0, weather: weather.id, night: game.night ? 1 : 0 });
+    mp.relay('all', { k: 'wave', wave: game.wave, sub, boss: game.cfg.boss ? 1 : 0, weather: weather.id, night: game.night ? 1 : 0, mod: game.mod, sp: game.special });
     if (player.dead) coopRevive();
   }
 }
@@ -302,6 +318,8 @@ function roomZombieHp(z) {
 
 // Zombies spawn around a random living player.
 function spawnAnchor() {
+  // horde rush: everything comes from one side of the map
+  if (game.special === 'horde' && game.phase === 'active') return new THREE.Vector3(Math.cos(game.hordeA) * 70, 0, Math.sin(game.hordeA) * 70);
   const t = zombieTargets();
   return t.length ? t[Math.floor(Math.random() * t.length)].pos : player.pos;
 }
@@ -336,6 +354,7 @@ function updateWave(dt) {
       const z = zombies.spawn(game.night ? nightType(game.wave) : nextType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave) + (game.night ? NIGHT.mutated : 0));
       if (game.night) nightBuff(z);
       roomZombieHp(z);
+      waveSpawnExtras(z);
       game.toSpawn--;
       game.spawnT = cfg.interval * (0.5 + Math.random());
     }
@@ -356,6 +375,10 @@ function updateWave(dt) {
       giveGrenades(2);
       game.scrap = Math.min(999, game.scrap + 10);
       questAdd('waves');
+      waveAchievements(game.wave);
+      game.mod = null;
+      game.special = null;
+      applyWaveTwist();
       if (isCoop()) questAdd('coopWaves');
       if (game.night) questAdd('nightWaves');
       flushQuests();
@@ -375,8 +398,10 @@ function updateWave(dt) {
     }
     return;
   }
+  if (game.phase === 'evac') return updateEvac(dt);
   if (game.phase === 'cleared') {
     game.timer -= dt;
+    if (game.timer <= 0 && isExtract() && game.wave >= (mp.settings.evac || 5)) return startEvac();
     if (game.timer <= 0) {
       if (isCoop()) game.phase = 'picking';
       if (!player.dead) openChoice();
@@ -392,6 +417,237 @@ function updateWave(dt) {
   }
 }
 
+// ---------------------------------------------------------------- wave modifiers and special waves
+// Every 3rd wave (every wave in the weekly challenge) gets a twist, shown while you get ready.
+const MODIFIERS = {
+  headshots: { name: '🎯 Headshots Only', desc: 'Body shots barely scratch them' },
+  boom: { name: '💥 Volatile', desc: 'Zombies blow up when they die. Keep your distance' },
+  lowgrav: { name: '🌙 Low Gravity', desc: 'Jump higher and fall slower' },
+  double: { name: '💰 Double Score', desc: 'Every kill is worth twice as much' },
+  rush: { name: '🏃 Sprinters', desc: 'Only runners and crawlers, but fewer of them' },
+  tanky: { name: '🛡️ Thick Skin', desc: 'Zombies have 50% more health and drop more medkits' },
+  vampire: { name: '🧛 Bloodthirst', desc: 'Every kill heals you a little' },
+};
+const MOD_IDS = Object.keys(MODIFIERS);
+const SPECIALS = {
+  horde: { name: '🌊 HORDE RUSH', desc: 'The whole wave comes from one direction' },
+  bounty: { name: '🎯 BOUNTY WAVE', desc: 'A golden zombie is out there. Kill it for a fortune' },
+};
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// weeks since Monday 5 Jan 2026 (same as the server)
+const weekNumber = () => Math.floor((Date.now() - Date.UTC(2026, 0, 5)) / (7 * 86400000));
+function planWave(n) {
+  const r = game.weekly ? seeded(weekNumber() * 1000 + n) : Math.random;
+  const mod = n >= 2 && (game.weekly || n % 3 === 0) ? MOD_IDS[Math.floor(r() * MOD_IDS.length)] : null;
+  const special = n >= 6 && n % 5 !== 0 && n % 4 === 2 ? (r() < 0.5 ? 'horde' : 'bounty') : null;
+  return { mod, special };
+}
+function applyWaveTwist() {
+  player.gravityMul = game.mod === 'lowgrav' ? 0.45 : 1;
+}
+function makeBounty(z) {
+  z.bounty = true;
+  z.maxHp *= 6;
+  z.hp = z.maxHp;
+  z.speed *= 1.25;
+  z.baseEmissive = 0x6a4a00;
+  z.shirtMat.color.setHex(0xffc81e);
+  z.skinMat.color.setHex(0xd8b040);
+  game.bountyLeft = 0;
+  subBanner('🎯 The BOUNTY zombie is here: the golden one!', 2.6);
+}
+// extras on every zombie the host spawns during a wave
+function waveSpawnExtras(z) {
+  if (game.mod === 'tanky') {
+    z.maxHp *= 1.5;
+    z.hp = z.maxHp;
+  }
+  if (game.bountyLeft && z.typeId !== 'boss' && game.cfg.total - game.toSpawn >= game.cfg.total * 0.35) makeBounty(z);
+}
+const pendingBooms = []; // volatile zombies go off a moment after dying
+let barrelStreak = { n: 0, t: 0 };
+
+// ---------------------------------------------------------------- perk machines and wall buys
+// Spend points (your score; spending doesn't lower your score on the leaderboard) at the machines on the map.
+const PERKS = {
+  tough: { name: 'Tough Nut', icon: '🧃', price: 1500, desc: '+50 max health', apply: () => { stats.maxHealth += 50; player.heal(50, overhealCap()); } },
+  quick: { name: 'Quick Hands', icon: '🥤', price: 1200, desc: 'Reload 40% faster', apply: () => { stats.reloadSpeed *= 1.4; } },
+  double: { name: 'Double Tap', icon: '🍺', price: 2000, desc: 'Shoot 30% faster', apply: () => { stats.fireRateMul *= 1.3; } },
+  fleet: { name: 'Fleet Foot', icon: '👟', price: 1000, desc: 'Move 12% faster', apply: () => { stats.speedMul *= 1.12; } },
+};
+const WALL_PRICES = { smg: 500, shotgun: 700, dmr: 900, lmg: 1200, sniper: 1000, launcher: 1500 };
+const points = () => Math.max(0, Math.floor(game.score - (game.spent || 0)));
+function shopPrice(sh) {
+  if (sh.kind === 'perk') return PERKS[sh.id].price;
+  const have = weapon.slots.some((sl) => sl.def.id === sh.id);
+  return have ? Math.round(WALL_PRICES[sh.id] / 2) : WALL_PRICES[sh.id];
+}
+function shopLabel(sh) {
+  if (sh.kind === 'perk') {
+    const pk = PERKS[sh.id];
+    if (game.perks?.has(sh.id)) return `${pk.icon} <b>${pk.name}</b> · you have it`;
+    return `Press <b>E</b>: ${pk.icon} <b>${pk.name}</b> (${pk.desc}) · 💵 ${pk.price}`;
+  }
+  const have = weapon.slots.some((sl) => sl.def.id === sh.id);
+  return `Press <b>E</b>: ${have ? 'ammo for the' : 'buy the'} <b>${GUNS[sh.id].name}</b> · 💵 ${shopPrice(sh)}`;
+}
+function buyShop(sh) {
+  if (sh.kind === 'perk' && game.perks.has(sh.id)) return;
+  const price = shopPrice(sh);
+  if (points() < price) {
+    subBanner(`Not enough points (you have ${points()})`, 1.4);
+    audio.empty();
+    return;
+  }
+  game.spent = (game.spent || 0) + price;
+  if (sh.kind === 'perk') {
+    PERKS[sh.id].apply();
+    game.perks.add(sh.id);
+    banner(`${PERKS[sh.id].icon} ${PERKS[sh.id].name.toUpperCase()}`, PERKS[sh.id].desc, 'gold', 1.8);
+    achieve('perk');
+    if (game.perks.size >= Object.keys(PERKS).length) achieve('allperks');
+  } else {
+    weapon.give(sh.id, stats);
+    const slot = weapon.slots.find((sl) => sl.def.id === sh.id);
+    if (slot && slot.reserve !== Infinity) slot.reserve = Math.max(slot.reserve, weapon.magSize(stats, slot.def) * 6);
+    if (slot) slot.ammo = weapon.magSize(stats, slot.def);
+    subBanner(`🔫 ${GUNS[sh.id].name} bought`, 1.4);
+    achieve('wallbuy');
+  }
+  audio.powerup?.('rare');
+}
+
+// ---------------------------------------------------------------- finishers
+// Stab a badly hurt zombie (30% health or less, not a boss) to finish it: ammo and a bit of health back.
+function finisher(point) {
+  effects.blood(point, _dir, 3);
+  weapon.refillMags(stats);
+  player.heal(15, overhealCap());
+  player.shake = Math.min(1, player.shake + 0.5);
+  subBanner('🔪 FINISHER · mags full · +15 HP', 1.3);
+  achieve('finisher');
+}
+
+// ---------------------------------------------------------------- achievements
+function achieve(id) {
+  if (!ACHIEVEMENT_BY_ID[id] || !account.unlock(id)) return;
+  const a = ACHIEVEMENT_BY_ID[id];
+  accountUI.toast(`🏅 <b>${a.icon} ${esc(a.name)}</b> · ${esc(a.desc)}`, [], 5000);
+  audio.powerup?.('legendary');
+}
+
+// ---------------------------------------------------------------- weather that changes the fight
+// Fog: zombies far away lose you and slow down. Heavy snow: everyone's slower. Storms: lightning
+// strikes the dead.
+const weatherDef = () => WEATHER[weather?.id] || {};
+const weatherMove = () => ((weatherDef().snow || 0) >= 0.6 ? 0.92 : 1);
+function weatherZombieSpeed(z) {
+  const w = weatherDef();
+  let m = (w.snow || 0) >= 0.6 ? 0.9 : 1;
+  if ((w.fogFar ?? 300) < 140) {
+    const d = Math.hypot(z.root.position.x - player.pos.x, z.root.position.z - player.pos.z);
+    if (d > w.fogFar * 0.45) m *= 0.6;
+  }
+  return m;
+}
+function weatherNote(id) {
+  const w = WEATHER[id] || {};
+  if (w.lightning) return '⚡ Lightning strikes the dead';
+  if ((w.snow || 0) >= 0.6) return '❄️ Deep snow: everyone moves slower';
+  if ((w.fogFar ?? 300) < 140) return "🌫️ Fog: zombies can't see far";
+  return '';
+}
+function lightningStrike() {
+  if (!zombieGame() || !simHost() || game.phase !== 'active') return;
+  const near = zombies.list.filter((z) => z.alive && z.typeId !== 'boss' && Math.hypot(z.root.position.x - player.pos.x, z.root.position.z - player.pos.z) < 60);
+  if (!near.length) return;
+  const z = near[Math.floor(Math.random() * near.length)];
+  const p = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
+  effects.burst(p, { count: 40, color: [0xffffff, 0xbfe0ff, 0x8ab8ff], speed: 10, size: 0.18, life: 0.6, grav: 2, up: 3 });
+  explodeAt(p, 3.5, 400, { src: 'bolt' });
+  subBanner('⚡ Lightning strike!', 1.2);
+}
+
+// ---------------------------------------------------------------- extraction (co-op mode)
+// After the chosen wave a helicopter lands somewhere on the map. The whole squad still standing has to
+// hold the landing zone for EVAC_HOLD seconds while the dead keep coming.
+const EVAC_R = 8;
+const evac = { on: false, x: 0, z: 0, hold: 0, spawnT: 0, group: null };
+const isExtract = () => isCoop() && !!MODES[mp.mode]?.extract;
+function evacVisual(x, z) {
+  clearEvac();
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.RingGeometry(EVAC_R - 0.4, EVAC_R, 48), new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.15;
+  g.add(ring);
+  const heli = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3e4a32, roughness: 0.7 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.8, 5), bodyMat);
+  heli.add(body);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 4), bodyMat);
+  tail.position.set(0, 0.4, -4.4);
+  heli.add(tail);
+  const rotor = new THREE.Mesh(new THREE.BoxGeometry(11, 0.08, 0.35), new THREE.MeshStandardMaterial({ color: 0x1a1a1a }));
+  rotor.position.y = 1.15;
+  heli.add(rotor);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.2, EVAC_R * 0.6, 60, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.08, depthWrite: false }));
+  beam.position.y = 30;
+  g.add(beam);
+  g.add(heli);
+  g.position.set(x, heightAt(x, z), z);
+  scene.add(g);
+  Object.assign(evac, { on: true, x, z, group: g, heli, rotor });
+}
+function clearEvac() {
+  if (evac.group) scene.remove(evac.group);
+  Object.assign(evac, { on: false, hold: 0, group: null });
+}
+function startEvac() {
+  const spots = world.lootSpots.filter((sp) => Math.hypot(sp.x, sp.z) > 20 && Math.hypot(sp.x, sp.z) < 60 && !sp.high && !sp.roof);
+  const sp = spots[Math.floor(Math.random() * spots.length)] || { x: 30, z: 0 };
+  const x = sp.x + 4;
+  const z = sp.z + 4;
+  evacVisual(x, z);
+  game.phase = 'evac';
+  evac.hold = 0;
+  evac.spawnT = 2;
+  banner('🚁 THE HELICOPTER IS HERE', `Get the whole squad into the landing zone and hold it for ${EVAC_HOLD}s`, 'gold', 3.2);
+  mp.relay('all', { k: 'evac', x, z });
+}
+function updateEvac(dt) {
+  evac.spawnT -= dt;
+  if (evac.spawnT <= 0 && zombies.aliveCount < 24) {
+    evac.spawnT = 0.9;
+    const z = zombies.spawn(pickType(game.wave + 2), game.wave + 2, spawnAnchor(), Math.random() < 0.25);
+    roomZombieHp(z);
+  }
+  const squad = [];
+  if (!player.dead) squad.push(player.pos);
+  for (const a of mp.avatars.values()) if (a.alive) squad.push(a.pos);
+  const inside = squad.length && squad.every((q) => Math.hypot(q.x - evac.x, q.z - evac.z) < EVAC_R);
+  evac.hold = inside ? evac.hold + dt : Math.max(0, evac.hold - dt * 0.5);
+  if (evac.hold >= EVAC_HOLD) {
+    game.phase = 'done';
+    mp.send({ t: 'extracted' });
+  }
+}
+function animateEvac(dt) {
+  if (!evac.on || !evac.heli) return;
+  evac.rotor.rotation.y += dt * 25;
+  const k = Math.min(1, evac.hold / EVAC_HOLD);
+  evac.heli.position.y += (26 - k * 22 - evac.heli.position.y) * Math.min(1, dt * 2);
+}
+
 // ---------------------------------------------------------------- ready up between waves
 // Between waves the next one waits until you press E (controller X, the ✚ button on phones), so you
 // can build, restock and get into position. In co-op every squadmate still standing has to be ready.
@@ -403,6 +659,10 @@ function autoWaves() {
 }
 // the solo player / co-op host moves the run into the break before the next wave
 function toPrep(autoSeconds = 5) {
+  const plan = planWave(game.wave + 1);
+  game.nextMod = game.forceMod || plan.mod;
+  game.nextSpecial = plan.special;
+  game.forceMod = null;
   prep.ready = new Set();
   prep.me = false;
   prep.t = PREP_COOP_MAX;
@@ -428,6 +688,18 @@ function setReady() {
 }
 let nearAmmo = false;
 function updateReadyUp() {
+  if (zombieGame() && game.phase === 'evac' && evac.on && game.state === 'playing') {
+    const el = $('wave-ready');
+    el.classList.remove('hidden');
+    document.body.classList.remove('can-ready');
+    const left = Math.max(0, Math.ceil(EVAC_HOLD - evac.hold));
+    const html = `<div class="wr-title">🚁 GET TO THE CHOPPER</div><div>Everyone still standing must be in the yellow circle · ${left}s to go</div><div class="i-bar"><i style="width:${Math.round((evac.hold / EVAC_HOLD) * 100)}%"></i></div>`;
+    if (last.waveReady !== html) {
+      last.waveReady = html;
+      el.innerHTML = html;
+    }
+    return;
+  }
   const on = zombieGame() && game.phase === 'prep' && game.state === 'playing';
   const key = player.keys.has('KeyE') || player.keys.has('KeyN');
   if (on && key && !prep.keyWas && !nearAmmo && !document.body.classList.contains('can-revive')) setReady();
@@ -444,13 +716,24 @@ function updateReadyUp() {
     const left = Math.max(0, Math.ceil(simHost() ? prep.t : prep.left || 0));
     squad = `<div class="wr-squad">${rd}/${nd} ready${left ? ` · starts anyway in ${left}s` : ''}</div>`;
   }
-  const html = prep.me
+  const nm = isCoop() && !simHost() ? prep.nextMod : game.nextMod;
+  const ns = isCoop() && !simHost() ? prep.nextSpecial : game.nextSpecial;
+  const twist = `${nm && MODIFIERS[nm] ? `<div class="wr-mod">Next wave: <b>${MODIFIERS[nm].name}</b> · ${MODIFIERS[nm].desc}</div>` : ''}${ns && SPECIALS[ns] ? `<div class="wr-mod">⚠️ <b>${SPECIALS[ns].name}</b> · ${SPECIALS[ns].desc}</div>` : ''}`;
+  let html = prep.me
     ? `<div class="wr-title ok">✔ READY</div><div>${isCoop() ? 'Waiting for your squad…' : 'Here they come…'}</div>${squad}`
-    : `<div class="wr-title">WAVE ${game.wave + 1} IS WAITING</div><div>Build, restock and get in position. ${how} when you're ready</div>${squad}`;
+    : `<div class="wr-title">WAVE ${game.wave + 1} IS WAITING</div><div>Build, restock, buy perks and get in position. ${how} when you're ready</div>${squad}`;
+  html += twist + (zombieGame() ? `<div class="wr-squad">💵 ${points()} points to spend</div>` : '');
   if (last.waveReady !== html) {
     last.waveReady = html;
     el.innerHTML = html;
   }
+}
+
+function waveAchievements(w) {
+  if (w >= 10) achieve('wave10');
+  if (w >= 20) achieve('wave20');
+  if (w >= 30) achieve('wave30');
+  if (game.mod) achieve('modifier');
 }
 
 function coopRevive() {
@@ -603,6 +886,7 @@ function hitZombie(z, head, point, dir, distance = 0) {
   if (cheats.onehit && cheatsOn()) dmg = Math.max(dmg, z.hp + 1);
   const crit = Math.random() < stats.critChance;
   if (head) dmg *= stats.headshotMul;
+  else if (game.mod === 'headshots') dmg *= 0.15;
   if (crit) dmg *= 2.5;
   if (mut === 'vampire') player.heal(Math.min(8, dmg * 0.06), overhealCap());
   if (!simHost()) {
@@ -665,7 +949,7 @@ function killedBy(z, head, shooter, mut, src = null) {
   if (shooter === 'me' || shooter === undefined) onKill(z, head, src);
   else
     mp.relay(shooter, {
-      k: 'kill', type: z.typeId, mut: z.mutated ? 1 : 0, head: !!head, src,
+      k: 'kill', type: z.typeId, mut: z.mutated ? 1 : 0, head: !!head, src, bounty: z.bounty ? 1 : 0,
       x: Math.round(z.root.position.x * 10) / 10, y: Math.round(z.root.position.y * 10) / 10, z: Math.round(z.root.position.z * 10) / 10,
     });
 }
@@ -761,6 +1045,13 @@ function chainBarrels(point, radius, mine) {
 const AMMO_CD = 45;
 let ammoKeyWas = false;
 function updateMapProps(dt) {
+  for (let i = pendingBooms.length - 1; i >= 0; i--) {
+    const b = pendingBooms[i];
+    if ((b.t -= dt) > 0) continue;
+    pendingBooms.splice(i, 1);
+    explodeAt(b.p, 3, 45, { color: [0xff7a1a, 0xffc04a, 0x5a2a10], hurtsPlayer: true });
+  }
+  animateEvac(dt);
   for (let i = barrelQueue.length - 1; i >= 0; i--) {
     const q = barrelQueue[i];
     if ((q.t -= dt) > 0) continue;
@@ -785,9 +1076,35 @@ function updateMapProps(dt) {
     if (!player.dead && Math.hypot(c.x - player.pos.x, c.z - player.pos.z) < 2 && Math.abs(c.y - player.pos.y) < 1.6) near = c;
   }
   const reviving = document.body.classList.contains('can-revive');
+  // perk machines and wall buys (zombie games)
+  let shop = null;
+  if (!near && zombieGame() && !player.dead) {
+    let best = 2.4;
+    for (const sh of world.shops || []) {
+      const d = Math.hypot(sh.x - player.pos.x, sh.z - player.pos.z);
+      if (d < best && Math.abs(sh.y - player.pos.y) < 1.6) {
+        best = d;
+        shop = sh;
+      }
+    }
+  }
+  const key = player.keys.has('KeyE');
+  if (shop && !reviving) {
+    nearAmmo = true;
+    if (key && !ammoKeyWas) buyShop(shop);
+    ammoKeyWas = key;
+    document.body.classList.add('can-use');
+    const el = $('interact');
+    el.classList.remove('hidden');
+    const html = `${shopLabel(shop)}<div class="muted small">You have 💵 ${points()}</div>`;
+    if (last.interact !== html) {
+      last.interact = html;
+      el.innerHTML = html;
+    }
+    return;
+  }
   const usable = near && !reviving && !(mp.infection && mp.infected);
   nearAmmo = !!usable;
-  const key = player.keys.has('KeyE');
   if (usable && key && !ammoKeyWas && !((ammoCd.get(near) || 0) > 0)) {
     for (const sl of weapon.slots) if (sl.reserve !== Infinity && !sl.def.melee) sl.reserve = Math.max(sl.reserve, weapon.magSize(stats, sl.def) * 5);
     weapon.refillMags(stats);
@@ -999,6 +1316,7 @@ function placeStructure() {
   const rot = Math.round(build.yaw * 100) / 100;
   if (game.mode === 'mp') mp.send({ t: 'build', kind: build.kind, x: build.x, z: build.z, rot });
   else structures.add({ id: localStructureId++, kind: build.kind, x: build.x, z: build.z, rot, owner: 'me', ally: true });
+  if (structures.list.filter((st) => st.owner === myOwner()).length + (game.mode === 'mp' ? 1 : 0) >= 10) achieve('builder');
 }
 
 // Damage a barricade or turret. Online the server keeps score (co-op: the host's zombies; PvP: enemies).
@@ -1154,6 +1472,10 @@ function meleeAttack() {
     subBanner('BACKSTAB', 0.7);
   }
   if (cheats.onehit && cheatsOn()) dmg = Math.max(dmg, z.hp + 1);
+  if (z.typeId !== 'boss' && z.hp > 0 && z.hp <= z.maxHp * 0.3) {
+    dmg = Math.max(dmg, z.hp + 5);
+    finisher(point);
+  }
   if (!simHost()) {
     effects.blood(point, _dir, 1.4);
     z.flashT = 0.08;
@@ -1267,7 +1589,7 @@ function grenadeBlast(at) {
 
 // ---------------------------------------------------------------- supply drops
 // Gun Game and Infection give you your guns: nothing to pick up there.
-const fixedGuns = () => game.mode === 'mp' && mp.inMatch && (!!MODES[mp.mode]?.gungame || mp.infected);
+const fixedGuns = () => game.mode === 'mp' && mp.inMatch && (!!MODES[mp.mode]?.gungame || mp.infected || mp.oitc || mp.isJugg);
 let soloDropT = 50;
 let soloDropId = 1;
 function soloSupplyDrop(near = null) {
@@ -1353,6 +1675,21 @@ function modeLoadout() {
     weapon.setOnly(id === 'knife' ? ['knife'] : [id, 'knife'], stats);
     return true;
   }
+  if (mode.oitc) {
+    weapon.setOnly(['revolver', 'knife'], stats);
+    const slot = weapon.slots[0];
+    slot.reserve = 0;
+    slot.ammo = 1;
+    game.grenades = 0;
+    return true;
+  }
+  if (mode.jugg) {
+    stats.speedMul = mp.isJugg ? 0.85 : 1;
+    if (mp.isJugg) {
+      weapon.setOnly(['lmg', 'knife'], stats);
+      return true;
+    }
+  }
   if (mode.infection) {
     stats.speedMul = mp.infected ? 1.2 : 1;
     if (mp.infected) {
@@ -1381,6 +1718,7 @@ function onPickGun(id, mut) {
 // What a kill does to the world (runs where the zombies are simulated).
 function worldKill(z, mut) {
   const center = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
+  if (game.mod === 'boom' && simHost() && z.typeId !== 'boss') pendingBooms.push({ p: center.clone(), t: 0.35 });
   effects.blood(center, null, 2.5);
   if (z.variant === 'broodmother' && simHost()) {
     summonAround(z, 'crawler', 5);
@@ -1395,11 +1733,28 @@ function worldKill(z, mut) {
 
 // Your reward for a kill: score, healing, drops. In co-op the host tells you about your kills.
 function onKill(z, head, src = null) {
-  rewardKill({ type: z.typeId, mut: z.mutated, head, src, x: z.root.position.x, y: z.root.position.y, z: z.root.position.z });
+  rewardKill({ type: z.typeId, mut: z.mutated, head, src, x: z.root.position.x, y: z.root.position.y, z: z.root.position.z, bounty: z.bounty });
 }
-function rewardKill({ type, mut, head, src = null, x, y, z }) {
+function rewardKill({ type, mut, head, src = null, x, y, z, bounty = false }) {
   const T = ZOMBIE_TYPES[type] || ZOMBIE_TYPES.walker;
   game.kills++;
+  achieve('first_kill');
+  if (type === 'boss') achieve('boss');
+  if (src === 'barrel') {
+    if (time - barrelStreak.t > 1.2) barrelStreak.n = 0;
+    barrelStreak.t = time;
+    if (++barrelStreak.n >= 5) achieve('barrel5');
+  }
+  if (bounty) {
+    const prize = Math.round(1500 * (1 + game.wave * 0.1));
+    game.score += prize;
+    giveGrenades(2);
+    weapon.refillMags(stats);
+    banner('🎯 BOUNTY CLAIMED', `+${prize} score · grenades and full mags`, 'gold', 2.4);
+    achieve('bounty');
+    if (game.mode === 'solo') soloSupplyDrop({ x, z });
+  }
+  if (game.mod === 'vampire') player.heal(4, overhealCap());
   questAdd('zkills');
   if (head) questAdd('headshots');
   if (mut) questAdd('mutated');
@@ -1413,12 +1768,12 @@ function rewardKill({ type, mut, head, src = null, x, y, z }) {
     game.headshots++;
     headshotPop();
   }
-  game.score += Math.round(T.score * (head ? 1.5 : 1) * (mut ? 2 : 1) * (1 + game.wave * 0.1) * (game.night ? NIGHT.score : 1));
+  game.score += Math.round(T.score * (head ? 1.5 : 1) * (mut ? 2 : 1) * (1 + game.wave * 0.1) * (game.night ? NIGHT.score : 1) * (game.mod === 'double' ? 2 : 1));
   if (stats.healOnKill) player.heal(stats.healOnKill, overhealCap());
   audio.kill();
   showHit('kill');
   const pos = { x, y, z };
-  const medChance = ({ walker: 0.05, runner: 0.05, crawler: 0.05, spitter: 0.1, bloater: 0.15, brute: 0.35, boss: 1 }[type] ?? 0.05) * (1 + 0.35 * scavengerLevel());
+  const medChance = ({ walker: 0.05, runner: 0.05, crawler: 0.05, spitter: 0.1, bloater: 0.15, brute: 0.35, boss: 1 }[type] ?? 0.05) * (1 + 0.35 * scavengerLevel()) * (game.mod === 'tanky' ? 2 : 1);
   if (Math.random() < medChance) dropMedkit(pos);
   // mutated zombies sometimes drop a mutated gun; bosses always do
   if ((mut && Math.random() < 0.15) || type === 'boss') {
@@ -1885,7 +2240,7 @@ function updateHud(dt) {
   if (zombieGame()) {
     setText('wave-label', game.wave > 0 ? `WAVE ${game.wave}${game.night ? ' 🌙' : ''}` : 'GET READY');
     const remaining = game.phase !== 'active' ? 0 : simHost() ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : coop.remaining;
-    setText('zombies-left', game.phase === 'tutorial' ? 'Tutorial' : game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : game.phase === 'prep' ? `Wave ${game.wave + 1} · get ready` : 'Wave cleared');
+    setText('zombies-left', game.phase === 'tutorial' ? 'Tutorial' : game.phase === 'active' ? `${remaining} zombie${remaining === 1 ? '' : 's'} left` : game.phase === 'countdown' ? `Wave ${game.wave + 1} in ${Math.max(0, Math.ceil(game.timer))}` : game.phase === 'prep' ? `Wave ${game.wave + 1} · get ready` : game.phase === 'evac' ? '🚁 Hold the landing zone' : 'Wave cleared');
     setText('score', String(game.score));
     setText('kills', `${game.kills} kills`);
     setText('run-coins', `🪙 +${coinsForRun({ mode: 'solo', wave: game.wave, kills: game.kills, headshots: game.headshots })}`);
@@ -1948,6 +2303,8 @@ function updateHud(dt) {
   const marks = [];
   if (game.mode === 'mp') marks.push(...mp.minimapMarkers());
   if (supply) marks.push(...supply.minimapMarkers());
+  if (evac.on) marks.push({ x: evac.x, z: evac.z, color: '#ffd34d', r: 5 });
+  if (zombieGame()) for (const sh of world.shops || []) marks.push({ x: sh.x, z: sh.z, color: sh.kind === 'perk' ? '#ff6ad5' : '#e8c27a', r: 2.4, shape: 'diamond' });
   for (const c of world.ammoCrates || []) marks.push({ x: c.x, z: c.z, color: (ammoCd.get(c) || 0) > 0 ? '#6a6a5a' : '#a8d65a', r: 2.2, shape: 'diamond' });
   if (zombieGame()) {
     for (const z of zombies.list) {
@@ -2051,7 +2408,7 @@ function deleteSave(id) {
 }
 
 function persistRun() {
-  if (game.mode !== 'solo') return;
+  if (game.mode !== 'solo' || game.weekly) return; // weekly runs are one go
   storeSave(runSnapshot());
 }
 
@@ -2237,10 +2594,17 @@ function applyShop() {
 }
 const scavengerLevel = () => (game.mode === 'solo' ? account.items.scavenger || 0 : 0);
 
-function startGame(save = null, name = null) {
+function startGame(save = null, name = null, { weekly = false } = {}) {
   audio.init();
+  // the weekly challenge: this week's map and twists, the same for everyone
+  game.weekly = weekly && !save;
+  const mapIds = Object.keys(MAPS);
   // admins can try any map in solo; everyone else plays Dead Plains
-  game.map = account.admin && MAPS[adminSoloMap] ? adminSoloMap : SOLO_MAP;
+  game.map = game.weekly ? mapIds[weekNumber() % mapIds.length] : account.admin && MAPS[adminSoloMap] ? adminSoloMap : SOLO_MAP;
+  if (game.weekly) {
+    name = `Weekly #${weekNumber()}`;
+    achieve('weekly');
+  }
   game.mode = 'solo';
   $('chat-log').innerHTML = '';
   chatLines.length = 0;
@@ -2262,7 +2626,9 @@ function startGame(save = null, name = null) {
   weather.set(world.theme.weather, true);
   structures.clear();
   setBuild(false);
-  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2) });
+  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2), spent: 0, perks: new Set(), mod: null, special: null, forceMod: null });
+  clearEvac();
+  applyWaveTwist();
   game.runName = cleanSaveName(name || nextGameName());
   game.night = false;
   if (save) {
@@ -2275,7 +2641,7 @@ function startGame(save = null, name = null) {
   toPrep(5);
   tut.on = false;
   $('tutorial').classList.add('hidden');
-  if (!save && tutorialWanted()) startTutorial();
+  if (!save && !game.weekly && tutorialWanted()) startTutorial();
   $('run-name').textContent = game.runName;
   $('banner').className = '';
   $('subbanner').className = '';
@@ -2286,6 +2652,7 @@ function startGame(save = null, name = null) {
 
 async function gameOver() {
   game.state = 'gameover';
+  if (game.weekly && !usingCheats()) account.submitWeekly(game.wave, game.score);
   setBuild(false);
   flushQuests();
   clearRun();
@@ -2373,6 +2740,24 @@ const mp = new Multiplayer({
   scene, effects, audio, account, player, weapon, banner, subBanner, defend,
   onMatchCleared() {
     supply?.clear();
+    clearEvac();
+    game.mod = null;
+    applyWaveTwist();
+  },
+  // one in the chamber: a kill gives you another bullet
+  onAmmo(n) {
+    const slot = weapon.slots.find((sl) => sl.def.id === 'revolver');
+    if (!slot) return;
+    slot.ammo += n;
+    subBanner('+1 bullet', 0.8);
+  },
+  onJugg(id, name) {
+    if (id === mp.myId) {
+      banner('💪 YOU ARE THE JUGGERNAUT', 'Triple health and a machine gun. Every kill is a point', 'red', 2.6);
+      achieve('jugg');
+      stats.maxHealth = (mp.settings.hp || 100) * JUGG_HP;
+      modeLoadout();
+    } else if (id) subBanner(`💪 ${name} is the Juggernaut: take them down for 2 points`, 2.4);
   },
   onLobby() {
     game.mode = 'mp';
@@ -2411,7 +2796,9 @@ const mp = new Multiplayer({
     clearProjectiles();
     clearMedkits();
     player.reset(100);
-    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0, night: false });
+    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0, night: false, spent: 0, perks: new Set(), mod: null, special: null, forceMod: null, weekly: false });
+    clearEvac();
+    applyWaveTwist();
     if (MODES[mode].coop) toPrep(8);
     structures.clear();
     setBuild(false);
@@ -2552,6 +2939,13 @@ const mp = new Multiplayer({
   async onEnd(result) {
     game.state = 'mpend';
     if (result.won) questAdd('pvpWins');
+    if (result.extracted) achieve('evac');
+    if (result.won && !result.coop) {
+      achieve('pvpwin');
+      if (result.mode === 'gungame') achieve('gungame');
+      if (result.mode === 'oitc') achieve('oitc');
+      if (result.mode === 'infect' && result.myTeam === SURVIVORS) achieve('survivor');
+    }
     flushQuests();
     trigger = false;
     aim = false;
@@ -2747,6 +3141,26 @@ renderHomeQuests();
 $('mp-back').addEventListener('click', () => {
   game.state = 'menu';
   showOnly('menu');
+});
+accountUI.onWeekly = () => {
+  accountUI.close();
+  startGame(null, null, { weekly: true });
+};
+// quick play: an open room with space, or a new open one
+$('mp-quick').addEventListener('click', async () => {
+  $('mp-error').textContent = 'Finding a room…';
+  let code = null;
+  try {
+    code = (await (await fetch('/api/quickplay')).json()).code;
+  } catch {
+    /* offline */
+  }
+  let err = code ? await mp.join(code) : 'none';
+  if (err) {
+    err = await mp.create();
+    if (!err) mp.send({ t: 'open', on: true });
+  }
+  $('mp-error').textContent = err || '';
 });
 $('mp-create').addEventListener('click', async () => {
   $('mp-error').textContent = 'Creating room…';
@@ -3187,6 +3601,7 @@ function updateRevive(dt) {
     revive.t += dt;
     if (revive.t >= REVIVE_TIME) {
       mp.send({ t: 'revive', id: near.id });
+      achieve('revive');
       game.score += 100;
       revive.t = 0;
       audio.revive();
@@ -3260,7 +3675,7 @@ function nextSpectate() {
 // ---------------------------------------------------------------- settings (saved in this browser)
 const SETTINGS_KEY = 'deadplains.settings';
 const DEFAULT_SETTINGS = {
-  sens: 1, padSens: 1, invertY: false, fov: 75, volume: 0.8, quality: 'high', dmgNumbers: true, fps: false, tutorial: true, autoWaves: false,
+  sens: 1, padSens: 1, invertY: false, fov: 75, volume: 0.8, quality: 'high', dmgNumbers: true, fps: false, tutorial: true, autoWaves: false, music: 0.5,
   // the extra ones behind "Show all settings"
   hudScale: 1, crosshairSize: 1, minimap: true, chat: true, hitmarkers: true, shake: 1, bob: true, toggleAim: false, bubbles: true, flashlight: true,
 };
@@ -3309,6 +3724,7 @@ const SETTING_ROWS = [
   ['fps', 'Show FPS', 'check'],
   ['tutorial', 'Tutorial wave for new games', 'check'],
   ['autoWaves', 'Start waves by themselves (no READY button)', 'check'],
+  ['music', 'Music volume', 'range', 0, 1, 0.05],
 ];
 // everything else, behind "Show all settings"
 const MORE_SETTING_ROWS = [
@@ -3580,6 +3996,25 @@ accountUI.adminActions = {
       case 'wavecap':
         adminWaveCap = Math.max(5, Math.min(300, Math.floor(value)));
         return `Waves now have at most ${adminWaveCap} zombies (from the next wave).`;
+      case 'nextmod': {
+        const id = MOD_IDS[Math.floor(Math.random() * MOD_IDS.length)];
+        if (game.phase === 'prep') game.nextMod = id;
+        else game.forceMod = id;
+        return `Next wave: ${MODIFIERS[id].name}`;
+      }
+      case 'bountynow': {
+        const z = zombies.spawn('walker', Math.max(1, game.wave), player.pos, false);
+        game.cfg ||= waveConfig(Math.max(1, game.wave));
+        makeBounty(z);
+        if (game.phase !== 'active') game.phase = 'active';
+        return 'A bounty zombie is coming for you.';
+      }
+      case 'points':
+        game.score += 5000;
+        return `+5000 points (you have ${points()} to spend).`;
+      case 'allbadges':
+        for (const a of ACHIEVEMENTS) account.unlock(a.id);
+        return `All ${ACHIEVEMENTS.length} achievements unlocked.`;
       case 'startwave':
         if (game.phase !== 'prep') return 'No wave is waiting right now.';
         game.phase = 'countdown';
@@ -3693,7 +4128,7 @@ function update(dt) {
   const moveMul = (def.moveMul || 1) * (1 - weapon.ads * 0.35);
   const flying = cheatsOn() && cheats.fly;
   const speedMul = cheatsOn() && cheats.speed ? 2 : 1;
-  const hSpeed = flying ? flyUpdate(dt) : player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul * speedMul, world.ladders);
+  const hSpeed = flying ? flyUpdate(dt) : player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul * speedMul * weatherMove(), world.ladders);
   hitSoundPlayed = false;
   const shots = player.dead
     ? 0
@@ -3752,7 +4187,7 @@ function worldTick(dt) {
     if (mp.isHost() && coop.snapT <= 0) {
       coop.snapT = 0.1;
       const remaining = game.phase === 'active' ? game.toSpawn + game.bossToSpawn + zombies.aliveCount : 0;
-      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.phase === 'prep' ? prep.t : game.timer), z: zombies.snapshot(), pt: isDefend() ? defend.rows() : undefined, n: game.night ? 1 : 0, rd: game.phase === 'prep' ? [prep.ready.size, prepNeeded().length] : undefined });
+      mp.relay('all', { k: 'zs', w: game.wave, r: remaining, p: game.phase, t: Math.ceil(game.phase === 'prep' ? prep.t : game.timer), z: zombies.snapshot(), pt: isDefend() ? defend.rows() : undefined, n: game.night ? 1 : 0, rd: game.phase === 'prep' ? [prep.ready.size, prepNeeded().length] : undefined, nm: game.nextMod, ns: game.nextSpecial, ev: game.phase === 'evac' ? Math.round(evac.hold * 10) / 10 : undefined });
     }
     coop.scoreT -= dt;
     if (coop.scoreT <= 0) {
@@ -3777,6 +4212,9 @@ function onCoopRelay(from, d) {
       game.phase = d.p === 'picking' ? 'cleared' : d.p;
       game.timer = d.p === 'prep' ? 0 : d.t || 0;
       if (Array.isArray(d.rd)) [prep.rd, prep.nd] = d.rd;
+      prep.nextMod = MODIFIERS[d.nm] ? d.nm : null;
+      prep.nextSpecial = SPECIALS[d.ns] ? d.ns : null;
+      if (typeof d.ev === 'number') evac.hold = d.ev;
       prep.left = d.p === 'prep' ? d.t : 0;
       break;
     case 'zhit': {
@@ -3790,7 +4228,7 @@ function onCoopRelay(from, d) {
       break;
     }
     case 'kill':
-      rewardKill({ type: d.type, mut: !!d.mut, head: !!d.head, src: ['melee', 'grenade', 'turret'].includes(d.src) ? d.src : null, x: d.x, y: d.y, z: d.z });
+      rewardKill({ type: d.type, mut: !!d.mut, head: !!d.head, src: ['melee', 'grenade', 'turret', 'barrel'].includes(d.src) ? d.src : null, x: d.x, y: d.y, z: d.z, bounty: !!d.bounty });
       break;
     case 'ouch':
       onPlayerHit(null, Math.max(0, Math.min(200, Number(d.dmg) || 0)), d.kind);
@@ -3811,12 +4249,19 @@ function onCoopRelay(from, d) {
       if (mp.isHost()) return;
       game.wave = d.wave;
       game.night = !!d.night;
+      game.mod = MODIFIERS[d.mod] ? d.mod : null;
+      game.special = SPECIALS[d.sp] ? d.sp : null;
+      applyWaveTwist();
       banner(`WAVE ${d.wave}`, d.sub, d.boss ? 'red' : '', 2.6);
       audio.waveStart();
       if (d.weather && WEATHER[d.weather] && weather.id !== d.weather) weather.set(d.weather);
       break;
     case 'cleared':
       if (mp.isHost()) return;
+      waveAchievements(d.wave | 0);
+      game.mod = null;
+      game.special = null;
+      applyWaveTwist();
       player.heal(20, overhealCap());
       game.score += pointsBonus(d.wave);
       giveGrenades(2);
@@ -3833,6 +4278,11 @@ function onCoopRelay(from, d) {
       break;
     case 'ready':
       if (mp.isHost()) coop.ready.add(from);
+      break;
+    case 'evac':
+      if (mp.isHost()) return;
+      evacVisual(Number(d.x) || 0, Number(d.z) || 0);
+      banner('🚁 THE HELICOPTER IS HERE', `Get the whole squad into the landing zone and hold it for ${EVAC_HOLD}s`, 'gold', 3.2);
       break;
     case 'waveready':
       if (mp.isHost() && game.phase === 'prep') prep.ready.add(from);
@@ -3858,6 +4308,19 @@ function menuCamera() {
 }
 
 let prev = performance.now();
+// music follows the fight: calm between waves, drums and bass as the horde grows, loudest for bosses
+function updateMusic() {
+  let level = 0;
+  if (!inMenu() && zombies) {
+    if (zombieGame()) {
+      if (game.phase === 'active') level = Math.min(1, 0.35 + zombies.aliveCount / 35 + (zombies.list.some((z) => z.alive && z.typeId === 'boss') ? 0.5 : 0));
+      else if (game.phase === 'evac') level = 1;
+      else level = 0.05;
+    } else if (game.mode === 'mp' && mp.inMatch) level = 0.55;
+  }
+  audio.music(level, settings.music);
+}
+
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - prev) / 1000);
@@ -3865,6 +4328,7 @@ function frame(now) {
   time += dt;
   controls.update(dt);
   controls.updateTouchUi(game.state === 'playing' && !player.dead);
+  updateMusic();
   updateFps(dt);
 
   if (game.state === 'playing') update(dt);

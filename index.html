@@ -185,13 +185,14 @@
       <div class="panel">
         <h2>MULTIPLAYER</h2>
         <p class="tag small">Make a room and send the code to your friends.</p>
+        <button id="mp-quick" class="btn hot">⚡ QUICK PLAY</button>
         <button id="mp-create" class="btn">CREATE ROOM</button>
         <form id="mp-join-form" class="auth inline center">
           <input id="mp-code" placeholder="ROOM CODE" maxlength="5" autocomplete="off" spellcheck="false" />
           <button class="btn small">JOIN</button>
         </form>
         <div id="mp-error" class="msg"></div>
-        <p class="muted small">Modes: Co-op Survival, Defend the Points (vs zombies), Free-for-all, Team Deathmatch, Capture Point, Capture the Flag. Up to 8 players.</p>
+        <p class="muted small">Quick play drops you into an open room (or makes one). Modes: Co-op Survival, Defend the Points, Extraction, Free-for-all, Team Deathmatch, Capture Point, Capture the Flag, Gun Game, Infection, One in the Chamber, Juggernaut. Up to 8 players.</p>
         <button id="mp-back" class="btn ghost">BACK</button>
       </div>
     </div>
@@ -224,6 +225,7 @@
         <h1 id="mp-end-title">MATCH OVER</h1>
         <div id="mp-end-table"></div>
         <div id="mp-end-xp" class="muted"></div>
+        <div id="mp-end-vote" class="end-vote"></div>
         <button id="mpend-exit" class="btn ghost">EXIT TO MENU</button>
       </div>
     </div>

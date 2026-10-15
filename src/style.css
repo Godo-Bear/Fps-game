@@ -3129,3 +3129,16 @@ body.infected #game::after {
 #wave-ready .wr-title.ok { color: #6dff7a; animation: none; }
 #wave-ready .wr-squad { margin-top: 4px; color: #cfd8e0; font-size: 13px; }
 @keyframes wrPulse { 50% { opacity: 0.6; } }
+
+/* wave twists, achievements, map vote */
+#wave-ready .wr-mod { margin-top: 6px; color: #ffe08a; font-size: 14px; }
+#wave-ready .i-bar { margin-top: 6px; height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; overflow: hidden; }
+#wave-ready .i-bar i { display: block; height: 100%; background: #ffd34d; }
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 8px 0 16px; }
+.badge { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); opacity: 0.45; filter: grayscale(1); }
+.badge.got { opacity: 1; filter: none; border-color: rgba(255, 211, 77, 0.5); background: rgba(255, 211, 77, 0.08); }
+.badge b { font-size: 24px; }
+.badge span { font-weight: 700; }
+.badge small { opacity: 0.7; font-size: 11px; }
+.end-vote { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; }
+.end-vote .btn.on { background: #ffd34d; color: #1a1a1a; }

@@ -555,7 +555,7 @@ export class ZombieManager {
       // ---- alive
       const colliders = this.world.colliders;
       if (z.hasteT > 0) z.hasteT -= dt;
-      const speedMul = (frosted ? 1 - z.slowAmt : 1) * (z.hasteT > 0 ? 1.5 : 1);
+      const speedMul = (frosted ? 1 - z.slowAmt : 1) * (z.hasteT > 0 ? 1.5 : 1) * (this.speedFor ? this.speedFor(z) : 1);
 
       // pulling itself up onto a car, wall, wreck or ladder
       if (z.climb) {

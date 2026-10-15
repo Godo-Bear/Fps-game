@@ -232,6 +232,13 @@ export class Multiplayer {
   get infection() {
     return !!MODES[this.mode]?.infection;
   }
+  get oitc() {
+    return this.inMatch && !!MODES[this.mode]?.oitc;
+  }
+  // Juggernaut mode: is that me?
+  get isJugg() {
+    return this.inMatch && !!MODES[this.mode]?.jugg && this.jugg === this.myId;
+  }
   // infection: am I a zombie?
   get infected() {
     return this.infection && this.inMatch && this.myTeam === INFECTED;
@@ -391,6 +398,7 @@ export class Multiplayer {
         this.inMatch = true;
         this.matchSettings = cleanSettings(m.mode, m.settings);
         this.myLevel = 0;
+        this.jugg = m.jugg || 0;
         this.endsAt = Date.now() + (m.endsAt - m.now);
         this.myStats = { kills: 0, deaths: 0, headshots: 0 };
         this.feed = [];
@@ -414,6 +422,18 @@ export class Multiplayer {
       case 'infected':
         this.ctx.onInfected?.(m.id, m.by, !!m.first);
         break;
+      case 'ammo':
+        this.ctx.onAmmo?.(m.n | 0);
+        break;
+      case 'jugg':
+        this.jugg = m.id;
+        this.ctx.onJugg?.(m.id, this._name(m.id));
+        break;
+      case 'votes': {
+        const el = $('mp-end-vote');
+        for (const b of el.querySelectorAll('[data-vote]')) b.querySelector('i').textContent = m.tally[b.dataset.vote] ? ` · ${m.tally[b.dataset.vote]}` : '';
+        break;
+      }
       case 'built':
         this.ctx.onBuilt?.(m.s);
         break;
@@ -835,7 +855,10 @@ export class Multiplayer {
     this.inMatch = false;
     let title;
     let won = false;
-    if (m.winner === 'coop') title = m.reason === 'points' ? `OVERRUN · WAVE ${m.wave}` : `RUN OVER · WAVE ${m.wave}`;
+    if (m.winner === 'coop') {
+      won = m.reason === 'extracted';
+      title = won ? `🚁 EXTRACTED · WAVE ${m.wave}` : m.reason === 'points' ? `OVERRUN · WAVE ${m.wave}` : `RUN OVER · WAVE ${m.wave}`;
+    }
     else if (m.winner === 'draw') title = 'DRAW';
     else if (this.infection) {
       won = m.winner === this.myTeam;
@@ -854,7 +877,14 @@ export class Multiplayer {
     $('mp-end-table').innerHTML = `<table class="board"><tr><th>Player</th><th>Kills</th><th>Deaths</th><th>Score</th></tr>${rows
       .map((r) => `<tr class="${r.id === this.myId ? 'me' : ''}"><td style="color:${this.teams ? TEAM_CSS[r.team] : '#e9d9b8'}">${esc(r.name)}</td><td>${r.kills}</td><td>${r.deaths}</td><td>${r.score}</td></tr>`)
       .join('')}</table>`;
-    this.ctx.onEnd({ won, kills: this.myStats.kills, headshots: this.myStats.headshots, coop: m.winner === 'coop', wave: m.wave || 0 });
+    // vote for the next map
+    $('mp-end-vote').innerHTML = `<span class="muted small">Vote for the next map:</span> ${MP_MAPS.map((id) => `<button class="btn small ghost" data-vote="${id}">${esc(MAPS[id].name)}<i></i></button>`).join('')}`;
+    for (const b of $('mp-end-vote').querySelectorAll('[data-vote]'))
+      b.onclick = () => {
+        this.send({ t: 'vote', map: b.dataset.vote });
+        for (const o of $('mp-end-vote').querySelectorAll('[data-vote]')) o.classList.toggle('on', o === b);
+      };
+    this.ctx.onEnd({ won, kills: this.myStats.kills, headshots: this.myStats.headshots, coop: m.winner === 'coop', wave: m.wave || 0, mode: m.mode, extracted: m.reason === 'extracted', myTeam: this.myTeam });
   }
 
   // ---------------------------------------------------------------- lobby screen
@@ -887,7 +917,7 @@ export class Multiplayer {
       el.innerHTML = '';
       return;
     }
-    const key = JSON.stringify([this.lobby.mode, set, host]);
+    const key = JSON.stringify([this.lobby.mode, set, host, this.lobby.open]);
     if (el.dataset.key === key) return;
     el.dataset.key = key;
     el.innerHTML = `<h4>Match settings${host ? '' : ' <span class="muted small">(the host picks these)</span>'}</h4><div class="lset-grid">${list
@@ -896,7 +926,8 @@ export class Multiplayer {
           .map(([v, n]) => `<option value="${esc(v)}" ${v === set[o.key] ? 'selected' : ''}>${esc(n)}${v === o.def ? ' ·' : ''}</option>`)
           .join('')}</select></label>`,
       )
-      .join('')}</div>${host ? '<button id="lobby-reset" class="btn small ghost">BACK TO NORMAL</button>' : ''}`;
+      .join('')}<label class="lset"><span>🌍 Open to quick play</span><select data-open ${host ? '' : 'disabled'}><option value="0" ${this.lobby.open ? '' : 'selected'}>No (code only)</option><option value="1" ${this.lobby.open ? 'selected' : ''}>Yes, anyone can join</option></select></label></div>${host ? '<button id="lobby-reset" class="btn small ghost">BACK TO NORMAL</button>' : ''}`;
+    el.querySelector('select[data-open]').addEventListener('change', (e) => this.send({ t: 'open', on: e.target.value === '1' }));
     el.querySelectorAll('select[data-set]').forEach((sel) =>
       sel.addEventListener('change', () => {
         const o = list.find((x) => x.key === sel.dataset.set);

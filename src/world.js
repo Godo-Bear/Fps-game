@@ -2005,9 +2005,57 @@ export function buildWorld(scene, mapId = 'plains') {
   const ammoAt = at(ammoCrate, 1.2);
   const jerseyAt = at(jersey, 1.6);
   const dumpsterAt = at(dumpster, 1.5);
+  // Perk machines and wall-buy boards: spend points on them in zombie games (E to buy).
+  const shops = []; // { kind: 'perk' | 'gun', id, x, y, z, light }
+  const PERK_LOOK = { tough: [0xb02a2a, 'TOUGH NUT'], quick: [0x2a8a3a, 'QUICK HANDS'], double: [0xc8a030, 'DOUBLE TAP'], fleet: [0x2a5ab0, 'FLEET FOOT'] };
+  function perkMachine(x, z, rot, id) {
+    const [color, label] = PERK_LOOK[id];
+    const g = new THREE.Group();
+    const body = box(1.2, 2.2, 0.9, mat(color, { roughness: 0.5, metalness: 0.2 }));
+    body.position.y = 1.1;
+    g.add(solid(body));
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.55), new THREE.MeshStandardMaterial({ map: textTexture([label], { fg: '#fff6d8', bg: '#1a1a1a', w: 256, h: 128, font: 'bold 40px Impact, sans-serif', grime: false }), emissive: 0xffffff, emissiveIntensity: 0.35, emissiveMap: null }));
+    glow.position.set(0, 1.75, 0.46);
+    g.add(glow);
+    const slot = box(0.5, 0.3, 0.05, M.metalDark);
+    slot.position.set(0, 0.6, 0.46);
+    g.add(slot);
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color }));
+    light.position.set(0, 2.35, 0);
+    g.add(light);
+    place(g, x, z, rot);
+    shops.push({ kind: 'perk', id, x, y: heightAt(x, z), z, light });
+    reserve(x, z, 1.4);
+  }
+  const GUN_BOARD = { smg: 'SMG', shotgun: 'SHOTGUN', dmr: 'DMR', lmg: 'LMG', sniper: 'SNIPER', launcher: 'LAUNCHER' };
+  function wallBuy(x, z, rot, gun) {
+    const g = new THREE.Group();
+    for (const sx of [-0.8, 0.8]) {
+      const post = box(0.12, 1.9, 0.12, M.darkWood);
+      post.position.set(sx, 0.95, 0);
+      g.add(post);
+    }
+    const board = box(1.9, 1, 0.08, M.planks);
+    board.position.y = 1.35;
+    g.add(solid(board));
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.8), new THREE.MeshStandardMaterial({ map: textTexture(['🔫 ' + GUN_BOARD[gun], 'BUY WITH E'], { fg: '#ffe9a8', bg: '#3a2a1a', w: 256, h: 128, font: 'bold 34px Impact, sans-serif' }), roughness: 0.9 }));
+    sign.position.set(0, 1.35, 0.05);
+    g.add(sign);
+    proxy(g, 1.9, 1.9, 0.3, 0, 0.95, 0);
+    place(g, x, z, rot);
+    shops.push({ kind: 'gun', id: gun, x, y: heightAt(x, z), z });
+    reserve(x, z, 1.4);
+  }
+
   // Every map: cover, barrels, ammo, and small bits lying around.
   function extras({ cover = 16, barrels = 8, ammo = 3, debris = M.brick, stones = M.rock } = {}) {
     coverSpots(cover);
+    const perks = ['tough', 'quick', 'double', 'fleet'];
+    let pi = 0;
+    scatter(4, 1.6, (x, z) => perkMachine(x, z, rand(0, PI * 2), perks[pi++ % 4]), 18, 70);
+    const guns = ['smg', 'shotgun', 'dmr', 'lmg', 'sniper', 'launcher'];
+    let gi = 0;
+    scatter(5, 1.6, (x, z) => wallBuy(x, z, rand(0, PI * 2), guns[gi++ % guns.length]), 16, 72);
     scatter(barrels, 0.9, redBarrel, 14, 85);
     scatter(ammo, 1.2, (x, z) => ammoCrate(x, z, rand(0, PI)), 14, 70);
     clutter(160, new THREE.BoxGeometry(0.3, 0.12, 0.18), debris, { y: 0.05 });
@@ -2400,6 +2448,7 @@ export function buildWorld(scene, mapId = 'plains') {
     hazards,
     explosives,
     ammoCrates,
+    shops,
     // admin: a new red barrel on the spot
     addBarrel(x, z) {
       redBarrel(x, z);

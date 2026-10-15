@@ -272,7 +272,7 @@ export class Player {
       this.onGround = false;
       this.slideT = 0;
     }
-    this.vel.y -= GRAVITY * dt;
+    this.vel.y -= GRAVITY * (this.gravityMul || 1) * dt;
 
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;

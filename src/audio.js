@@ -450,6 +450,97 @@ export class GameAudio {
     });
   }
 
+  // Background music made on the fly: a low drone that's always there, and drums and a bass line
+  // that come in as `level` goes up (0 calm between waves, ~0.5 a normal wave, 1 bosses and big hordes).
+  music(level, volume = 1) {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const M = (this.mus ||= this._musicInit());
+    M.level += (level - M.level) * 0.02;
+    M.bus.gain.setTargetAtTime(0.16 * volume, ctx.currentTime, 0.5);
+    M.drone.gain.setTargetAtTime((0.5 - M.level * 0.25) * (volume > 0 ? 1 : 0), ctx.currentTime, 0.8);
+    M.filter.frequency.setTargetAtTime(220 + M.level * 900, ctx.currentTime, 0.6);
+    // schedule beats a little ahead
+    const bpm = 84 + M.level * 56;
+    const step = 60 / bpm / 2;
+    if (M.next < ctx.currentTime) M.next = ctx.currentTime + 0.05;
+    while (M.next < ctx.currentTime + 0.2) {
+      const t = M.next;
+      const i = M.step++ % 16;
+      if (M.level > 0.15 && i % 4 === 0) this._kick(t, M.bus, Math.min(1, M.level * 1.4));
+      if (M.level > 0.45 && i % 2 === 1) this._hat(t, M.bus, M.level * 0.5);
+      if (M.level > 0.3 && [0, 3, 6, 10, 12].includes(i)) this._bass(t, M.bus, [55, 55, 65.4, 49, 58.3][[0, 3, 6, 10, 12].indexOf(i)], step * 1.6, M.level);
+      if (M.level > 0.8 && i % 8 === 4) this._hat(t, M.bus, 0.9, 2400);
+      M.next += step;
+    }
+  }
+  _musicInit() {
+    const ctx = this.ctx;
+    const bus = ctx.createGain();
+    bus.gain.value = 0;
+    bus.connect(this.master);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 300;
+    const drone = ctx.createGain();
+    drone.gain.value = 0;
+    filter.connect(drone).connect(bus);
+    for (const [f, type] of [[55, 'sawtooth'], [55.4, 'sawtooth'], [82.4, 'triangle'], [110.2, 'sine']]) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = type === 'sawtooth' ? 0.18 : 0.25;
+      o.connect(g).connect(filter);
+      o.start();
+    }
+    return { bus, filter, drone, level: 0, next: 0, step: 0 };
+  }
+  _kick(t, out, vol) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(130, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9 * vol, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.32);
+  }
+  _hat(t, out, vol, freq = 7000) {
+    const ctx = this.ctx;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25 * vol, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    n.connect(f).connect(g).connect(out);
+    n.start(t, Math.random());
+    n.stop(t + 0.08);
+  }
+  _bass(t, out, freq, dur, vol) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.type = 'square';
+    o.frequency.value = freq;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 260 + vol * 400;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35 * vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(f).connect(g).connect(out);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+
   waveStart() {
     if (!this.ctx) return;
     const ctx = this.ctx;

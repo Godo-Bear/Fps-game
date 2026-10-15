@@ -118,6 +118,17 @@ you log in). Dying ends that game and deletes its save.
   zombie (or enemy player) in range. It works in every mode; online everyone sees the same builds, and in PvP you
   can shoot or blow up the other side's.
 
+### Twists, perks, finishers, weekly challenge
+- **Wave twists** every 3rd wave (shown while you ready up): Headshots Only, Volatile, Low Gravity, Double Score,
+  Sprinters, Thick Skin, Bloodthirst. **Special waves**: Horde Rush (all from one side) and Bounty (a golden zombie).
+- **Perk machines** (Tough Nut, Quick Hands, Double Tap, Fleet Foot) and **wall-buy guns** on every map: press **E**
+  and pay with points (your score; spending doesn't lower it on the leaderboard).
+- **Finishers**: knife a zombie at 30% health or less to finish it for full mags and +15 HP.
+- **Weekly challenge** (Leaderboard tab): this week's map with a twist every wave, its own board, resets Mondays.
+- **Achievements**: 21 badges, shown in Customise.
+- **Weather**: zombies lose you in fog, deep snow slows everyone, lightning strikes zombies in storms.
+- **Music** follows the fight (volume in Settings).
+
 ### Ready up between waves
 After you clear a wave (and pick a power-up) the next one waits until you press **E** (controller **X**, **✚** on phones),
 so you can build, restock and get into position. In co-op every squadmate still standing has to be ready; if someone's
@@ -204,7 +215,12 @@ The host picks the mode and map, then starts. Up to 8 players.
 | Capture Point | Stand in the zone in the middle to hold it; first to 150 points |
 | Capture the Flag | Bring the enemy flag to yours; first to 3 captures |
 | Gun Game | Every kill gives you the next gun on the ladder; the last level is the knife and needs a knife kill. Getting knifed sends you back a gun |
+| One in the Chamber | One bullet; every bullet kills and every kill gives you another |
+| Juggernaut | One player has triple health and an LMG; kill them to take over. Points for kills as the Juggernaut |
+| Extraction | Co-op: survive to the chosen wave, then the whole squad holds the helicopter's landing zone for 30s |
 | Infection | After 10 seconds someone turns into a zombie (knife/claws only, more health, faster). Anyone they kill joins them. Survivors win if anyone is left when time runs out |
+
+At the end of a match everyone **votes for the next map**. **Quick Play** puts you in an open room (or makes one); the host decides if the room is open.
 
 **Match settings**: under the modes the host can change that mode's settings (score limit, time, health, respawn time,
 supply drops, map guns, gun ladder, starting wave, zombie health and so on). **BACK TO NORMAL** puts them back.
@@ -221,7 +237,7 @@ or any zombie type, kill all zombies, set weather, set score and jump to any wav
 in multiplayer admins get an ADMIN badge and can kick players.
 
 Newer admin tools: max or reset all **gun mastery** (every skin unlocked), finish or reset **today's quests**,
-replay or skip the **tutorial**, spawn a **specific boss**, **unlimited reserve for all your guns**, **infinite grenades**, **free building**, **repair all your builds**, **start the next wave now**, **set the max zombies per wave**,
+replay or skip the **tutorial**, spawn a **specific boss**, **unlimited reserve for all your guns**, **infinite grenades**, **free building**, **repair all your builds**, **start the next wave now**, **set the max zombies per wave**, **random twist next wave**, **spawn a bounty zombie**, **+5000 points**, **unlock all achievements**,
 **super turrets**, max / set **scrap**, refill / set **grenades**, remove all builds and zero scrap & grenades.
 Admins can also reset their quick chat wheel to the defaults.
 

@@ -208,6 +208,7 @@ export class Weather {
         this.nextBolt = 5 + Math.random() * 10;
         this.flash = 1;
         this.audio.thunder(0.4 + Math.random() * 1.5);
+        if (this.onBolt) this.onBolt();
       }
     }
     this.flash = Math.max(0, this.flash - dt * 3.5);

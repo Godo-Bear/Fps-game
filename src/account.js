@@ -4,6 +4,7 @@ import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
 import { GUNS } from './guns.js';
+import { ACHIEVEMENTS } from '../shared/achievements.js';
 
 const TOKEN_KEY = 'deadplains.token';
 const GUEST_KEY = 'deadplains.guest';
@@ -516,6 +517,34 @@ export class Account {
   leaderboard() {
     return this._api('/leaderboard');
   }
+  // ---- achievements (badges) and the weekly challenge
+  get badges() {
+    return (this.user ? this.user.badges : this.guest.badges) || [];
+  }
+  // returns true the first time
+  unlock(id) {
+    if (this.badges.includes(id)) return false;
+    if (this.user) {
+      this.user.badges = [...this.badges, id];
+      this._api('/achievements', { method: 'POST', body: { ids: [id] } })
+        .then(({ user }) => {
+          this.user = user;
+          this._changed();
+        })
+        .catch(() => {});
+    } else {
+      this.guest.badges = [...this.badges, id];
+      store.set(GUEST_KEY, JSON.stringify(this.guest));
+    }
+    this._changed();
+    return true;
+  }
+  weekly() {
+    return this._api('/weekly');
+  }
+  submitWeekly(wave, score) {
+    if (this.user) this._api('/weekly', { method: 'POST', body: { wave, score } }).catch(() => {});
+  }
   // tells the live leaderboard which wave you're on (logged-in players only)
   live(wave, score) {
     if (this.user) this._api('/live', { method: 'POST', body: { wave, score } }).catch(() => {});
@@ -794,6 +823,13 @@ export class AccountUI {
         (err) => (document.getElementById('profile-msg').textContent = err.message),
       );
     });
+    // achievements as badges
+    const have = new Set(a.badges);
+    this.body.insertAdjacentHTML(
+      'beforeend',
+      `<h3>🏅 Achievements <span class="muted small">${have.size}/${ACHIEVEMENTS.length}</span></h3>
+      <div class="badges">${ACHIEVEMENTS.map((b) => `<div class="badge ${have.has(b.id) ? 'got' : ''}" title="${esc(b.desc)}"><b>${b.icon}</b><span>${esc(b.name)}</span><small>${esc(b.desc)}</small></div>`).join('')}</div>`,
+    );
     this.body.querySelectorAll('.pick-row').forEach((row) => {
       row.addEventListener('click', async (e) => {
         const b = e.target.closest('.pick');
@@ -954,6 +990,10 @@ export class AccountUI {
         <button class="btn small" data-run="killall" ${solo ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
         <button class="btn small" data-run="startwave" ${solo ? '' : 'disabled'}>▶ START NEXT WAVE NOW</button>
         <button class="btn small" data-run="repairbuilds" ${solo ? '' : 'disabled'}>🔧 REPAIR ALL MY BUILDS</button>
+        <button class="btn small" data-run="nextmod" ${solo ? '' : 'disabled'}>🎲 NEXT WAVE: RANDOM TWIST</button>
+        <button class="btn small" data-run="bountynow" ${solo ? '' : 'disabled'}>🎯 SPAWN A BOUNTY ZOMBIE</button>
+        <button class="btn small" data-run="points" ${solo ? '' : 'disabled'}>💵 +5000 POINTS</button>
+        <button class="btn small" data-run="allbadges">🏅 UNLOCK ALL ACHIEVEMENTS</button>
         <button class="btn small" data-run="scrap" ${solo ? '' : 'disabled'}>🔩 MAX SCRAP</button>
         <button class="btn small" data-run="nades" ${solo ? '' : 'disabled'}>💣 REFILL GRENADES</button>
         <button class="btn small" data-run="infinitereserve" ${solo ? '' : 'disabled'}>♾️ UNLIMITED RESERVE (ALL MY GUNS)</button>
@@ -1442,6 +1482,24 @@ export class AccountUI {
     log.scrollTop = log.scrollHeight;
   }
 
+  async _weeklyBoard() {
+    const el = document.getElementById('weekly-board');
+    if (!el) return;
+    try {
+      const { week, players } = await this.account.weekly();
+      if (!el.isConnected) return;
+      el.innerHTML = `
+        <h3>📅 Weekly challenge #${week} <button class="btn small hot" id="weekly-play">PLAY IT</button></h3>
+        <p class="muted small">Same map and the same twist every wave for everyone this week. Resets on Monday.${this.account.loggedIn ? '' : ' Log in to get on this board.'}</p>
+        ${players.length
+          ? `<table class="board"><tr><th>#</th><th>Player</th><th>Wave</th><th>Score</th></tr>${players.map((u, i) => `<tr class="${u.username === this.account.name ? 'me' : ''}"><td>${i + 1}</td><td>${nameTag(u)}</td><td>${u.weekly.wave}</td><td>${u.weekly.score}</td></tr>`).join('')}</table>`
+          : '<p class="muted">Nobody has played it yet this week.</p>'}`;
+      document.getElementById('weekly-play').onclick = () => this.onWeekly?.();
+    } catch {
+      el.innerHTML = '';
+    }
+  }
+
   async _leaderboard() {
     if (!this.body.querySelector('.board')) this.body.innerHTML = '<div class="muted">Loading…</div>';
     try {
@@ -1456,6 +1514,7 @@ export class AccountUI {
               ${live.map((u) => `<tr class="${me(u)}"><td>${nameTag(u)}</td><td>${u.level}</td><td><b>${u.live.wave}</b></td><td>${u.live.score}</td></tr>`).join('')}
             </table>`
           : '<p class="muted">Nobody is in a zombie run right now.</p>'}
+        <div id="weekly-board"></div>
         <h3>All time</h3>
         <table class="board">
           <tr><th>#</th><th>Player</th><th>Lv</th><th>Best wave</th><th>Best score</th><th>PvP kills</th></tr>
@@ -1466,6 +1525,7 @@ export class AccountUI {
     } catch (err) {
       this.body.innerHTML = `<p class="muted">${esc(err.message)}</p>`;
     }
+    this._weeklyBoard();
     // keep it live while the tab is open
     clearTimeout(this.boardTimer);
     const again = () => {

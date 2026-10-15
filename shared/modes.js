@@ -8,6 +8,9 @@ export const MODES = {
   koth: { id: 'koth', name: 'Capture Point', short: 'CP', teams: true, desc: 'Hold the point in the middle of the map. First to 150 points wins.', scoreLimit: 150 },
   ctf: { id: 'ctf', name: 'Capture the Flag', short: 'CTF', teams: true, desc: "Steal the enemy flag and bring it to yours. First to 3 captures wins.", scoreLimit: 3 },
   gungame: { id: 'gungame', name: 'Gun Game', short: 'GG', teams: false, gungame: true, desc: 'Every kill gives you the next gun. Get a kill with the last one, the knife, to win. Knife someone to send them back a gun.' },
+  oitc: { id: 'oitc', name: 'One in the Chamber', short: '1IC', teams: false, oitc: true, killLimit: 10, desc: 'One bullet in your revolver and a knife. Every bullet kills; every kill gives you another bullet. First to 10 kills.' },
+  jugg: { id: 'jugg', name: 'Juggernaut', short: 'JUG', teams: false, jugg: true, scoreLimit: 20, desc: 'One player is the Juggernaut: triple health and a machine gun. Kill the Juggernaut to become it. Points for kills as the Juggernaut and for taking it down.' },
+  extract: { id: 'extract', name: 'Extraction', short: 'EVAC', teams: false, coop: true, extract: true, desc: 'Co-op vs the zombies with a way out: survive until the helicopter comes, then the whole squad has to hold the landing zone until it can take off.' },
   infect: { id: 'infect', name: 'Infection', short: 'INF', teams: true, infection: true, autoTeams: true, desc: "After 10 seconds someone turns into a zombie. Anyone a zombie kills joins them. Survivors win if anyone is still standing when time runs out." },
 };
 
@@ -47,6 +50,9 @@ export const MODE_SETTINGS = {
     { key: 'demote', label: '🔪 Knife kills send them back', options: [['on', 'On'], ['off', 'Off']], def: 'on' },
     TIME(10, [5, 8, 10, 15]), HP, RESPAWN, DROPS,
   ],
+  oitc: [LIMIT('🎯 Kills to win', [5, 10, 15, 20], 10), TIME(8, [3, 5, 8, 10]), RESPAWN],
+  jugg: [LIMIT('🏆 Points to win', [10, 20, 30], 20), TIME(10, [5, 8, 10, 15]), HP, RESPAWN, DROPS],
+  extract: [],
   infect: [
     TIME(4, [2, 3, 4, 5, 8]),
     { key: 'starters', label: '🧟 First zombies', options: opt([1, 2, 3]), def: 1 },
@@ -55,6 +61,9 @@ export const MODE_SETTINGS = {
   ],
 };
 MODE_SETTINGS.defend = MODE_SETTINGS.coop;
+MODE_SETTINGS.extract = [{ key: 'evac', label: '🚁 Helicopter comes after wave', options: opt([3, 5, 8, 10, 15], (v) => `Wave ${v}`), def: 5 }, ...MODE_SETTINGS.coop];
+export const EVAC_HOLD = 30; // seconds the squad must hold the landing zone
+export const JUGG_HP = 3; // the Juggernaut's health is this many times normal
 // every setting for a mode, with anything missing or not allowed set to its default
 export function cleanSettings(mode, raw) {
   const out = {};
