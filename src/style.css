@@ -3165,3 +3165,6 @@ body.infected #game::after {
 .apl { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 .apl b { flex: 1; }
 .apl .btn.on { background: rgba(255, 255, 255, 0.2); }
+
+.acc-list { max-height: 460px; }
+.acc-list h5 { margin: 10px 0 4px; }

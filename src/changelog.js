@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.2', date: '15 Oct 2026', title: 'Admin: every account',
+    items: [
+      'Admin: the Account tab lists every account on the site (search by name, newest activity first) with level, coins, best wave, games, when they joined and when they were last on. MANAGE opens the kick / timeout / ban / coins tools for them.',
+      'Admin: guests show up too (anonymous "Guest #" ids, one per browser) with their level, best wave and games.',
+    ],
+  },
+  {
     v: '5.1', date: '15 Oct 2026', title: 'Force field & admin team control',
     items: [
       'Force field: press F (controller D-pad left, 🛡️ on phones) for an 8 second bubble zombies can\'t get into and bullets can\'t get through. It recharges for 45 seconds, and everyone sees yours.',

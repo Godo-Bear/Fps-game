@@ -131,6 +131,20 @@ export class Account {
   get stats() {
     return this.user ? this.user.stats : this.guest.stats;
   }
+  // guests check in now and then (a random id, their level and stats) so admins can see them
+  pingGuest() {
+    if (this.user) return;
+    let id = store.get('deadplains.guestId');
+    if (!id || !/^[a-f0-9]{24}$/.test(id)) {
+      id = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      store.set('deadplains.guestId', id);
+    }
+    const s = this.guest.stats;
+    fetch('/api/guest/ping', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, xp: this.guest.xp, bestWave: s.bestWave, games: s.games }) }).catch(() => {});
+  }
+  adminAccounts(q = '', page = 0) {
+    return this._api(`/admin/accounts?q=${encodeURIComponent(q)}&page=${page}`);
+  }
 
   async _api(path, { method = 'GET', body } = {}) {
     const headers = { 'content-type': 'application/json' };
@@ -179,6 +193,11 @@ export class Account {
     }
     this._changed();
     this.loadQuests();
+    // guests: let the server know this browser plays (for the admin's list)
+    this.pingGuest();
+    setInterval(() => {
+      if (document.visibilityState === 'visible') this.pingGuest();
+    }, 120000);
     // keeps "online" status fresh for friends
     setInterval(() => {
       if (this.user && document.visibilityState === 'visible') this._api('/me').then(({ user }) => (this.user = user)).catch(() => {});
@@ -780,8 +799,67 @@ export class AccountUI {
         <div><b>${s.pvpKills}</b>PvP kills</div><div><b>${s.pvpWins}</b>PvP wins</div>
         <div><b>${s.games}</b>Games</div><div><b>${this.account.xp}</b>Total XP</div>
       </div>
-      <button id="logout-btn" class="btn small ghost">LOG OUT</button>`;
+      <button id="logout-btn" class="btn small ghost">LOG OUT</button>
+      ${this.account.admin ? '<div id="all-accounts"></div>' : ''}`;
     document.getElementById('logout-btn').onclick = () => this.account.logout().then(() => this.close());
+    if (this.account.admin) this._allAccounts('', 0);
+  }
+
+  // admin: every account on the site and every guest browser
+  async _allAccounts(q, page) {
+    const el = document.getElementById('all-accounts');
+    if (!el) return;
+    if (!el.dataset.ready) {
+      el.dataset.ready = '1';
+      el.innerHTML = `<h3>⭐ Every account</h3>
+        <form id="acc-find" class="auth inline admin-row"><input name="q" placeholder="Search by name" maxlength="16" /><button class="btn small">SEARCH</button></form>
+        <div id="acc-list" class="admin-players acc-list">Loading…</div>`;
+      document.getElementById('acc-find').onsubmit = (e) => {
+        e.preventDefault();
+        this._allAccounts(String(new FormData(e.target).get('q') || ''), 0);
+      };
+    }
+    const list = document.getElementById('acc-list');
+    let r;
+    try {
+      r = await this.account.adminAccounts(q, page);
+    } catch (err) {
+      list.textContent = err.message;
+      return;
+    }
+    const date = (t) => (t ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' }) : '?');
+    const ago = (t) => {
+      const m = Math.round((Date.now() - t) / 60000);
+      return m < 2 ? 'now' : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`;
+    };
+    const status = (u) => (u.banned ? '<b class="bad">BANNED</b>' : u.timeoutMins ? '<b class="bad">timed out</b>' : u.room ? `in <b>${esc(u.room)}</b>` : '');
+    const acc = r.accounts
+      .map((u) => `<div class="friend admin-player"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b>${u.admin ? ' ⭐' : ''}
+        <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · best wave ${u.bestWave} · ${u.games} games · joined ${date(u.created)} · seen ${ago(u.lastSeen)} ${status(u)}</span>
+        <span class="actions"><button data-manage="${esc(u.username)}">MANAGE</button></span></div>`)
+      .join('');
+    const guests = r.guests
+      .map((g) => `<div class="friend admin-player"><span class="dot ${g.online ? 'on' : ''}"></span><b class="muted">Guest #${esc(g.id)}</b>
+        <span class="muted">Lv ${g.level} · best wave ${g.bestWave} · ${g.games} games · first seen ${date(g.created)} · seen ${ago(g.lastSeen)}</span></div>`)
+      .join('');
+    const pages = Math.max(Math.ceil(r.total / 50), q ? 1 : Math.ceil(r.guestTotal / 50), 1);
+    list.innerHTML = `<p class="muted small">${q ? `${r.total} account${r.total === 1 ? '' : 's'} starting with "${esc(q)}"` : `${r.total} accounts · ${r.guestTotal} guest browsers`} · page ${page + 1}/${pages}
+        ${page > 0 ? '<a href="#" data-pg="-1">◀ newer</a>' : ''} ${page + 1 < pages ? '<a href="#" data-pg="1">older ▶</a>' : ''}</p>
+      <h5>Accounts</h5>${acc || '<p class="muted small">None.</p>'}
+      ${q ? '' : `<h5>Guests (no account)</h5>${guests || '<p class="muted small">None yet.</p>'}`}`;
+    list.querySelectorAll('[data-pg]').forEach((a) => (a.onclick = (e) => {
+      e.preventDefault();
+      this._allAccounts(q, page + Number(a.dataset.pg));
+    }));
+    // manage: the admin tab's player tools, searched for that name
+    list.querySelectorAll('[data-manage]').forEach((b) => (b.onclick = () => {
+      this.open('admin');
+      setTimeout(() => {
+        const f = document.getElementById('admin-find');
+        if (f) f.q.value = b.dataset.manage;
+        this._adminPlayers(b.dataset.manage);
+      }, 50);
+    }));
   }
 
   _profile() {

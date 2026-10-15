@@ -119,6 +119,7 @@ export class GameDB extends DurableObject {
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS ip_bans (ip TEXT PRIMARY KEY, user INTEGER NOT NULL, created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS guests (id TEXT PRIMARY KEY, level INTEGER NOT NULL, best_wave INTEGER NOT NULL, games INTEGER NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS weekly (week INTEGER NOT NULL, user INTEGER NOT NULL, wave INTEGER NOT NULL, score INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (week, user));
     `);
     this.adminTries = new Map(); // user id -> [count, windowStart]
@@ -442,6 +443,20 @@ export class GameDB extends DurableObject {
       return json({ token: await this._session(user), user: this._publicUser(user, true) });
     }
 
+    // guests (no account) check in now and then with a random id from their browser, so admins can count them
+    if (path === '/guest/ping' && method === 'POST') {
+      const id = typeof body.id === 'string' && /^[a-f0-9]{16,32}$/.test(body.id) ? body.id : null;
+      if (!id) return err('Bad id');
+      const int = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
+      const now = Date.now();
+      this.sql.exec(
+        `INSERT INTO guests (id, level, best_wave, games, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET level = excluded.level, best_wave = excluded.best_wave, games = excluded.games, last_seen = excluded.last_seen`,
+        id, levelFromXp(int(body.xp, 1e8)), int(body.bestWave, 300), int(body.games, 1e6), now, now
+      );
+      return json({ ok: true });
+    }
+
     // quick play: an open room with space, busiest first (or none: the game makes a new open room)
     if (path === '/quickplay' && method === 'GET') {
       const now = Date.now();
@@ -642,6 +657,27 @@ export class GameDB extends DurableObject {
         : this.sql.exec('SELECT * FROM users WHERE last_seen > ? ORDER BY username LIMIT 200', Date.now() - ONLINE_MS).toArray();
       const banned = this.sql.exec('SELECT * FROM users WHERE banned = 1 OR timeout_until > ? ORDER BY username LIMIT 100', Date.now()).toArray();
       return json({ players: rows.map((u) => this._adminRow(u)), banned: banned.map((u) => this._adminRow(u)) });
+    }
+    // admin: every account on the site (newest activity first), plus every guest browser
+    if (path === '/admin/accounts' && method === 'GET') {
+      if (!me.admin) return err('Admins only', 403);
+      const q = String(url.searchParams.get('q') || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
+      const page = Math.max(0, Math.min(1000, Number(url.searchParams.get('page')) | 0));
+      const like = `${q.replace(/_/g, '\\_')}%`;
+      const where = q ? "WHERE username LIKE ? ESCAPE '\\'" : '';
+      const args = q ? [like] : [];
+      const total = this.sql.exec(`SELECT COUNT(*) AS n FROM users ${where}`, ...args).one().n;
+      const rows = this.sql.exec(`SELECT * FROM users ${where} ORDER BY last_seen DESC LIMIT 50 OFFSET ?`, ...args, page * 50).toArray();
+      const guestTotal = this.sql.exec('SELECT COUNT(*) AS n FROM guests').one().n;
+      const guests = q ? [] : this.sql.exec('SELECT * FROM guests ORDER BY last_seen DESC LIMIT 50 OFFSET ?', page * 50).toArray();
+      const now = Date.now();
+      return json({
+        total,
+        guestTotal,
+        page,
+        accounts: rows.map((u) => ({ ...this._adminRow(u), created: u.created, lastSeen: u.last_seen, bestWave: u.best_wave, games: u.games })),
+        guests: guests.map((g) => ({ id: g.id.slice(0, 8), level: g.level, bestWave: g.best_wave, games: g.games, created: g.first_seen, lastSeen: g.last_seen, online: now - g.last_seen < ONLINE_MS })),
+      });
     }
     if (path === '/admin/player' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);
