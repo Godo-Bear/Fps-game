@@ -1253,6 +1253,12 @@ export class Room extends DurableObject {
         for (const o of this.players.values()) if (o !== p && o.joined) o.ws.send(msg);
         break;
       }
+      case 'cheat':
+        // admin cheats the server has to apply: god mode and one-hit kills (only for that admin)
+        if (!p.admin) return;
+        p.god = !!m.god;
+        p.onehit = !!m.onehit;
+        break;
       case 'setteam': {
         // admins can put anyone on either team, in the lobby or mid-match
         const target = this.players.get(m.id);
@@ -1761,9 +1767,9 @@ export class Room extends DurableObject {
     if (dist > 320) return;
     // infection zombies only have their claws (the knife): close up only
     if (mode.infection && p.team === INFECTED && (!m.melee || dist > 5)) return;
-    if (now < target.protectUntil || now < (target.shieldUntil || 0)) return;
-    // one in the chamber: every bullet kills
-    target.hp -= mode.oitc && !m.melee ? target.hp : dmg;
+    if (now < target.protectUntil || now < (target.shieldUntil || 0) || target.god) return;
+    // one in the chamber: every bullet kills (and an admin's one-hit-kill cheat)
+    target.hp -= (mode.oitc && !m.melee) || p.onehit ? target.hp : dmg;
     target.lastHurt = now;
     this._send(target, { t: 'hurt', by: p.id, dmg, from: p.pos, hp: Math.max(0, target.hp) });
     if (target.hp > 0) return;

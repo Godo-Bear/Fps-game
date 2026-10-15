@@ -199,6 +199,7 @@ and health packs around the map heal 40 HP (they come back 30 seconds later).
 Press Esc for the pause menu with **Resume** and **Exit**.
 
 ### Accounts, friends and progress
+- **You need a free account to play** (username + password). PLAY asks you to sign up or log in first.
 - Play as a guest (progress saved in your browser) or **create an account** to save it on the server.
 - Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).
 - **Friends**: add people by username, accept requests (a pop-up with ACCEPT / DECLINE appears when one comes in), see who's online with their level and best wave.
@@ -248,7 +249,7 @@ Admins can also reset their quick chat wheel to the defaults.
 **Players on every server**: a list of everyone online (with the room they're in) and a search for any player, with
 **kick**, **timeout** (kicked and no online games, chat or messages for 5 minutes up to a week), **ban / unban** (bans the account and its IP), and
 **give or take coins** by name. **Blocked words**: type the words nobody may say; only those exact words are hidden as
-*** in every chat on every server, and new names can't use them. **Supply drop on me** drops a crate in any mode. **Teams**: move any player to red or blue (room lobby, or the admin panel mid-match), or shuffle / balance / swap the teams. A **force field that never runs out** is in the solo cheats. The admin panel has tabs (**Players**, **Game**, **Multiplayer**, **Account & server**). The **Players** list shows everyone, online first, accounts and **guests** alike: guests can be kicked, timed out and banned (their browser id and connection) like accounts. In multiplayer everyone **spawns in a force field** for 4 seconds (until they shoot). The **Account** tab lists **every account** (search, joined / last seen, MANAGE) and every **guest browser** (an anonymous random id per browser, with level, best wave and games; no IP is kept for guests).
+*** in every chat on every server, and new names can't use them. **Supply drop on me** drops a crate in any mode. **Teams**: move any player to red or blue (room lobby, or the admin panel mid-match), or shuffle / balance / swap the teams. A **force field that never runs out** is in the solo cheats. **Cheats work in multiplayer too, but only for the admin who turns them on** (god mode and one-hit kills are applied by the server just for them); freezing / slowing zombies and anything that changes the game for everyone stays solo only. The admin panel has tabs (**Players**, **Game**, **Multiplayer**, **Account & server**). The **Players** list shows everyone, online first, accounts and **guests** alike: guests can be kicked, timed out and banned (their browser id and connection) like accounts. In multiplayer everyone **spawns in a force field** for 4 seconds (until they shoot). The **Account** tab lists **every account** (search, joined / last seen, MANAGE) and every **guest browser** (an anonymous random id per browser, with level, best wave and games; no IP is kept for guests).
 Map props (solo): a red barrel in front of you, blow up every barrel, bring them all back, refill every ammo crate.
 
 To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:

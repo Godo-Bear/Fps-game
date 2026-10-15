@@ -3179,3 +3179,4 @@ body.infected #game::after {
 .acard .admin-row { margin: 6px 0; }
 .asec .admin-players { max-height: 420px; }
 .gtag { font-size: 10px; font-style: normal; padding: 0 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); margin-left: 4px; }
+.must-login { padding: 10px 12px; border-radius: 8px; background: rgba(255, 211, 77, 0.12); border: 1px solid rgba(255, 211, 77, 0.45); margin-bottom: 10px; }

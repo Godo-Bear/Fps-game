@@ -769,6 +769,7 @@ export class AccountUI {
 
   _login() {
     this.body.innerHTML = `
+      ${this.mustLogin ? '<p class="must-login">🔒 <b>Make a free account (or log in) to start playing.</b> It only takes a username and a password.</p>' : ''}
       <p class="muted">An account saves your level, unlocks and stats on the server, and lets you add friends.</p>
       <form id="auth-form" class="auth">
         <input name="username" placeholder="Username" autocomplete="username" maxlength="16" required />
@@ -791,6 +792,13 @@ export class AccountUI {
       try {
         if (action === 'register') await this.account.register(fd.get('username'), fd.get('password'));
         else await this.account.login(fd.get('username'), fd.get('password'));
+        // came here from PLAY: straight back to the lobby, ready to play
+        if (this.mustLogin) {
+          this.mustLogin = false;
+          this.close();
+          this.onLoggedIn?.();
+          return;
+        }
         this.tab = 'profile';
         this.render();
       } catch (err) {
@@ -1038,34 +1046,34 @@ export class AccountUI {
     </section>
     <section class="asec" data-sec="game">
       ${solo ? '' : '<p class="muted small">Most of these need a solo game running: start one, then press F2.</p>'}
-      <div class="acard"><h4>Cheats ${mp ? '<span class="muted small">(off in multiplayer)</span>' : ''}</h4>
+      <div class="acard"><h4>Cheats ${mp ? '<span class="muted small">(in multiplayer they only affect you)</span>' : ''}</h4>
       <div class="admin-grid">
         ${[
           ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
           ['speed', '2× move speed'], ['freeze', 'Freeze zombies'], ['slowmo', 'Slow motion'], ['nohud', 'Hide HUD (screenshots)'],
           ['grenades', 'Infinite grenades'], ['build', 'Free building (no scrap)'], ['turrets', 'Super turrets (5× damage)'], ['shield', 'Force field never runs out'],
         ]
-          .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${mp ? 'disabled' : ''} /> ${label}</label>`)
+          .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${mp && ['freeze', 'slowmo'].includes(id) ? 'disabled' : ''} /> ${label}${mp && ['freeze', 'slowmo'].includes(id) ? ' <span class="muted small">(solo only)</span>' : ''}</label>`)
           .join('')}
       </div>
       </div>
       <div class="acard"><h4>Actions</h4>
       <div class="admin-grid">
-        <button class="btn small" data-run="guns" ${solo ? '' : 'disabled'}>GIVE ALL GUNS</button>
-        <button class="btn small" data-run="mutate" ${solo ? '' : 'disabled'}>MUTATE ALL MY GUNS</button>
-        <button class="btn small" data-run="powerups" ${solo ? '' : 'disabled'}>MAX ALL POWER-UPS</button>
-        <button class="btn small" data-run="heal" ${solo ? '' : 'disabled'}>FULL HEAL + OVERHEAL</button>
+        <button class="btn small" data-run="guns" ${solo || mp ? '' : 'disabled'}>GIVE ALL GUNS</button>
+        <button class="btn small" data-run="mutate" ${solo || mp ? '' : 'disabled'}>MUTATE ALL MY GUNS</button>
+        <button class="btn small" data-run="powerups" ${solo || mp ? '' : 'disabled'}>MAX ALL POWER-UPS</button>
+        <button class="btn small" data-run="heal" ${solo || mp ? '' : 'disabled'}>FULL HEAL + OVERHEAL</button>
         <button class="btn small" data-run="boss" ${solo ? '' : 'disabled'}>SPAWN BOSS</button>
         <button class="btn small" data-run="killall" ${solo ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
         <button class="btn small" data-run="startwave" ${solo ? '' : 'disabled'}>▶ START NEXT WAVE NOW</button>
-        <button class="btn small" data-run="repairbuilds" ${solo ? '' : 'disabled'}>🔧 REPAIR ALL MY BUILDS</button>
+        <button class="btn small" data-run="repairbuilds" ${solo || mp ? '' : 'disabled'}>🔧 REPAIR ALL MY BUILDS</button>
         <button class="btn small" data-run="nextmod" ${solo ? '' : 'disabled'}>🎲 NEXT WAVE: RANDOM TWIST</button>
         <button class="btn small" data-run="bountynow" ${solo ? '' : 'disabled'}>🎯 SPAWN A BOUNTY ZOMBIE</button>
-        <button class="btn small" data-run="points" ${solo ? '' : 'disabled'}>💵 +5000 POINTS</button>
+        <button class="btn small" data-run="points" ${solo || mp ? '' : 'disabled'}>💵 +5000 POINTS</button>
         <button class="btn small" data-run="allbadges">🏅 UNLOCK ALL ACHIEVEMENTS</button>
-        <button class="btn small" data-run="scrap" ${solo ? '' : 'disabled'}>🔩 MAX SCRAP</button>
-        <button class="btn small" data-run="nades" ${solo ? '' : 'disabled'}>💣 REFILL GRENADES</button>
-        <button class="btn small" data-run="infinitereserve" ${solo ? '' : 'disabled'}>♾️ UNLIMITED RESERVE (ALL MY GUNS)</button>
+        <button class="btn small" data-run="scrap" ${solo || mp ? '' : 'disabled'}>🔩 MAX SCRAP</button>
+        <button class="btn small" data-run="nades" ${solo || mp ? '' : 'disabled'}>💣 REFILL GRENADES</button>
+        <button class="btn small" data-run="infinitereserve" ${solo || mp ? '' : 'disabled'}>♾️ UNLIMITED RESERVE (ALL MY GUNS)</button>
         <button class="btn small" data-run="skiptut" ${solo ? '' : 'disabled'}>SKIP TUTORIAL</button>
       </div>
       <div class="auth inline admin-row">
@@ -1100,11 +1108,11 @@ export class AccountUI {
       </div>
       <div class="acard"><h4>Undo</h4>
       <div class="admin-grid">
-        <button class="btn small ghost" data-run="removeguns" ${solo ? '' : 'disabled'}>REMOVE ALL GUNS</button>
-        <button class="btn small ghost" data-run="unmutate" ${solo ? '' : 'disabled'}>UNMUTATE GUNS</button>
-        <button class="btn small ghost" data-run="resetpowerups" ${solo ? '' : 'disabled'}>RESET POWER-UPS</button>
+        <button class="btn small ghost" data-run="removeguns" ${solo || mp ? '' : 'disabled'}>REMOVE ALL GUNS</button>
+        <button class="btn small ghost" data-run="unmutate" ${solo || mp ? '' : 'disabled'}>UNMUTATE GUNS</button>
+        <button class="btn small ghost" data-run="resetpowerups" ${solo || mp ? '' : 'disabled'}>RESET POWER-UPS</button>
         <button class="btn small ghost" data-run="clearbuilds" ${solo ? '' : 'disabled'}>REMOVE ALL BUILDS</button>
-        <button class="btn small ghost" data-run="noscrap" ${solo ? '' : 'disabled'}>ZERO SCRAP & GRENADES</button>
+        <button class="btn small ghost" data-run="noscrap" ${solo || mp ? '' : 'disabled'}>ZERO SCRAP & GRENADES</button>
         <button class="btn small ghost" data-run="cheatsoff">TURN OFF ALL CHEATS</button>
       </div>
       </div>

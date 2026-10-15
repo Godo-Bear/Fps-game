@@ -2674,6 +2674,7 @@ function applyShop() {
 const scavengerLevel = () => (game.mode === 'solo' ? account.items.scavenger || 0 : 0);
 
 function startGame(save = null, name = null, { weekly = false } = {}) {
+  if (needAccount()) return;
   audio.init();
   // the weekly challenge: this week's map and twists, the same for everyone
   game.weekly = weekly && !save;
@@ -2868,6 +2869,7 @@ const mp = new Multiplayer({
     }
   },
   onMatchStart(map, mode, weatherId) {
+    setTimeout(sendCheats, 500); // admin cheats that the server applies
     game.mode = 'mp';
     loadMap(map);
     if (weatherId && WEATHER[weatherId]) weather.set(weatherId, true);
@@ -3122,6 +3124,7 @@ $('again-btn').addEventListener('click', () => startGame(null, game.runName));
 account.onChange(() => refreshSave());
 $('menu-btn').addEventListener('click', toMenu);
 function openMultiplayer() {
+  if (needAccount()) return;
   audio.init();
   game.state = 'mpmenu';
   $('mp-error').textContent = '';
@@ -3149,7 +3152,21 @@ document.querySelectorAll('[data-mode-pick]').forEach((b) =>
     renderModeCard();
   }),
 );
+// You need an account to play: PLAY (and every other way into a game) asks you to sign up or log in first.
+function needAccount() {
+  if (account.loggedIn) return false;
+  accountUI.mustLogin = true;
+  accountUI.open('login');
+  return true;
+}
+function renderPlayButton() {
+  $('play-big').textContent = account.loggedIn ? 'PLAY' : 'SIGN UP TO PLAY';
+}
+account.onChange(renderPlayButton);
+renderPlayButton();
+accountUI.onLoggedIn = () => lobbyHome();
 $('play-big').addEventListener('click', () => {
+  if (needAccount()) return;
   const mode = currentMode();
   if (mode === 'continue' && savedGames[0]) startGame(savedGames[0]);
   else if (mode === 'mp') openMultiplayer();
@@ -3397,7 +3414,15 @@ const _fwd = new THREE.Vector3();
 let adminBossN = 0;
 let adminSoloMap = SOLO_MAP;
 const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: false, freeze: false, slowmo: false, nohud: false, grenades: false, build: false, turrets: false, shield: false };
-const cheatsOn = () => account.admin && game.mode === 'solo';
+// admin cheats: in solo, and in multiplayer too, but only for the admin (nothing that changes the
+// game for everyone else: freezing or slowing the zombies stays solo-only)
+const cheatsOn = () => account.admin && (game.mode === 'solo' || game.mode === 'mp');
+const SOLO_ONLY_CHEATS = ['freeze', 'slowmo'];
+const MP_ADMIN_ACTIONS = ['guns', 'mutate', 'powerups', 'heal', 'repairbuilds', 'points', 'allbadges', 'scrap', 'nades', 'infinitereserve', 'removeguns', 'unmutate', 'resetpowerups', 'noscrap'];
+// the server applies god mode and one-hit kills in PvP, so it has to know
+function sendCheats() {
+  if (game.mode === 'mp' && account.admin) mp.send({ t: 'cheat', god: !!cheats.god, onehit: !!cheats.onehit });
+}
 // a cheat that changes the game is on (keeps you off the live leaderboard)
 const usingCheats = () => cheatsOn() && Object.entries(cheats).some(([k, v]) => v && k !== 'nohud');
 function flyUpdate(dt) {
@@ -3970,17 +3995,19 @@ accountUI.adminActions = {
   inMP: () => game.mode === 'mp',
   toggle(name, on) {
     if (!account.admin) return 'Unlock admin first.';
-    if (game.mode === 'mp') return 'Cheats are off in multiplayer.';
+    if (game.mode === 'mp' && SOLO_ONLY_CHEATS.includes(name) && on) return "That one would change the game for everyone, so it's solo only.";
     cheats[name] = on;
+    sendCheats();
     if (name === 'nohud') $('hud').style.visibility = on ? 'hidden' : '';
     if (name === 'fly' && !on) player.vel.set(0, 0, 0);
-    const inGame = game.mode === 'solo' && !inMenu();
-    return `${name} ${on ? 'ON' : 'OFF'}${inGame ? '' : ' (works when you start a solo game)'}`;
+    const inGame = (game.mode === 'solo' || game.mode === 'mp') && !inMenu();
+    return `${name} ${on ? 'ON' : 'OFF'}${game.mode === 'mp' ? ' (just for you)' : inGame ? '' : ' (works when you start a game)'}`;
   },
   run(action, value) {
     if (action === 'cheatsoff') {
       for (const k of Object.keys(cheats)) cheats[k] = false;
       $('hud').style.visibility = '';
+      sendCheats();
       return 'All cheats turned off.';
     }
     if (action === 'tutorial') {
@@ -3989,7 +4016,8 @@ accountUI.adminActions = {
       applySettings();
       return 'The tutorial will play at the start of your next new game.';
     }
-    if (!cheatsOn() || inMenu()) return 'Start a solo game first.';
+    if (!cheatsOn() || inMenu()) return 'Start a game first.';
+    if (game.mode === 'mp' && !MP_ADMIN_ACTIONS.includes(action)) return 'That one changes the game for everyone, so it only works in solo.';
     switch (action) {
       case 'guns':
         for (const id of Object.keys(GUNS)) if (id !== 'rifle') weapon.give(id, stats);
@@ -4224,7 +4252,7 @@ document.addEventListener('keydown', (e) => {
 
 function update(dt) {
   if (cheatsOn()) {
-    if (cheats.slowmo) dt *= 0.35;
+    if (cheats.slowmo && game.mode === 'solo') dt *= 0.35;
     if (cheats.ammo) for (const s of weapon.slots) s.ammo = weapon.magSize(stats, s.def);
     if (cheats.god) player.health = Math.max(player.health, stats.maxHealth);
   }
@@ -4266,7 +4294,7 @@ function worldTick(dt) {
   if (structures.list.length) updateTurrets(dt);
   if (zombieGame()) {
     if (simHost()) {
-      if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, isCoop() ? zombieTargets() : player, zombieHooks);
+      if (!(cheatsOn() && cheats.freeze && game.mode === 'solo')) zombies.update(dt, isCoop() ? zombieTargets() : player, zombieHooks);
       if (isDefend()) tickDefend(dt);
       updateWave(dt);
     } else {
@@ -4512,6 +4540,6 @@ if (import.meta.env.DEV) {
     get savedGames() {
       return savedGames;
     },
-    game, player, weapon, mp, account, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
+    game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

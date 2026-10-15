@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.4', date: '15 Oct 2026', title: 'Accounts to play & admin cheats online',
+    items: [
+      'You now need a free account to play: PLAY asks you to sign up (or log in) first, then takes you straight back to the lobby.',
+      'Admin: cheats now work in multiplayer too, but only for the admin who turns them on (god mode, one-hit kills, infinite ammo, fly, speed, free building, force field and more). Freezing or slowing the zombies stays solo only, since that would change the game for everyone.',
+      'Admin: the give-yourself buttons (all guns, power-ups, heal, scrap, grenades, unlimited reserve...) work in multiplayer too. Anything that changes the game for everyone (bosses, waves, weather) is still solo only.',
+    ],
+  },
+  {
     v: '5.3', date: '15 Oct 2026', title: 'Spawn force field & a tidier admin panel',
     items: [
       'Multiplayer: you spawn inside a force field. Nothing can hurt you for 4 seconds, or until you shoot. Everyone can see it.',
