@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.5', date: '15 Oct 2026', title: 'Memberships',
+    items: [
+      'Sign up with your email. Membership is paid to the site owner, who switches your account on by hand; until then you see an "Almost there" screen with a button to check again.',
+      'Already had an account? After your email is switched on, link your old player name to keep your level, coins and unlocks.',
+      'Your email and when your membership ends are on the Account tab.',
+    ],
+  },
+  {
     v: '5.4', date: '15 Oct 2026', title: 'Accounts to play & admin cheats online',
     items: [
       'You now need a free account to play: PLAY asks you to sign up (or log in) first, then takes you straight back to the lobby.',

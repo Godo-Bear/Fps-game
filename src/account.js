@@ -187,8 +187,77 @@ export class Account {
     this._setParty(null);
   }
 
+  // ---- paid access (Supabase): sign up with an email, then the owner marks you as paid
+  async _loadConfig() {
+    try {
+      this.cfg = await (await fetch('/api/config')).json();
+    } catch {
+      this.cfg = {};
+    }
+    this.paywall = !!this.cfg?.supabase;
+    if (!this.paywall) return;
+    const { createClient } = await import('@supabase/supabase-js');
+    this.sb = createClient(this.cfg.supabase.url, this.cfg.supabase.anonKey);
+  }
+  // asks the game server: is this email paid up, and which player is it? (every time the site opens)
+  async supaSync(extra = {}) {
+    const { data } = await this.sb.auth.getSession();
+    const session = data?.session;
+    if (!session) {
+      this.gate = null;
+      this._dropSession();
+      return;
+    }
+    let res;
+    let r = {};
+    try {
+      res = await fetch('/api/auth/supabase', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ access_token: session.access_token, ...extra }) });
+      r = await res.json();
+    } catch {
+      throw new Error("Can't reach the server");
+    }
+    if (res.status === 402) {
+      this.gate = { kind: 'unpaid', email: r.email, expired: r.expired, paidUntil: r.paidUntil };
+      this._dropSession();
+    } else if (r.needName) {
+      this.gate = { kind: 'name', email: r.email };
+    } else if (r.token) {
+      this.gate = null;
+      this.email = r.user.email;
+      this._setSession(r.token, r.user);
+      return;
+    } else {
+      if (res.status === 401 || r.banned) await this.sb.auth.signOut();
+      throw new Error(r.error || `Error ${res.status}`);
+    }
+    this._changed();
+  }
+  async supaSignUp(email, password) {
+    const { data, error } = await this.sb.auth.signUp({ email, password });
+    if (error) throw new Error(error.message);
+    if (!data.session) {
+      // email confirmation is on in Supabase: they confirm, then log in
+      this.gate = { kind: 'confirm', email };
+      this._changed();
+      return;
+    }
+    await this.supaSync();
+  }
+  async supaSignIn(email, password) {
+    const { error } = await this.sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Wrong email or password' : error.message);
+    await this.supaSync();
+  }
+
   async init() {
-    if (this.token) {
+    await this._loadConfig();
+    if (this.paywall) {
+      try {
+        await this.supaSync();
+      } catch {
+        /* offline */
+      }
+    } else if (this.token) {
       try {
         const { user } = await this._api('/me');
         this.user = user;
@@ -244,6 +313,8 @@ export class Account {
     } catch {
       /* already gone */
     }
+    if (this.sb) await this.sb.auth.signOut().catch(() => {});
+    this.gate = null;
     this._dropSession();
   }
 
@@ -767,7 +838,82 @@ export class AccountUI {
       .join('');
   }
 
+  // the paid-access screens: email sign up / log in, pick a player name, and "Almost there"
+  _paywall() {
+    const a = this.account;
+    const c = a.cfg || {};
+    const g = a.gate;
+    const price = esc(c.price || '$5');
+    const months = Number(c.months) || 8;
+    const terms = `<details class="pay-terms"><summary>Terms &amp; Conditions</summary>
+      <p>Access to Hollow Ground costs ${price} for ${months} months, ${esc(c.payNote || 'paid cash in hand to the site owner')}. Your account is turned on by hand once the owner has your payment, and stays on until the end of your membership.</p>
+      <p>Payments are not refundable. The owner can turn off or ban accounts that cheat, harass other players or break the rules, without a refund. One account per person; don't share your login.</p>
+      <p>The game is provided as it is: it may change, have downtime, or have progress reset. Your email is only used to log you in.</p></details>`;
+    const done = () => {
+      if (this.mustLogin && a.loggedIn) {
+        this.mustLogin = false;
+        this.close();
+        this.onLoggedIn?.();
+      } else this.render();
+    };
+    const wire = (id, fn) => {
+      const f = document.getElementById(id);
+      if (!f) return;
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = this.body.querySelector('.pay-msg');
+        msg.textContent = '…';
+        try {
+          await fn(new FormData(f), e.submitter?.value);
+          done();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      });
+    };
+    if (g?.kind === 'unpaid') {
+      this.body.innerHTML = `<div class="paygate">
+        <h2>${g.expired ? 'Membership ended' : 'Almost there'}</h2>
+        <p>Your account (<b>${esc(g.email)}</b>) ${g.expired ? `ran out${g.paidUntil ? ` on ${esc(g.paidUntil)}` : ''}` : "isn't active yet"}. Access is <b>${price} for ${months} months, ${esc(c.payNote || 'paid cash in hand to the site owner')}</b>. The owner unlocks accounts by hand, so it may take a while after you've paid. Once it's unlocked, check again.</p>
+        ${terms}
+        <form id="pay-check"><button class="btn pay-main">I've paid — check again</button></form>
+        <button class="btn ghost" id="pay-out">Log out</button>
+        <div class="msg pay-msg"></div></div>`;
+      wire('pay-check', () => a.supaSync());
+      document.getElementById('pay-out').onclick = () => a.logout().then(() => this.render());
+      return;
+    }
+    if (g?.kind === 'name') {
+      this.body.innerHTML = `<div class="paygate">
+        <h2>You're in! 🎉</h2>
+        <p>Pick the name other players will see.</p>
+        <form id="pay-name" class="auth"><input name="username" placeholder="Player name (3-16 letters, numbers or _)" maxlength="16" required /><button class="btn pay-main">START PLAYING</button></form>
+        <details class="pay-terms"><summary>I already have a Hollow Ground account</summary>
+          <p class="muted small">Log in with your old player name and password once to keep your level, coins and unlocks.</p>
+          <form id="pay-link" class="auth"><input name="username" placeholder="Old player name" maxlength="16" required /><input name="password" type="password" placeholder="Old password" required /><button class="btn small">LINK MY OLD ACCOUNT</button></form>
+        </details>
+        <div class="msg pay-msg"></div></div>`;
+      wire('pay-name', (f) => a.supaSync({ username: String(f.get('username')).trim() }));
+      wire('pay-link', (f) => a.supaSync({ link: { username: String(f.get('username')).trim(), password: String(f.get('password')) } }));
+      return;
+    }
+    this.body.innerHTML = `<div class="paygate">
+      ${g?.kind === 'confirm' ? `<p class="must-login">📧 We sent a link to <b>${esc(g.email)}</b>. Click it to confirm your email, then log in here.</p>` : ''}
+      ${this.mustLogin ? '<p class="must-login">🔒 <b>Make an account (or log in) to start playing.</b></p>' : ''}
+      <h2>Hollow Ground membership</h2>
+      <p class="muted">${price} for ${months} months, ${esc(c.payNote || 'paid cash in hand to the site owner')}. Make your account first, then pay the owner to have it switched on.</p>
+      <form id="pay-auth" class="auth">
+        <input name="email" type="email" placeholder="Email" autocomplete="email" required />
+        <input name="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required />
+        <div class="row"><button class="btn" value="in">LOG IN</button><button class="btn ghost" value="up">SIGN UP</button></div>
+      </form>
+      ${terms}
+      <div class="msg pay-msg"></div></div>`;
+    wire('pay-auth', (f, which) => (which === 'up' ? a.supaSignUp(String(f.get('email')).trim(), String(f.get('password'))) : a.supaSignIn(String(f.get('email')).trim(), String(f.get('password')))));
+  }
+
   _login() {
+    if (this.account.paywall) return this._paywall();
     this.body.innerHTML = `
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make a free account (or log in) to start playing.</b> It only takes a username and a password.</p>' : ''}
       <p class="muted">An account saves your level, unlocks and stats on the server, and lets you add friends.</p>
@@ -816,6 +962,7 @@ export class AccountUI {
         <div><b>${s.pvpKills}</b>PvP kills</div><div><b>${s.pvpWins}</b>PvP wins</div>
         <div><b>${s.games}</b>Games</div><div><b>${this.account.xp}</b>Total XP</div>
       </div>
+      ${this.account.paywall ? `<p class="muted small">Logged in as <b>${esc(this.account.email || '')}</b>${this.account.user?.paidUntil ? ` · membership until <b>${esc(this.account.user.paidUntil)}</b>` : ''}</p>` : ''}
       <button id="logout-btn" class="btn small ghost">LOG OUT</button>
       ${this.account.admin ? '<div id="all-accounts"></div>' : ''}`;
     document.getElementById('logout-btn').onclick = () => this.account.logout().then(() => this.close());

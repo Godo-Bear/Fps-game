@@ -199,6 +199,7 @@ and health packs around the map heal 40 HP (they come back 30 seconds later).
 Press Esc for the pause menu with **Resume** and **Exit**.
 
 ### Accounts, friends and progress
+- **Paid memberships (optional):** with Supabase set up, players sign up by email and you switch them on by setting `has_paid` to TRUE. Full step-by-step guide: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
 - **You need a free account to play** (username + password). PLAY asks you to sign up or log in first.
 - Play as a guest (progress saved in your browser) or **create an account** to save it on the server.
 - Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).

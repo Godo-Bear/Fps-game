@@ -3180,3 +3180,14 @@ body.infected #game::after {
 .asec .admin-players { max-height: 420px; }
 .gtag { font-size: 10px; font-style: normal; padding: 0 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); margin-left: 4px; }
 .must-login { padding: 10px 12px; border-radius: 8px; background: rgba(255, 211, 77, 0.12); border: 1px solid rgba(255, 211, 77, 0.45); margin-bottom: 10px; }
+
+/* paid access screens */
+.paygate { max-width: 460px; margin: 10px auto; text-align: center; }
+.paygate h2 { margin: 6px 0 10px; }
+.paygate p { line-height: 1.5; }
+.paygate .auth { margin: 12px 0; }
+.paygate .btn.pay-main { width: 100%; margin: 10px 0 4px; }
+.paygate #pay-out { width: 100%; }
+.pay-terms { text-align: left; margin: 10px 0; }
+.pay-terms summary { cursor: pointer; text-align: center; color: #7fd4e6; text-decoration: underline; }
+.pay-terms p { font-size: 13px; opacity: 0.85; }

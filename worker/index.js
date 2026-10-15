@@ -109,7 +109,7 @@ export class GameDB extends DurableObject {
     // and later: bans, timeouts, which room you're in (for admins) and your last IP (for bans)
     for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT', 'quests TEXT', 'mastery TEXT',
       'banned INTEGER NOT NULL DEFAULT 0', 'timeout_until INTEGER NOT NULL DEFAULT 0', 'room TEXT', 'last_ip TEXT',
-      'achievements TEXT', 'live_wave INTEGER NOT NULL DEFAULT 0', 'live_score INTEGER NOT NULL DEFAULT 0', 'live_at INTEGER NOT NULL DEFAULT 0']) {
+      'achievements TEXT', 'sb_id TEXT', 'paid INTEGER NOT NULL DEFAULT 0', 'paid_until TEXT', 'live_wave INTEGER NOT NULL DEFAULT 0', 'live_score INTEGER NOT NULL DEFAULT 0', 'live_at INTEGER NOT NULL DEFAULT 0']) {
       try {
         this.sql.exec(`ALTER TABLE users ADD COLUMN ${col}`);
       } catch {
@@ -279,6 +279,26 @@ export class GameDB extends DurableObject {
     return token;
   }
 
+  // Paid access through Supabase: on when SUPABASE_URL and SUPABASE_ANON_KEY are set on the Worker.
+  get paywall() {
+    return !!(this.env.SUPABASE_URL && this.env.SUPABASE_ANON_KEY);
+  }
+  // Who a Supabase login is, and whether the owner has marked them as paid (profiles.has_paid).
+  async _supabaseCheck(accessToken) {
+    const base = String(this.env.SUPABASE_URL).replace(/\/+$/, '');
+    const headers = { apikey: this.env.SUPABASE_ANON_KEY, authorization: `Bearer ${accessToken}` };
+    const ur = await fetch(`${base}/auth/v1/user`, { headers });
+    if (!ur.ok) return null;
+    const user = await ur.json();
+    if (!user?.id) return null;
+    // the profiles table only lets people read their own row (row level security)
+    const pr = await fetch(`${base}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=has_paid,paid_until`, { headers });
+    const row = pr.ok ? (await pr.json())[0] : null;
+    const until = row?.paid_until ? Date.parse(row.paid_until) : null;
+    const expired = !!(row?.has_paid && until && until < Date.now());
+    return { id: user.id, email: user.email || '', paid: !!row?.has_paid && !expired, expired, paidUntil: row?.paid_until || null, profile: !!row };
+  }
+
   async _auth(request) {
     const h = request.headers.get('authorization') || '';
     const m = /^Bearer ([a-f0-9]{64})$/.exec(h);
@@ -286,6 +306,8 @@ export class GameDB extends DurableObject {
     const row = this.sql
       .exec('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires > ?', await sha256(m[1]), Date.now())
       .toArray()[0];
+    // with paid access on, a game session only counts for a Supabase login the owner has marked as paid
+    if (row && this.paywall && !(row.sb_id && row.paid)) return null;
     if (row) this.sql.exec('UPDATE users SET last_seen = ? WHERE id = ?', Date.now(), row.id);
     if (row && /"emote/.test(row.items || '')) {
       // emotes left the shop: give the coins back (once)
@@ -441,7 +463,50 @@ export class GameDB extends DurableObject {
       return this._internal(path, body);
     }
 
+    // what the game needs to know before anyone logs in
+    if (path === '/config' && method === 'GET') {
+      return json({
+        supabase: this.paywall ? { url: this.env.SUPABASE_URL, anonKey: this.env.SUPABASE_ANON_KEY } : null,
+        price: this.env.PAY_PRICE || '$5',
+        months: Number(this.env.PAY_MONTHS) || 8,
+        payNote: this.env.PAY_NOTE || 'paid cash in hand to the site owner',
+      });
+    }
+
+    // Supabase login -> game session. Unpaid accounts get 402 and the "Almost there" screen.
+    if (path === '/auth/supabase' && method === 'POST') {
+      if (!this.paywall) return err('Paid access is not set up', 404);
+      if (typeof body.access_token !== 'string' || body.access_token.length > 4000) return err('Log in again', 401);
+      const sb = await this._supabaseCheck(body.access_token);
+      if (!sb) return err('Your login has expired, log in again', 401);
+      if (!sb.paid) return json({ unpaid: true, email: sb.email, expired: sb.expired, paidUntil: sb.paidUntil, noProfile: !sb.profile }, 402);
+      let user = this.sql.exec('SELECT * FROM users WHERE sb_id = ?', sb.id).toArray()[0];
+      if (!user) {
+        if (body.link && typeof body.link.username === 'string' && typeof body.link.password === 'string') {
+          // bring an old game account (and its progress) over to this email
+          const old = this._byName(body.link.username);
+          const ok = old && !old.sb_id && sameString(await hashPassword(body.link.password, old.salt), old.pass_hash);
+          if (!ok) return err('Wrong player name or password (or that account is already linked to an email)', 401);
+          this.sql.exec('UPDATE users SET sb_id = ? WHERE id = ?', sb.id, old.id);
+        } else if (typeof body.username === 'string') {
+          const username = body.username;
+          if (!USERNAME.test(username)) return err('Player name must be 3-16 letters, numbers or _');
+          if (nameBlocked(username, this._words())) return err("That player name isn't allowed");
+          if (this._byName(username)) return err('That player name is taken', 409);
+          const salt = randomHex(16);
+          const now = Date.now();
+          this.sql.exec('INSERT INTO users (username, pass_hash, salt, created, last_seen, sb_id) VALUES (?, ?, ?, ?, ?, ?)', username, await hashPassword(randomHex(32), salt), salt, now, now, sb.id);
+        } else return json({ needName: true, email: sb.email });
+        user = this.sql.exec('SELECT * FROM users WHERE sb_id = ?', sb.id).toArray()[0];
+      }
+      if (user.banned) return json({ error: 'This account has been banned', banned: true }, 403);
+      this.sql.exec('UPDATE users SET paid = 1, paid_until = ?, last_seen = ?, last_ip = ? WHERE id = ?', sb.paidUntil, Date.now(), ip, user.id);
+      user = this.sql.exec('SELECT * FROM users WHERE id = ?', user.id).toArray()[0];
+      return json({ token: await this._session(user), user: { ...this._publicUser(user, true), email: sb.email, paidUntil: sb.paidUntil } });
+    }
+
     if (path === '/register' && method === 'POST') {
+      if (this.paywall) return err('Sign up with your email instead', 403);
       const { username, password } = body;
       if (typeof username !== 'string' || !USERNAME.test(username)) return err('Username must be 3-16 letters, numbers or _');
       if (nameBlocked(username, this._words())) return err("That username isn't allowed");
@@ -458,6 +523,7 @@ export class GameDB extends DurableObject {
     }
 
     if (path === '/login' && method === 'POST') {
+      if (this.paywall) return err('Log in with your email instead', 403);
       const { username, password } = body;
       if (typeof username !== 'string' || typeof password !== 'string') return err('Missing username or password');
       const key = username.toLowerCase();
