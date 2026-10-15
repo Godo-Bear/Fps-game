@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.7', date: '16 Oct 2026', title: 'Admin: manage any player',
+    items: [
+      'Admin: every player in the list has a MANAGE button. Change their level, coins, player name, best wave, best score, kills, headshots, PvP kills and wins, and games played, or reset them to a fresh start.',
+    ],
+  },
+  {
     v: '5.6', date: '16 Oct 2026', title: 'One price, forever',
     items: [
       'Hollow Ground is now a one-time $3, yours forever: no membership to renew.',

@@ -535,6 +535,17 @@ export class Account {
     }
     return r;
   }
+  adminManage(username) {
+    return this._api(`/admin/manage?u=${encodeURIComponent(username)}`);
+  }
+  async adminManageSave(username, set) {
+    const r = await this._api('/admin/manage', { method: 'POST', body: { username, set } });
+    if (r.user) {
+      this.user = r.user;
+      this._changed();
+    }
+    return r;
+  }
   adminGuest(guest, action, extra = {}) {
     return this._api('/admin/player', { method: 'POST', body: { guest, action, ...extra } });
   }
@@ -1450,6 +1461,65 @@ export class AccountUI {
     }));
   }
 
+  // admin: one player's editor (level, coins, name, stats) under their row
+  async _manageBox(box, name, reload) {
+    box.innerHTML = '<p class="muted small">Loading…</p>';
+    let p;
+    try {
+      ({ player: p } = await this.account.adminManage(name));
+    } catch (err) {
+      box.textContent = err.message;
+      return;
+    }
+    const fields = [
+      ['username', 'Player name', p.username, 'text'],
+      ['level', 'Level', p.level],
+      ['coins', 'Coins', p.coins],
+      ['bestWave', 'Best wave', p.bestWave],
+      ['bestScore', 'Best score', p.bestScore],
+      ['kills', 'Zombie kills', p.kills],
+      ['headshots', 'Headshots', p.headshots],
+      ['pvpKills', 'PvP kills', p.pvpKills],
+      ['pvpWins', 'PvP wins', p.pvpWins],
+      ['games', 'Games played', p.games],
+    ];
+    const joined = p.created ? new Date(p.created).toLocaleDateString() : '?';
+    box.innerHTML = `
+      <p class="muted small">Joined ${esc(joined)} · ${p.xp} XP · ${p.badges} achievements · ${p.items} shop items${p.admin ? ' · ⭐ admin' : ''}</p>
+      <form class="manage-grid">${fields
+        .map(([k, label, v, type]) => `<label><span>${label}</span><input name="${k}" type="${type || 'number'}" ${type ? 'maxlength="16"' : 'min="0"'} value="${esc(v)}" /></label>`)
+        .join('')}
+        <div class="manage-actions"><button class="btn small">SAVE CHANGES</button><button type="button" class="btn small ghost" data-reset>RESET PROGRESS</button><span class="manage-msg muted small"></span></div>
+      </form>`;
+    const form = box.querySelector('form');
+    const msg = box.querySelector('.manage-msg');
+    const save = async (set) => {
+      msg.textContent = 'Saving…';
+      try {
+        const r = await this.account.adminManageSave(name, set);
+        const m = document.getElementById('admin-msg');
+        if (m) m.textContent = r.note;
+        reload();
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    };
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = new FormData(form);
+      const set = {};
+      for (const [k, , v] of fields) {
+        const now = String(f.get(k) ?? '').trim();
+        if (now !== String(v)) set[k] = k === 'username' ? now : Number(now);
+      }
+      if (!Object.keys(set).length) return (msg.textContent = 'Nothing changed.');
+      save(set);
+    });
+    box.querySelector('[data-reset]').onclick = () => {
+      if (confirm(`Reset ${name} to a fresh start? Level, coins, stats, shop items, mastery and achievements go back to zero.`)) save({ reset: true });
+    };
+  }
+
   // admin: the players list with kick / timeout / ban / coins
   async _adminPlayers(q) {
     this.adminQuery = q;
@@ -1480,7 +1550,8 @@ export class AccountUI {
         <span class="actions">${btns}</span></div>`;
       return `<div class="friend admin-player" data-u="${esc(u.username)}"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b>${u.admin ? ' ⭐' : ''}
         <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${status}</span>
-        <span class="actions"><button data-pa="give100" title="Give 100 coins">+100 🪙</button>${btns}</span></div>`;
+        <span class="actions"><button data-mng title="Change their level, coins, name and stats">MANAGE</button><button data-pa="give100" title="Give 100 coins">+100 🪙</button>${btns}</span></div>
+        <div class="manage-box hidden" data-box="${esc(u.username)}"></div>`;
     };
     const list = r.players.length ? r.players.map(row).join('') : `<p class="muted small">${q ? 'Nobody with that name.' : 'No players yet.'}</p>`;
     const banned = r.banned.filter((u) => !r.players.some((p) => p.username === u.username));
@@ -1494,6 +1565,16 @@ export class AccountUI {
       e.preventDefault();
       this._adminPlayers(q);
     };
+    el.querySelectorAll('[data-mng]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const name = b.closest('[data-u]').dataset.u;
+        const box = [...el.querySelectorAll('[data-box]')].find((x) => x.dataset.box === name);
+        if (!box) return;
+        if (!box.classList.contains('hidden')) return box.classList.add('hidden');
+        box.classList.remove('hidden');
+        this._manageBox(box, name, () => this._adminPlayers(q));
+      }),
+    );
     el.querySelectorAll('[data-pa]').forEach((b) =>
       b.addEventListener('click', async () => {
         const rowEl = b.closest('[data-u]');

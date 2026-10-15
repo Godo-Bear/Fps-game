@@ -3213,3 +3213,10 @@ body.infected #game::after {
   }
 }
 .settings-terms { margin-top: 14px; }
+
+/* admin: manage one player */
+.manage-box { margin: 2px 0 10px 18px; padding: 10px 12px; border-left: 3px solid #ffd34d; background: rgba(255, 211, 77, 0.06); border-radius: 0 8px 8px 0; }
+.manage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
+.manage-grid label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.manage-grid input { font: inherit; padding: 5px 8px; border-radius: 5px; border: 1px solid rgba(233, 217, 184, 0.3); background: rgba(20, 16, 12, 0.9); color: #e9d9b8; min-width: 0; }
+.manage-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }

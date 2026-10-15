@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { cleanProfile, levelFromXp, xpForRun } from '../shared/cosmetics.js';
+import { cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
@@ -373,6 +373,13 @@ export class GameDB extends DurableObject {
     return {
       guest: g.id, username: `${g.name || 'Guest'} #${g.id.slice(0, 6)}`, level: g.level, coins: 0, admin: false, online,
       room: online ? g.room || null : null, banned: !!g.banned, timeoutMins: g.timeout_until > now ? Math.ceil((g.timeout_until - now) / 60000) : 0, lastSeen: g.last_seen,
+    };
+  }
+
+  _manageView(u) {
+    return {
+      ...this._adminRow(u), xp: u.xp, created: u.created, bestWave: u.best_wave, bestScore: u.best_score, kills: u.kills, headshots: u.headshots,
+      pvpKills: u.pvp_kills, pvpWins: u.pvp_wins, games: u.games, badges: this._badges(u).length, items: Object.keys(this._items(u)).length,
     };
   }
 
@@ -781,6 +788,51 @@ export class GameDB extends DurableObject {
         accounts: rows.map((u) => ({ ...this._adminRow(u), created: u.created, lastSeen: u.last_seen, bestWave: u.best_wave, games: u.games })),
         guests: guests.map((g) => ({ id: g.id.slice(0, 8), level: g.level, bestWave: g.best_wave, games: g.games, created: g.first_seen, lastSeen: g.last_seen, online: now - g.last_seen < ONLINE_MS })),
       });
+    }
+    // admin: everything about one account, and changing it (level, coins, name, stats)
+    if (path === '/admin/manage' && method === 'GET') {
+      if (!me.admin) return err('Admins only', 403);
+      const u = this._byName(String(url.searchParams.get('u') || ''));
+      if (!u) return err('No player with that name', 404);
+      return json({ player: this._manageView(u) });
+    }
+    if (path === '/admin/manage' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const u = typeof body.username === 'string' ? this._byName(body.username) : null;
+      if (!u) return err('No player with that name', 404);
+      if (u.admin && u.id !== me.id) return err("You can't change another admin's account");
+      const set = body.set && typeof body.set === 'object' ? body.set : {};
+      const int = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
+      const cols = [];
+      const vals = [];
+      const put = (col, v) => {
+        cols.push(`${col} = ?`);
+        vals.push(v);
+      };
+      if (set.level !== undefined) put('xp', xpForLevel(Math.max(1, Math.min(200, int(set.level, 200)))));
+      if (set.coins !== undefined) put('coins', int(set.coins, 1000000000));
+      if (set.bestWave !== undefined) put('best_wave', int(set.bestWave, 300));
+      if (set.bestScore !== undefined) put('best_score', int(set.bestScore, 100000000));
+      if (set.kills !== undefined) put('kills', int(set.kills, 100000000));
+      if (set.headshots !== undefined) put('headshots', int(set.headshots, 100000000));
+      if (set.pvpKills !== undefined) put('pvp_kills', int(set.pvpKills, 100000000));
+      if (set.pvpWins !== undefined) put('pvp_wins', int(set.pvpWins, 100000000));
+      if (set.games !== undefined) put('games', int(set.games, 100000000));
+      if (set.username !== undefined && set.username !== u.username) {
+        const n = String(set.username);
+        if (!USERNAME.test(n)) return err('Player names are 3-16 letters, numbers or _');
+        const other = this._byName(n);
+        if (other && other.id !== u.id) return err('That player name is taken');
+        put('username', n);
+      }
+      if (set.reset) {
+        // back to a fresh start (keeps the name, admin, bans and payment)
+        for (const [c, v] of [['xp', 0], ['coins', 0], ['best_wave', 0], ['best_score', 0], ['kills', 0], ['headshots', 0], ['pvp_kills', 0], ['pvp_wins', 0], ['games', 0], ['items', '{}'], ['mastery', null], ['achievements', null]]) put(c, v);
+      }
+      if (!cols.length) return err('Nothing to change');
+      this.sql.exec(`UPDATE users SET ${cols.join(', ')} WHERE id = ?`, ...vals, u.id);
+      const after = this.sql.exec('SELECT * FROM users WHERE id = ?', u.id).toArray()[0];
+      return json({ note: set.reset ? `${after.username} was reset to a fresh start.` : `Saved ${after.username}.`, player: this._manageView(after), user: after.id === me.id ? this._publicUser(after, true) : undefined });
     }
     if (path === '/admin/player' && method === 'POST' && typeof body.guest === 'string') {
       if (!me.admin) return err('Admins only', 403);
