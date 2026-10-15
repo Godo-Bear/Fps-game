@@ -24,5 +24,7 @@
     ]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameDB", "Room"] }],
+  // keep variables added in the Cloudflare dashboard (e.g. SUPABASE_URL) when deploying
+  "keep_vars": true,
   "observability": { "enabled": true }
 }

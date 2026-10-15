@@ -104,11 +104,11 @@ are what keep `has_paid` locked). **Never** use the `service_role` / **Secret** 
 
    | Type | Name | Value |
    | --- | --- | --- |
-   | Text | `SUPABASE_URL` | the Project URL from step 4 |
-   | Text | `SUPABASE_ANON_KEY` | the anon / publishable key from step 4 |
-   | Text (optional) | `PAY_PRICE` | `$5` (that's the default) |
-   | Text (optional) | `PAY_MONTHS` | `8` (that's the default) |
-   | Text (optional) | `PAY_NOTE` | `paid cash in hand to the site owner` (default) |
+   | Secret | `SUPABASE_URL` | the Project URL from step 4 |
+   | Secret | `SUPABASE_ANON_KEY` | the anon / publishable key from step 4 |
+   | Secret (optional) | `PAY_PRICE` | `$5` (that's the default) |
+   | Secret (optional) | `PAY_MONTHS` | `8` (that's the default) |
+   | Secret (optional) | `PAY_NOTE` | `paid cash in hand to the site owner` (default) |
 
 3. Click **Deploy** (or **Save and deploy**). From now on the game asks for an email login, and
    unpaid accounts see the "Almost there" screen.
