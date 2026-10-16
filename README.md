@@ -89,7 +89,7 @@ Spend them in the **Shop** (main menu, or the 🪙 Shop tab) on:
 - **Revive Tokens**: your next solo run starts with Second Wind
 - any **locked cosmetic**, without waiting for the level
 
-Coins and purchases are saved on your account (or in the browser for guests).
+Coins and purchases are saved on your account.
 
 ### Saving your run
 Start solo games from **Saved Games → New Game** and give each one a name. You can keep up to 5 games; **Saved Games** lists them so
@@ -201,7 +201,8 @@ Press Esc for the pause menu with **Resume** and **Exit**.
 ### Accounts, friends and progress
 - **Paid access (optional, $3 for every 6 months):** with Supabase set up, players sign up by email and you switch them on by setting `has_paid` to TRUE. Full step-by-step guide: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
 - **You need a free account to play** (username + password). PLAY asks you to sign up or log in first.
-- Play as a guest (progress saved in your browser) or **create an account** to save it on the server.
+- **You need an account to play** (no guests): the site opens on sign up / log in, and rooms refuse anyone without one.
+- **Settings → Gun position** moves your gun on screen (left/right, up/down, closer/further, or a preset).
 - Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).
 - **Friends**: add people by username, accept requests (a pop-up with ACCEPT / DECLINE appears when one comes in), see who's online with their level and best wave.
 - **Parties**: invite friends from the + spots on the home screen; **LEAVE PARTY** sits under the line-up.
@@ -250,7 +251,7 @@ Admins can also reset their quick chat wheel to the defaults.
 **Players on every server**: a list of everyone online (with the room they're in) and a search for any player, with
 **kick**, **timeout** (kicked and no online games, chat or messages for 5 minutes up to a week), **ban / unban** (bans the account and its IP), and
 **give or take coins** by name. **Blocked words**: type the words nobody may say; only those exact words are hidden as
-*** in every chat on every server, and new names can't use them. **Supply drop on me** drops a crate in any mode. **Teams**: move any player to red or blue (room lobby, or the admin panel mid-match), or shuffle / balance / swap the teams. A **force field that never runs out** is in the solo cheats. **Cheats work in multiplayer too, but only for the admin who turns them on** (god mode and one-hit kills are applied by the server just for them); freezing / slowing zombies and anything that changes the game for everyone stays solo only. The admin panel has tabs (**Players**, **Game**, **Multiplayer**, **Account & server**). Every account has a **MANAGE** button to change their level, coins, name and stats (or reset their progress). The **Players** list shows everyone, online first, accounts and **guests** alike: guests can be kicked, timed out and banned (their browser id and connection) like accounts. In multiplayer everyone **spawns in a force field** for 4 seconds (until they shoot). The **Account** tab lists **every account** (search, joined / last seen, MANAGE) and every **guest browser** (an anonymous random id per browser, with level, best wave and games; no IP is kept for guests).
+*** in every chat on every server, and new names can't use them. **Supply drop on me** drops a crate in any mode. **Teams**: move any player to red or blue (room lobby, or the admin panel mid-match), or shuffle / balance / swap the teams. A **force field that never runs out** is in the solo cheats. **Cheats work in multiplayer too, but only for the admin who turns them on** (god mode and one-hit kills are applied by the server just for them); freezing / slowing zombies and anything that changes the game for everyone stays solo only. The admin panel has tabs (**Players**, **Game**, **Multiplayer**, **Account & server**). Every account has a **MANAGE** button to change their level, coins, name and stats (or reset their progress). The **Players** list shows everyone, online first, accounts and **guests** alike: guests can be kicked, timed out and banned (their browser id and connection) like accounts. In multiplayer everyone **spawns in a force field** for 4 seconds (until they shoot). The **Account** tab lists **every account** (search, joined / last seen, MANAGE). **Group chats**: admins make them from the Friends tab (add / remove people, rename, delete); members chat in them. Zombie and wave powers work in multiplayer when the admin hosts a co-op room.
 Map props (solo): a red barrel in front of you, blow up every barrel, bring them all back, refill every ammo crate.
 
 To become an admin, log in, open the Admin tab and enter the admin code. The code is **not stored in this repo**:

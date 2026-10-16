@@ -2,6 +2,17 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.11', date: '16 Oct 2026', title: 'Group chats, gun position & bigger names',
+    items: [
+      'Everyone needs an account now: no more guests. Opening the site takes you straight to sign up / log in.',
+      'Name tags over players are much bigger and easier to read: green ▲ for teammates (seen through walls), red ◆ for enemies.',
+      'Settings → Gun position: slide your gun left/right, up/down and closer/further, or pick Normal, Centre, Left side, Low or Far away. Aiming still lines it up in the middle.',
+      'Admin: make group chats (Friends tab), add or remove people, rename or delete them. Only admins can make groups; members can chat in them.',
+      'Admin: zombie and wave powers (spawn, freeze, slow motion and more) now work in multiplayer when you host a co-op room.',
+      'Admin: typing in the announcement box works again in a match. The Game tab has quick gun position buttons too.',
+    ],
+  },
+  {
     v: '5.10', date: '16 Oct 2026', title: 'See your days left',
     items: [
       'Settings now shows how many days of access you have left, the date it ends, and the fee ($3 for every 6 months).',

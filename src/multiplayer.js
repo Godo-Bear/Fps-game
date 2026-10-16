@@ -10,6 +10,41 @@ const ZOMBIE_GREEN = 0x5d8a2e; // infection: zombie players
 const TEAM_CSS = { red: '#ff5d4d', blue: '#5ea2ff' };
 export const FLAG_BITS = { crouch: 1, aim: 2, climb: 4, slide: 8 };
 
+// Name tags over other players: big, the same size at any distance, green for teammates and red for
+// enemies. Teammates show through walls; enemies only when you can actually see them.
+function tagSprite(text, ally) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 104;
+  const g = c.getContext('2d');
+  g.font = 'bold 54px Rajdhani, sans-serif';
+  const label = `${ally ? '▲' : '◆'} ${text}`;
+  const w = Math.min(500, g.measureText(label).width + 44);
+  const x = (512 - w) / 2;
+  g.fillStyle = 'rgba(8, 10, 14, 0.62)';
+  g.beginPath();
+  g.roundRect(x, 10, w, 76, 16);
+  g.fill();
+  g.lineWidth = 4;
+  g.strokeStyle = ally ? '#5dff8a' : '#ff4d4d';
+  g.stroke();
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineWidth = 6;
+  g.strokeStyle = 'rgba(0,0,0,0.9)';
+  g.strokeText(label, 256, 50);
+  g.fillStyle = ally ? '#c9ffd8' : '#ffd0cc';
+  g.fillText(label, 256, 50);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  // sizeAttenuation off: the same size on screen near or far
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: !!ally ? false : true, transparent: true, sizeAttenuation: false }));
+  s.scale.set(0.4, 0.081, 1);
+  s.renderOrder = 6;
+  s.userData.ally = !!ally;
+  return s;
+}
+
 function nameSprite(text, color) {
   const c = document.createElement('canvas');
   c.width = 256;
@@ -88,8 +123,8 @@ class Avatar {
     this.gunHolder.position.set(0.12, 0.5, 0.35);
     this.gunHolder.rotation.y = Math.PI;
     this.upper.add(this.gunHolder);
-    this.label = nameSprite(info.name, info.team && MODES_TEAMS() ? TEAM_CSS[info.team] : info.color || '#fff');
-    this.label.position.y = 2.2;
+    this.label = tagSprite(info.name, false);
+    this.label.position.y = 2.35;
     this.root.add(this.label);
     this.gunId = null;
     this.pos = new THREE.Vector3();
@@ -708,7 +743,19 @@ export class Multiplayer {
   // ---------------------------------------------------------------- per frame
   update(dt, t) {
     if (!this.inMatch) return;
-    for (const a of this.avatars.values()) a.update(dt, a.flags || 0);
+    for (const a of this.avatars.values()) {
+      a.update(dt, a.flags || 0);
+      // the name tag follows who's on your side (teams can change mid-match)
+      const ally = !this.isEnemy(a.id);
+      if (a.label.userData.ally !== ally) {
+        a.root.remove(a.label);
+        a.label.material.map.dispose();
+        a.label.material.dispose();
+        a.label = tagSprite(a.info.name, ally);
+        a.label.position.y = 2.35;
+        a.root.add(a.label);
+      }
+    }
 
     // send our state ~15 times a second
     this.sendT -= dt;

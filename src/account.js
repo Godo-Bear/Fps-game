@@ -277,13 +277,9 @@ export class Account {
         /* offline or expired */
       }
     }
+    this.ready = true;
     this._changed();
     this.loadQuests();
-    // guests: let the server know this browser plays (for the admin's list)
-    this.pingGuest();
-    setInterval(() => {
-      if (document.visibilityState === 'visible') this.pingGuest();
-    }, 120000);
     // keeps "online" status fresh for friends
     setInterval(() => {
       if (this.user && document.visibilityState === 'visible') this._api('/me').then(({ user }) => (this.user = user)).catch(() => {});
@@ -427,7 +423,20 @@ export class Account {
     return this._api('/messages', { method: 'POST', body: { to, text, after } });
   }
   get unreadTotal() {
-    return Object.values(this.unread).reduce((a, b) => a + b, 0);
+    return Object.values(this.unread).reduce((a, b) => a + b, 0) + (this.groupUnread || 0);
+  }
+  // group chats (admins make them; members read and reply)
+  groups() {
+    return this._api('/groups');
+  }
+  groupMessages(id, after = 0) {
+    return this._api(`/groups/${id}/messages?after=${after}`);
+  }
+  sendGroup(id, text, after = 0) {
+    return this._api(`/groups/${id}/messages`, { method: 'POST', body: { text, after } });
+  }
+  adminGroups(body) {
+    return this._api('/admin/groups', { method: 'POST', body });
   }
   _setUnread(unread) {
     const before = this.unread;
@@ -448,8 +457,9 @@ export class Account {
       return this._setUnread({});
     }
     try {
-      const { unread, requests, timeoutMins } = await this._api('/messages/unread');
+      const { unread, requests, timeoutMins, groupUnread } = await this._api('/messages/unread');
       this.timeoutMins = timeoutMins || 0;
+      this.groupUnread = groupUnread || 0;
       this._setRequests(requests || []);
       this._setUnread(unread || {});
     } catch {
@@ -693,6 +703,12 @@ export class AccountUI {
     this.account = account;
     this.card = document.getElementById('account-card');
     this.modal = document.getElementById('account-modal');
+    // typing in any box here never triggers game keys (T for chat, numbers for guns, WASD...)
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+      this.modal.addEventListener(type, (e) => {
+        if (e.target.closest('input, textarea, select') && e.key !== 'Escape') e.stopPropagation();
+      });
+    }
     this.body = document.getElementById('account-body');
     this.tab = 'profile';
     this.adminActions = null; // set by the game: { god, ammo, toggle(name), run(action, value), inSolo }
@@ -797,14 +813,24 @@ export class AccountUI {
   }
 
   open(tab = 'profile', keepChat = false) {
+    // no guests: logged out, the only thing you can open is the sign up / log in screen
+    if (!this.account.loggedIn) {
+      tab = 'login';
+      this.mustLogin = true;
+    }
     this.tab = tab;
-    if (!keepChat) this.chatWith = null;
-    this.modal.classList.toggle('docked', !!this.dock());
+    if (!keepChat) {
+      this.chatWith = null;
+      this.groupChat = null;
+    }
+    this.modal.classList.toggle('docked', this.account.loggedIn && !!this.dock());
     this.modal.classList.remove('hidden');
     this.render();
     if (this.docked && this.onShow) this.onShow(tab);
   }
   close() {
+    // can't close the sign up / log in screen until you have an account
+    if (!this.account.loggedIn && this.account.ready) return;
     const was = this.docked && !this.modal.classList.contains('hidden');
     this.modal.classList.add('hidden');
     this.modal.classList.remove('docked');
@@ -844,6 +870,8 @@ export class AccountUI {
   }
 
   render() {
+    if (!this.account.loggedIn) this.tab = 'login';
+    this.modal.classList.toggle('locked', !this.account.loggedIn);
     this._renderTabs();
     const fn = { shop: this._shop, quests: this._quests, mastery: this._mastery, profile: this._profile, friends: this._friends, leaderboard: this._leaderboard, login: this._login, account: this._accountTab, admin: this._admin }[this.tab] || this._profile;
     fn.call(this);
@@ -852,6 +880,7 @@ export class AccountUI {
   _renderTabs() {
     const tabs = [['shop', '🪙 Shop'], ['quests', `📜 Quests${this.account.questsReady ? ` (${this.account.questsReady})` : ''}`], ['profile', 'Customise'], ['mastery', '🏅 Mastery'], ['friends', `Friends${this.account.unreadTotal ? ` (${this.account.unreadTotal})` : ''}`], ['leaderboard', 'Leaderboard'], [this.account.loggedIn ? 'account' : 'login', this.account.loggedIn ? 'Account' : 'Log in']];
     if (this.account.loggedIn) tabs.push(['admin', this.account.admin ? '⭐ Admin' : 'Admin code']);
+    else tabs.splice(0, tabs.length, ['login', 'Log in']);
     // as a lobby tab the top bar does the switching; only show the pages that share this tab
     let shown = tabs;
     if (this.docked) {
@@ -951,7 +980,7 @@ export class AccountUI {
         </div>
         <div id="auth-msg" class="msg"></div>
       </form>
-      <p class="muted small">Playing as a guest keeps your progress in this browser only. It isn't merged into a new account.</p>`;
+`;
     const form = document.getElementById('auth-form');
     let action = 'login';
     form.querySelectorAll('button[data-action]').forEach((b) => b.addEventListener('click', () => (action = b.dataset.action)));
@@ -1032,11 +1061,11 @@ export class AccountUI {
         <span class="muted">Lv ${g.level} · best wave ${g.bestWave} · ${g.games} games · first seen ${date(g.created)} · seen ${ago(g.lastSeen)}</span>
         <span class="actions"><button data-manage="${esc(g.id)}">MANAGE</button></span></div>`)
       .join('');
-    const pages = Math.max(Math.ceil(r.total / 50), q ? 1 : Math.ceil(r.guestTotal / 50), 1);
-    list.innerHTML = `<p class="muted small">${q ? `${r.total} account${r.total === 1 ? '' : 's'} starting with "${esc(q)}"` : `${r.total} accounts · ${r.guestTotal} guest browsers`} · page ${page + 1}/${pages}
+    const pages = Math.max(Math.ceil(r.total / 50), 1);
+    list.innerHTML = `<p class="muted small">${q ? `${r.total} account${r.total === 1 ? '' : 's'} starting with "${esc(q)}"` : `${r.total} accounts`} · page ${page + 1}/${pages}
         ${page > 0 ? '<a href="#" data-pg="-1">◀ newer</a>' : ''} ${page + 1 < pages ? '<a href="#" data-pg="1">older ▶</a>' : ''}</p>
       <h5>Accounts</h5>${acc || '<p class="muted small">None.</p>'}
-      ${q ? '' : `<h5>Guests (no account)</h5>${guests || '<p class="muted small">None yet.</p>'}`}`;
+`;
     list.querySelectorAll('[data-pg]').forEach((a) => (a.onclick = (e) => {
       e.preventDefault();
       this._allAccounts(q, page + Number(a.dataset.pg));
@@ -1217,15 +1246,17 @@ export class AccountUI {
       </div>
     </section>
     <section class="asec" data-sec="game">
-      ${solo ? '' : '<p class="muted small">Most of these need a solo game running: start one, then press F2.</p>'}
-      <div class="acard"><h4>Cheats ${mp ? '<span class="muted small">(in multiplayer they only affect you)</span>' : ''}</h4>
+      ${solo || mp ? '' : '<p class="muted small">Most of these need a game running (solo, or a co-op room you host): start one, then press F2.</p>'}
+      <div class="acard"><h4>🔫 Gun position <span class="muted small">(yours; everyone can change theirs in Settings)</span></h4>
+        <div class="gun-presets">${(act?.gunPresets?.() || []).map(([id, n]) => `<button class="chipbtn" data-agun="${id}">${n}</button>`).join('')}</div></div>
+      <div class="acard"><h4>Cheats ${mp ? '<span class="muted small">(in multiplayer they only affect you, except freeze and slow motion as co-op host)</span>' : ''}</h4>
       <div class="admin-grid">
         ${[
           ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
           ['speed', '2× move speed'], ['freeze', 'Freeze zombies'], ['slowmo', 'Slow motion'], ['nohud', 'Hide HUD (screenshots)'],
           ['grenades', 'Infinite grenades'], ['build', 'Free building (no scrap)'], ['turrets', 'Super turrets (5× damage)'], ['shield', 'Force field never runs out'],
         ]
-          .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} ${mp && ['freeze', 'slowmo'].includes(id) ? 'disabled' : ''} /> ${label}${mp && ['freeze', 'slowmo'].includes(id) ? ' <span class="muted small">(solo only)</span>' : ''}</label>`)
+          .map(([id, label]) => `<label><input type="checkbox" data-toggle="${id}" ${act?.cheats[id] ? 'checked' : ''} /> ${label}${mp && ['freeze', 'slowmo'].includes(id) ? ' <span class="muted small">(co-op host only)</span>' : ''}</label>`)
           .join('')}
       </div>
       </div>
@@ -1235,40 +1266,40 @@ export class AccountUI {
         <button class="btn small" data-run="mutate" ${solo || mp ? '' : 'disabled'}>MUTATE ALL MY GUNS</button>
         <button class="btn small" data-run="powerups" ${solo || mp ? '' : 'disabled'}>MAX ALL POWER-UPS</button>
         <button class="btn small" data-run="heal" ${solo || mp ? '' : 'disabled'}>FULL HEAL + OVERHEAL</button>
-        <button class="btn small" data-run="boss" ${solo ? '' : 'disabled'}>SPAWN BOSS</button>
-        <button class="btn small" data-run="killall" ${solo ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
-        <button class="btn small" data-run="startwave" ${solo ? '' : 'disabled'}>▶ START NEXT WAVE NOW</button>
+        <button class="btn small" data-run="boss" ${solo || mp ? '' : 'disabled'}>SPAWN BOSS</button>
+        <button class="btn small" data-run="killall" ${solo || mp ? '' : 'disabled'}>KILL ALL ZOMBIES</button>
+        <button class="btn small" data-run="startwave" ${solo || mp ? '' : 'disabled'}>▶ START NEXT WAVE NOW</button>
         <button class="btn small" data-run="repairbuilds" ${solo || mp ? '' : 'disabled'}>🔧 REPAIR ALL MY BUILDS</button>
-        <button class="btn small" data-run="nextmod" ${solo ? '' : 'disabled'}>🎲 NEXT WAVE: RANDOM TWIST</button>
-        <button class="btn small" data-run="bountynow" ${solo ? '' : 'disabled'}>🎯 SPAWN A BOUNTY ZOMBIE</button>
+        <button class="btn small" data-run="nextmod" ${solo || mp ? '' : 'disabled'}>🎲 NEXT WAVE: RANDOM TWIST</button>
+        <button class="btn small" data-run="bountynow" ${solo || mp ? '' : 'disabled'}>🎯 SPAWN A BOUNTY ZOMBIE</button>
         <button class="btn small" data-run="points" ${solo || mp ? '' : 'disabled'}>💵 +5000 POINTS</button>
         <button class="btn small" data-run="allbadges">🏅 UNLOCK ALL ACHIEVEMENTS</button>
         <button class="btn small" data-run="scrap" ${solo || mp ? '' : 'disabled'}>🔩 MAX SCRAP</button>
         <button class="btn small" data-run="nades" ${solo || mp ? '' : 'disabled'}>💣 REFILL GRENADES</button>
         <button class="btn small" data-run="infinitereserve" ${solo || mp ? '' : 'disabled'}>♾️ UNLIMITED RESERVE (ALL MY GUNS)</button>
-        <button class="btn small" data-run="skiptut" ${solo ? '' : 'disabled'}>SKIP TUTORIAL</button>
+        <button class="btn small" data-run="skiptut" ${solo || mp ? '' : 'disabled'}>SKIP TUTORIAL</button>
       </div>
       <div class="auth inline admin-row">
         <span>🌙 Night waves:</span>
         <select id="admin-night">${[['auto', 'Every 4th wave (normal)'], ['night', 'Always night'], ['day', 'Never night']].map(([id, n]) => `<option value="${id}" ${act?.nightMode === id ? 'selected' : ''}>${n}</option>`).join('')}</select>
       </div>
       <div class="auth inline admin-row">
-        <select id="admin-boss" ${solo ? '' : 'disabled'}>${(act?.bosses() || []).map(([id, n]) => `<option value="${id}">${n}</option>`).join('')}</select>
-        <button class="btn small" id="admin-boss-btn" ${solo ? '' : 'disabled'}>SPAWN THIS BOSS</button>
+        <select id="admin-boss" ${solo || mp ? '' : 'disabled'}>${(act?.bosses() || []).map(([id, n]) => `<option value="${id}">${n}</option>`).join('')}</select>
+        <button class="btn small" id="admin-boss-btn" ${solo || mp ? '' : 'disabled'}>SPAWN THIS BOSS</button>
       </div>
       <div class="auth inline admin-row">
-        <select id="admin-zombie" ${solo ? '' : 'disabled'}>${(act?.zombieTypes() || []).map((t) => `<option>${t}</option>`).join('')}</select>
-        <button class="btn small" id="admin-spawn" ${solo ? '' : 'disabled'}>SPAWN 5</button>
-        <select id="admin-weather" ${solo ? '' : 'disabled'}>${solo ? act.weathers().map(([id, n]) => `<option value="${id}">${n}</option>`).join('') : ''}</select>
-        <button class="btn small" id="admin-weather-btn" ${solo ? '' : 'disabled'}>SET WEATHER</button>
+        <select id="admin-zombie" ${solo || mp ? '' : 'disabled'}>${(act?.zombieTypes() || []).map((t) => `<option>${t}</option>`).join('')}</select>
+        <button class="btn small" id="admin-spawn" ${solo || mp ? '' : 'disabled'}>SPAWN 5</button>
+        <select id="admin-weather" ${solo || mp ? '' : 'disabled'}>${solo ? act.weathers().map(([id, n]) => `<option value="${id}">${n}</option>`).join('') : ''}</select>
+        <button class="btn small" id="admin-weather-btn" ${solo || mp ? '' : 'disabled'}>SET WEATHER</button>
       </div>
       </div>
       <div class="acard"><h4>Numbers</h4>
-      <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCORE</button></form>
-      <form class="auth inline admin-row" data-act="setscrap"><input name="v" type="number" min="0" max="999" placeholder="Set scrap" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET SCRAP</button></form>
-      <form class="auth inline admin-row" data-act="setnades"><input name="v" type="number" min="0" max="20" placeholder="Set grenades" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET GRENADES</button></form>
-      <form class="auth inline admin-row" data-act="wavecap"><input name="v" type="number" min="5" max="300" placeholder="Max zombies per wave (50)" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET WAVE SIZE</button></form>
-      <form class="auth inline admin-row" data-act="wave"><input name="v" type="number" min="1" max="200" placeholder="Jump to wave" ${solo ? '' : 'disabled'} /><button class="btn small" ${solo ? '' : 'disabled'}>SET WAVE</button></form>
+      <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo || mp ? '' : 'disabled'} /><button class="btn small" ${solo || mp ? '' : 'disabled'}>SET SCORE</button></form>
+      <form class="auth inline admin-row" data-act="setscrap"><input name="v" type="number" min="0" max="999" placeholder="Set scrap" ${solo || mp ? '' : 'disabled'} /><button class="btn small" ${solo || mp ? '' : 'disabled'}>SET SCRAP</button></form>
+      <form class="auth inline admin-row" data-act="setnades"><input name="v" type="number" min="0" max="20" placeholder="Set grenades" ${solo || mp ? '' : 'disabled'} /><button class="btn small" ${solo || mp ? '' : 'disabled'}>SET GRENADES</button></form>
+      <form class="auth inline admin-row" data-act="wavecap"><input name="v" type="number" min="5" max="300" placeholder="Max zombies per wave (50)" ${solo || mp ? '' : 'disabled'} /><button class="btn small" ${solo || mp ? '' : 'disabled'}>SET WAVE SIZE</button></form>
+      <form class="auth inline admin-row" data-act="wave"><input name="v" type="number" min="1" max="200" placeholder="Jump to wave" ${solo || mp ? '' : 'disabled'} /><button class="btn small" ${solo || mp ? '' : 'disabled'}>SET WAVE</button></form>
       </div>
       <div class="acard"><h4>🛢️ Map props</h4>
       <div class="admin-grid">
@@ -1283,7 +1314,7 @@ export class AccountUI {
         <button class="btn small ghost" data-run="removeguns" ${solo || mp ? '' : 'disabled'}>REMOVE ALL GUNS</button>
         <button class="btn small ghost" data-run="unmutate" ${solo || mp ? '' : 'disabled'}>UNMUTATE GUNS</button>
         <button class="btn small ghost" data-run="resetpowerups" ${solo || mp ? '' : 'disabled'}>RESET POWER-UPS</button>
-        <button class="btn small ghost" data-run="clearbuilds" ${solo ? '' : 'disabled'}>REMOVE ALL BUILDS</button>
+        <button class="btn small ghost" data-run="clearbuilds" ${solo || mp ? '' : 'disabled'}>REMOVE ALL BUILDS</button>
         <button class="btn small ghost" data-run="noscrap" ${solo || mp ? '' : 'disabled'}>ZERO SCRAP & GRENADES</button>
         <button class="btn small ghost" data-run="cheatsoff">TURN OFF ALL CHEATS</button>
       </div>
@@ -1292,7 +1323,7 @@ export class AccountUI {
     <section class="asec" data-sec="mp">
       ${mp ? '' : '<p class="muted small">Join or create a room to use these.</p>'}
       <div class="acard"><h4>📢 Room</h4>
-      <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="80" placeholder="Announce to everyone in your room" ${mp ? '' : 'disabled'} /><button class="btn small" ${mp ? '' : 'disabled'}>📢 ANNOUNCE</button></form>
+      <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="80" placeholder="Announce to everyone in your room" /><button class="btn small">📢 ANNOUNCE</button></form>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
       </div>
       <div class="acard"><h4>👥 Teams in this room</h4>
@@ -1386,6 +1417,7 @@ export class AccountUI {
       msg(act.announce(input.value));
       input.value = '';
     });
+    for (const b of this.body.querySelectorAll('[data-agun]')) b.onclick = () => msg(act.gunPreset(b.dataset.agun));
     document.getElementById('admin-night').onchange = (e) => msg(act.setNightMode(e.target.value));
     document.getElementById('admin-map').onchange = (e) => msg(act.setSoloMap(e.target.value));
     document.getElementById('admin-loadout').onchange = (e) =>
@@ -1603,10 +1635,9 @@ export class AccountUI {
     const list = r.players.length ? r.players.map(row).join('') : `<p class="muted small">${q ? 'Nobody with that name.' : 'No players yet.'}</p>`;
     const banned = r.banned.filter((u) => !r.players.some((p) => p.username === u.username));
     const guests = r.guests || [];
-    const online = r.players.filter((u) => u.online).length + guests.filter((g) => g.online).length;
-    el.innerHTML = `<p class="muted small">${q ? `Players matching "${esc(q)}"` : `${r.players.length} accounts · ${guests.length} guests · <b>${online} online</b>`} · <a href="#" data-pa-refresh>refresh</a></p>
+    const online = r.players.filter((u) => u.online).length;
+    el.innerHTML = `<p class="muted small">${q ? `Players matching "${esc(q)}"` : `${r.players.length} accounts · <b>${online} online</b>`} · <a href="#" data-pa-refresh>refresh</a></p>
       <h5>Accounts</h5>${list}
-      <h5>Guests (no account)</h5>${guests.length ? guests.map(row).join('') : '<p class="muted small">None.</p>'}
       ${banned.length ? `<h5>Banned / timed out</h5>${banned.map(row).join('')}` : ''}`;
     el.querySelector('[data-pa-refresh]').onclick = (e) => {
       e.preventDefault();
@@ -1653,6 +1684,7 @@ export class AccountUI {
       return;
     }
     if (this.chatWith) return this._chatView();
+    if (this.groupChat) return this._groupView();
     this._stopDm();
     this.body.innerHTML = `
       <form id="friend-form" class="auth inline">
@@ -1660,7 +1692,9 @@ export class AccountUI {
         <button class="btn small">ADD FRIEND</button>
       </form>
       <div id="friend-msg" class="msg"></div>
+      <div id="group-list"></div>
       <div id="friend-list" class="muted">Loading…</div>`;
+    this._loadGroups();
     document.getElementById('friend-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = new FormData(e.target).get('username');
@@ -1823,6 +1857,148 @@ export class AccountUI {
   }
 
   // ---- chat with one friend (works from the menu, no game needed)
+  // ---- group chats
+  async _loadGroups() {
+    const el = document.getElementById('group-list');
+    if (!el) return;
+    const a = this.account;
+    let groups = [];
+    try {
+      ({ groups } = await a.groups());
+    } catch {
+      /* offline */
+    }
+    if (!el.isConnected) return;
+    if (!groups.length && !a.admin) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML = `<h4>💬 Group chats</h4>
+      ${groups
+        .map((g) => `<div class="friend group-row" data-group="${g.id}"><b>${esc(g.name)}</b>${g.unread ? `<span class="badge-n">${g.unread}</span>` : ''}<span class="muted small">${g.members.length} people: ${esc(g.members.slice(0, 6).join(', '))}${g.members.length > 6 ? '…' : ''}</span><span class="actions"><button>OPEN</button></span></div>`)
+        .join('') || '<p class="muted small">No group chats yet.</p>'}
+      ${a.admin ? `<form id="group-new" class="auth inline group-new"><input name="name" maxlength="40" placeholder="New group name" required /><input name="members" placeholder="Player names (comma between)" /><button class="btn small">⭐ MAKE GROUP</button></form><div id="group-msg" class="msg"></div>` : ''}`;
+    el.querySelectorAll('[data-group]').forEach((r) =>
+      r.addEventListener('click', () => {
+        this.groupChat = Number(r.dataset.group);
+        this.render();
+      }),
+    );
+    document.getElementById('group-new')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      try {
+        const r = await a.adminGroups({ action: 'create', name: f.get('name'), members: String(f.get('members') || '') });
+        this.groupChat = r.id;
+        this.render();
+      } catch (err) {
+        document.getElementById('group-msg').textContent = err.message;
+      }
+    });
+  }
+
+  async _groupView() {
+    const id = this.groupChat;
+    const a = this.account;
+    this._stopDm();
+    if (this.gc?.id !== id) this.gc = { id, list: [], last: 0 };
+    let info = null;
+    try {
+      info = (await a.groups()).groups.find((g) => g.id === id);
+    } catch {
+      /* offline */
+    }
+    if (!info) {
+      this.groupChat = null;
+      return this.render();
+    }
+    this.body.innerHTML = `
+      <div class="dm-head">
+        <button class="btn small ghost" id="gc-back">← FRIENDS</button>
+        <b>💬 ${esc(info.name)}</b><span class="muted small">${info.members.length} people</span>
+      </div>
+      <p class="muted small gc-members">${info.members.map((n) => `<span>${esc(n)}${a.admin && n !== a.name ? ` <button data-gc-remove="${esc(n)}" title="Take them out">✕</button>` : ''}</span>`).join(' ')}</p>
+      ${a.admin ? `<details class="gc-admin"><summary>⭐ Manage this group</summary>
+        <form class="auth inline" id="gc-add"><input name="members" placeholder="Add players (comma between)" required /><button class="btn small">ADD</button></form>
+        <form class="auth inline" id="gc-rename"><input name="name" maxlength="40" value="${esc(info.name)}" /><button class="btn small">RENAME</button></form>
+        <button class="btn small ghost bad" id="gc-delete">DELETE GROUP</button></details>` : ''}
+      <div id="dm-log" class="dm-log"></div>
+      <form id="dm-form" class="auth inline dm-form">
+        <input id="dm-input" maxlength="300" autocomplete="off" placeholder="Message ${esc(info.name)}…" />
+        <button class="btn small">SEND</button>
+      </form>
+      <div id="dm-msg" class="msg"></div>`;
+    const input = document.getElementById('dm-input');
+    input.focus();
+    input.addEventListener('keydown', (e) => e.stopPropagation());
+    const msg = (t) => (document.getElementById('dm-msg').textContent = t);
+    document.getElementById('gc-back').onclick = () => {
+      this.groupChat = null;
+      this.render();
+    };
+    const admin = async (body) => {
+      try {
+        const r = await a.adminGroups({ id, ...body });
+        msg(r.note);
+        if (body.action === 'delete') this.groupChat = null;
+        this.render();
+      } catch (err) {
+        msg(err.message);
+      }
+    };
+    this.body.querySelectorAll('[data-gc-remove]').forEach((b) => (b.onclick = () => admin({ action: 'remove', username: b.dataset.gcRemove })));
+    document.getElementById('gc-add')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      admin({ action: 'add', members: String(new FormData(e.target).get('members') || '') });
+    });
+    document.getElementById('gc-rename')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      admin({ action: 'rename', name: new FormData(e.target).get('name') });
+    });
+    document.getElementById('gc-delete')?.addEventListener('click', () => {
+      if (confirm(`Delete "${info.name}" and all its messages?`)) admin({ action: 'delete' });
+    });
+    const render = () => {
+      const log = document.getElementById('dm-log');
+      if (!log) return;
+      const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      log.innerHTML = this.gc.list.length
+        ? this.gc.list.map((m) => `<div class="dm ${m.mine ? 'mine' : ''}">${m.mine ? '' : `<b class="gc-from">${esc(m.from)}${m.admin ? ' ⭐' : ''}</b>`}<span>${esc(m.text)}</span><time>${time(m.t)}</time></div>`).join('')
+        : '<p class="muted">No messages yet. Say hi!</p>';
+      log.scrollTop = log.scrollHeight;
+    };
+    const add = (list) => {
+      for (const m of list) if (m.id > this.gc.last) {
+        this.gc.list.push(m);
+        this.gc.last = m.id;
+      }
+      render();
+    };
+    const load = async () => {
+      if (this.groupChat !== id || this.modal.classList.contains('hidden') || this.tab !== 'friends') return this._stopDm();
+      try {
+        add((await a.groupMessages(id, this.gc.last)).messages);
+      } catch (err) {
+        msg(err.message);
+      }
+    };
+    document.getElementById('dm-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      try {
+        add((await a.sendGroup(id, text, this.gc.last)).messages);
+        msg('');
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    render();
+    load();
+    this.dm.timer = setInterval(load, 3000);
+  }
+
   _stopDm() {
     clearInterval(this.dm.timer);
     this.dm.timer = 0;

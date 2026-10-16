@@ -127,6 +127,9 @@ export class GameDB extends DurableObject {
       CREATE TABLE IF NOT EXISTS ip_bans (ip TEXT PRIMARY KEY, user INTEGER NOT NULL, created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS guests (id TEXT PRIMARY KEY, level INTEGER NOT NULL, best_wave INTEGER NOT NULL, games INTEGER NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS chat_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, owner INTEGER NOT NULL, created INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS chat_members (grp INTEGER NOT NULL, user INTEGER NOT NULL, last_read INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (grp, user));
+      CREATE TABLE IF NOT EXISTS group_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, grp INTEGER NOT NULL, sender INTEGER NOT NULL, text TEXT NOT NULL, created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS weekly (week INTEGER NOT NULL, user INTEGER NOT NULL, wave INTEGER NOT NULL, score INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (week, user));
     `);
     // guests: kept so admins can kick, time out and ban them too
@@ -1116,7 +1119,11 @@ export class GameDB extends DurableObject {
         .toArray()
         .map((r) => r.username);
       const t = me.timeout_until > Date.now() ? Math.ceil((me.timeout_until - Date.now()) / 60000) : 0;
-      return json({ unread, requests, timeoutMins: t });
+      // group chats an admin put you in: new messages since you last looked
+      const groupUnread = this.sql
+        .exec('SELECT COUNT(*) AS n FROM group_messages g JOIN chat_members c ON c.grp = g.grp WHERE c.user = ? AND g.id > c.last_read AND g.sender != ?', me.id, me.id)
+        .one().n;
+      return json({ unread, requests, timeoutMins: t, groupUnread });
     }
     if (path === '/messages' && (method === 'GET' || method === 'POST')) {
       const name = method === 'GET' ? url.searchParams.get('with') : body.to;
@@ -1150,6 +1157,92 @@ export class GameDB extends DurableObject {
       this.sql.exec('UPDATE messages SET seen = 1 WHERE sender = ? AND recipient = ? AND seen = 0', other.id, me.id);
       const messages = rows.map((r) => ({ id: r.id, from: r.sender === me.id ? me.username : other.username, mine: r.sender === me.id, text: r.text, t: r.created }));
       return json({ messages, online: Date.now() - (other.last_seen || 0) < ONLINE_MS });
+    }
+
+    // ---- group chats: admins make them and pick who's in; everyone in one can read and talk
+    if (path === '/groups' && method === 'GET') {
+      const groups = this.sql
+        .exec(
+          `SELECT g.id, g.name, g.owner, c.last_read,
+             (SELECT COUNT(*) FROM group_messages m WHERE m.grp = g.id AND m.id > c.last_read AND m.sender != ?) AS unread
+           FROM chat_groups g JOIN chat_members c ON c.grp = g.id WHERE c.user = ? ORDER BY g.id DESC`,
+          me.id, me.id
+        )
+        .toArray();
+      return json({
+        groups: groups.map((g) => ({
+          id: g.id, name: g.name, unread: g.unread,
+          members: this.sql.exec('SELECT u.username FROM chat_members c JOIN users u ON u.id = c.user WHERE c.grp = ? ORDER BY u.username', g.id).toArray().map((r) => r.username),
+        })),
+      });
+    }
+    const gm = /^\/groups\/(\d+)\/messages$/.exec(path);
+    if (gm && (method === 'GET' || method === 'POST')) {
+      const grp = Number(gm[1]);
+      if (!this.sql.exec('SELECT 1 FROM chat_members WHERE grp = ? AND user = ?', grp, me.id).toArray()[0]) return err("You're not in that group", 403);
+      if (method === 'POST') {
+        const timedOut = this._blocked(me, null);
+        if (timedOut) return err(timedOut, 403);
+        const text = typeof body.text === 'string' ? this._filter(body.text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300)) : '';
+        if (!text) return err('Say something');
+        if (!this._limit(this.dms, me.id, 20, 30000)) return err('Slow down a bit', 429);
+        this.sql.exec('INSERT INTO group_messages (grp, sender, text, created) VALUES (?, ?, ?, ?)', grp, me.id, text, Date.now());
+        // keep the last 300 messages in a group
+        const cut = this.sql.exec('SELECT id FROM group_messages WHERE grp = ? ORDER BY id DESC LIMIT 1 OFFSET 300', grp).toArray()[0];
+        if (cut) this.sql.exec('DELETE FROM group_messages WHERE grp = ? AND id <= ?', grp, cut.id);
+      }
+      const after = Math.max(0, Number(url.searchParams.get('after') ?? body.after) || 0);
+      const rows = this.sql
+        .exec(
+          'SELECT * FROM (SELECT m.id, m.sender, m.text, m.created, u.username, u.admin FROM group_messages m LEFT JOIN users u ON u.id = m.sender WHERE m.grp = ? AND m.id > ? ORDER BY m.id DESC LIMIT 80) ORDER BY id',
+          grp, after
+        )
+        .toArray();
+      const top = this.sql.exec('SELECT MAX(id) AS n FROM group_messages WHERE grp = ?', grp).one().n || 0;
+      this.sql.exec('UPDATE chat_members SET last_read = ? WHERE grp = ? AND user = ?', top, grp, me.id);
+      return json({ messages: rows.map((r) => ({ id: r.id, from: r.username || '(gone)', admin: !!r.admin, mine: r.sender === me.id, text: r.text, t: r.created })) });
+    }
+    if (path === '/admin/groups' && method === 'POST') {
+      if (!me.admin) return err('Only admins can make and change group chats', 403);
+      const grp = Number(body.id) || 0;
+      const g = grp ? this.sql.exec('SELECT * FROM chat_groups WHERE id = ?', grp).toArray()[0] : null;
+      const addNames = (names) => {
+        const missing = [];
+        for (const n of (Array.isArray(names) ? names : String(names || '').split(/[\s,]+/)).filter(Boolean).slice(0, 50)) {
+          const u = this._byName(n);
+          if (!u) missing.push(n);
+          else this.sql.exec('INSERT OR IGNORE INTO chat_members (grp, user, last_read) VALUES (?, ?, 0)', g ? g.id : newId, u.id);
+        }
+        return missing;
+      };
+      let newId = 0;
+      let note = '';
+      if (body.action === 'create') {
+        const name = String(body.name || '').trim().slice(0, 40) || 'Group chat';
+        newId = this.sql.exec('INSERT INTO chat_groups (name, owner, created) VALUES (?, ?, ?) RETURNING id', name, me.id, Date.now()).one().id;
+        this.sql.exec('INSERT INTO chat_members (grp, user, last_read) VALUES (?, ?, 0)', newId, me.id);
+        const missing = addNames(body.members);
+        note = `Made "${name}".${missing.length ? ` No player called: ${missing.join(', ')}.` : ''}`;
+      } else {
+        if (!g) return err('No such group', 404);
+        if (body.action === 'add') {
+          const missing = addNames(body.members);
+          note = missing.length ? `No player called: ${missing.join(', ')}.` : 'Added.';
+        } else if (body.action === 'remove') {
+          const u = this._byName(String(body.username || ''));
+          if (u) this.sql.exec('DELETE FROM chat_members WHERE grp = ? AND user = ?', g.id, u.id);
+          note = 'Removed.';
+        } else if (body.action === 'rename') {
+          this.sql.exec('UPDATE chat_groups SET name = ? WHERE id = ?', String(body.name || '').trim().slice(0, 40) || g.name, g.id);
+          note = 'Renamed.';
+        } else if (body.action === 'delete') {
+          this.sql.exec('DELETE FROM group_messages WHERE grp = ?', g.id);
+          this.sql.exec('DELETE FROM chat_members WHERE grp = ?', g.id);
+          this.sql.exec('DELETE FROM chat_groups WHERE id = ?', g.id);
+          note = 'Group deleted.';
+        } else return err('Unknown action');
+      }
+      return json({ ok: true, note, id: newId || grp });
     }
 
     if (path.startsWith('/friends/') && method === 'POST') {
@@ -1362,7 +1455,18 @@ export class Room extends DurableObject {
             p.items = user.items || {};
           }
         } catch {
-          /* fall back to guest */
+          /* couldn't check: treated as no account */
+        }
+        // no guests: you need an account to play online
+        if (!p.account) {
+          this._send(p, { t: 'error', msg: 'Log in (or make an account) to play.' });
+          try {
+            p.ws.close(1000, 'no account');
+          } catch {
+            /* already closed */
+          }
+          this.players.delete(p.id);
+          return;
         }
         if (!p.account && nameBlocked(name, this.wordList)) name = `Guest${p.id}`;
         if (!p.account) {

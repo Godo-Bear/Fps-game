@@ -3242,3 +3242,22 @@ body.infected #game::after {
 .access-box { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 20px; padding: 12px 14px; margin-bottom: 14px; border: 1px solid rgba(255, 211, 77, 0.45); border-radius: 8px; background: rgba(255, 211, 77, 0.07); }
 .access-box b { font-size: 17px; }
 .access-box .acc-low { color: #ff8a5e; }
+
+/* group chats */
+.group-row { cursor: pointer; }
+.group-row .badge-n { background: #e0452f; color: #fff; border-radius: 9px; padding: 0 7px; font-size: 12px; font-weight: 700; }
+.group-new { margin: 6px 0; flex-wrap: wrap; }
+.gc-members span { display: inline-block; margin-right: 8px; }
+.gc-members button { font: inherit; font-size: 11px; background: none; border: none; color: #ff6b5e; cursor: pointer; padding: 0 2px; }
+.gc-admin { margin: 4px 0 8px; }
+.gc-admin summary { cursor: pointer; color: #ffd34d; }
+.gc-admin form { margin: 6px 0; }
+.gc-from { display: block; font-size: 12px; color: #ffd34d; }
+
+/* signed out: the sign up / log in screen can't be closed */
+#account-modal.locked [data-close] { display: none; }
+
+/* Settings → Gun position */
+.gun-pos { margin: 10px 0; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px; background: rgba(255, 255, 255, 0.03); }
+.gun-pos h4 { margin: 0 0 8px; }
+.gun-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }

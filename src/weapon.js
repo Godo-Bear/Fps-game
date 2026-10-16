@@ -38,6 +38,8 @@ export class Weapon {
     this.scene.add(key);
 
     this.holder = new THREE.Group();
+    // where the gun sits on screen when not aiming (Settings → Gun position)
+    this.offset = { x: 0, y: 0, z: 0 };
     this.cam.add(this.holder);
     this.models = {};
 
@@ -409,9 +411,9 @@ export class Weapon {
     const sightY = -(SIGHT_Y[def.id] ?? 0.08) * SCALE;
     const h = this.holder;
     h.position.set(
-      REST.x * (1 - a) + bx + this.swayX * (1 - a * 0.7) - this.sprintBlend * 0.08,
-      REST.y * (1 - a) + sightY * a - by + this.swayY * (1 - a * 0.7) - this.sprintBlend * 0.06,
-      REST.z * (1 - a) - 0.55 * a + this.kick * (0.06 - a * 0.03)
+      (REST.x + this.offset.x) * (1 - a) + bx + this.swayX * (1 - a * 0.7) - this.sprintBlend * 0.08,
+      (REST.y + this.offset.y) * (1 - a) + sightY * a - by + this.swayY * (1 - a * 0.7) - this.sprintBlend * 0.06,
+      (REST.z + this.offset.z) * (1 - a) - 0.55 * a + this.kick * (0.06 - a * 0.03)
     );
     h.rotation.set(this.kick * (0.09 - a * 0.06) - this.sprintBlend * 0.35, this.sprintBlend * 0.7 + 0.03 * (1 - a), this.sprintBlend * 0.2);
     this.swayX *= Math.exp(-dt * 8);

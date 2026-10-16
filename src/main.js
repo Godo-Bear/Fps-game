@@ -3437,7 +3437,7 @@ document.addEventListener(
   { passive: true }
 );
 document.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement) return;
+  if (e.target.closest?.('input, textarea, select')) return;
   if ((e.code === 'KeyT' || e.code === 'Enter') && game.mode === 'mp' && ['playing', 'lobby', 'paused', 'mpend'].includes(game.state) && !chatOpen()) {
     e.preventDefault();
     openChat();
@@ -3884,6 +3884,8 @@ const DEFAULT_SETTINGS = {
   sens: 1, padSens: 1, invertY: false, fov: 75, volume: 0.8, quality: 'high', dmgNumbers: true, fps: false, tutorial: true, autoWaves: false, music: 0.5,
   // the extra ones behind "Show all settings"
   hudScale: 1, crosshairSize: 1, minimap: true, chat: true, hitmarkers: true, shake: 1, bob: true, toggleAim: false, bubbles: true, flashlight: true,
+  // where the gun sits on screen (0 = the normal spot)
+  gunX: 0, gunY: 0, gunZ: 0,
 };
 const settings = { ...DEFAULT_SETTINGS };
 try {
@@ -3915,6 +3917,9 @@ function applySettings() {
   player.shakeMul = settings.shake;
   player.bobMul = settings.bob ? 1 : 0;
   mp.showBubbles = settings.bubbles;
+  weapon.offset.x = settings.gunX;
+  weapon.offset.y = settings.gunY;
+  weapon.offset.z = -settings.gunZ;
   savePref(SETTINGS_KEY, JSON.stringify(settings));
 }
 
@@ -3932,6 +3937,21 @@ const SETTING_ROWS = [
   ['autoWaves', 'Start waves by themselves (no READY button)', 'check'],
   ['music', 'Music volume', 'range', 0, 1, 0.05],
 ];
+// Gun position: move the gun on screen (aiming still lines it up in the middle)
+const GUN_ROWS = [
+  ['gunX', 'Left ↔ right', 'range', -0.4, 0.2, 0.01],
+  ['gunY', 'Down ↕ up', 'range', -0.15, 0.12, 0.01],
+  ['gunZ', 'Closer ↔ further', 'range', -0.15, 0.25, 0.01],
+];
+const GUN_PRESETS = { normal: ['Normal', 0, 0, 0], centre: ['Centre', -0.2, -0.02, 0], left: ['Left side', -0.4, 0, 0], low: ['Low', 0, -0.08, -0.05], far: ['Far away', 0.02, 0.02, 0.15] };
+function setGunPreset(id) {
+  const p = GUN_PRESETS[id];
+  if (!p) return false;
+  [, settings.gunX, settings.gunY, settings.gunZ] = p;
+  applySettings();
+  return true;
+}
+const fmtSetting = (k, v) => (k === 'volume' || k === 'music' ? `${Math.round(v * 100)}%` : k === 'fov' ? `${v}°` : k.startsWith('gun') ? `${v > 0 ? '+' : ''}${Math.round(v * 100)}` : `${Number(v).toFixed(2)}x`);
 // everything else, behind "Show all settings"
 const MORE_SETTING_ROWS = [
   ['toggleAim', 'Right click toggles aim (instead of holding)', 'check'],
@@ -3945,7 +3965,7 @@ const MORE_SETTING_ROWS = [
   ['bubbles', "Show other players' quick chat over their heads", 'check'],
   ['flashlight', 'Flashlight at night', 'check'],
 ];
-const ALL_SETTING_ROWS = [...SETTING_ROWS, ...MORE_SETTING_ROWS];
+const ALL_SETTING_ROWS = [...SETTING_ROWS, ...GUN_ROWS, ...MORE_SETTING_ROWS];
 let showAllSettings = false;
 const CONTROL_LIST = [
   ['WASD / arrows', 'Move'], ['Mouse', 'Look'], ['Left click', 'Shoot'], ['Right click', 'Aim / scope'], ['R', 'Reload'], ['Shift', 'Sprint'],
@@ -3974,7 +3994,7 @@ function accessBox() {
 }
 
 function openSettings() {
-  const fmt = (k, v) => ((k === 'volume' || k === 'music') ? `${Math.round(v * 100)}%` : k === 'fov' ? `${v}°` : `${Number(v).toFixed(2)}x`);
+  const fmt = fmtSetting;
   const row = ([k, label, type, a, b, step]) => {
     const v = settings[k];
     let input = '';
@@ -3984,6 +4004,10 @@ function openSettings() {
     return `<label class="s-row"><span>${label}</span><span class="s-in">${input}</span></label>`;
   };
   $('settings-body').innerHTML = `${accessBox()}${SETTING_ROWS.map(row).join('')}
+    <div class="gun-pos"><h4>🔫 Gun position</h4>
+      <div class="gun-presets">${Object.entries(GUN_PRESETS).map(([id, p]) => `<button class="chipbtn" data-gunpos="${id}">${p[0]}</button>`).join('')}</div>
+      ${GUN_ROWS.map(row).join('')}
+      <p class="muted small">Open Settings from the pause menu in a game to watch the gun move. Aiming still brings it to the middle.</p></div>
     <button id="settings-all" class="btn small ghost settings-all">${showAllSettings ? 'HIDE EXTRA SETTINGS ▴' : 'SHOW ALL SETTINGS ▾'}</button>
     <div class="settings-more ${showAllSettings ? '' : 'hidden'}">
       <h4>More settings</h4>
@@ -4006,8 +4030,12 @@ $('settings-body').addEventListener('input', (e) => {
   const row = ALL_SETTING_ROWS.find((r) => r[0] === k);
   settings[k] = row[2] === 'check' ? el.checked : row[2] === 'select' ? el.value : Number(el.value);
   const val = el.parentElement.querySelector('.s-val');
-  if (val) val.textContent = (k === 'volume' || k === 'music') ? `${Math.round(settings[k] * 100)}%` : k === 'fov' ? `${settings[k]}°` : `${settings[k].toFixed(2)}x`;
+  if (val) val.textContent = fmtSetting(k, settings[k]);
   applySettings();
+});
+$('settings-body').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-gunpos]');
+  if (b && setGunPreset(b.dataset.gunpos)) openSettings();
 });
 $('settings-reset').addEventListener('click', () => {
   Object.assign(settings, DEFAULT_SETTINGS);
@@ -4095,6 +4123,8 @@ account.onUnread((now, before) => {
 });
 
 accountUI.adminActions = {
+  gunPresets: () => Object.entries(GUN_PRESETS).map(([id, p]) => [id, p[0]]),
+  gunPreset: (id) => (setGunPreset(id) ? `Gun moved: ${GUN_PRESETS[id][0]}.` : 'Unknown spot.'),
   get god() {
     return cheats.god;
   },
@@ -4106,7 +4136,7 @@ accountUI.adminActions = {
   inMP: () => game.mode === 'mp',
   toggle(name, on) {
     if (!account.admin) return 'Unlock admin first.';
-    if (game.mode === 'mp' && SOLO_ONLY_CHEATS.includes(name) && on) return "That one would change the game for everyone, so it's solo only.";
+    if (game.mode === 'mp' && SOLO_ONLY_CHEATS.includes(name) && on && !simHost()) return 'That one controls the zombies, so in multiplayer it only works in a co-op room you host.';
     cheats[name] = on;
     sendCheats();
     if (name === 'nohud') $('hud').style.visibility = on ? 'hidden' : '';
@@ -4128,7 +4158,8 @@ accountUI.adminActions = {
       return 'The tutorial will play at the start of your next new game.';
     }
     if (!cheatsOn() || inMenu()) return 'Start a game first.';
-    if (game.mode === 'mp' && !MP_ADMIN_ACTIONS.includes(action)) return 'That one changes the game for everyone, so it only works in solo.';
+    // world-changing ones (bosses, waves, weather...) work in a co-op room you host: the host runs the zombies
+    if (game.mode === 'mp' && !MP_ADMIN_ACTIONS.includes(action) && !simHost()) return 'That one controls the zombies and waves, so in multiplayer it only works in a co-op room you host.';
     switch (action) {
       case 'guns':
         for (const id of Object.keys(GUNS)) if (id !== 'rifle') weapon.give(id, stats);
@@ -4307,7 +4338,7 @@ accountUI.adminActions = {
   },
   // map props: red barrels and ammo crates (solo games)
   barrels(what) {
-    if (game.mode !== 'solo' || inMenu()) return 'Start a solo game first.';
+    if (!simHost() || inMenu()) return 'Start a solo game (or host a co-op room) first.';
     const list = world.explosives || [];
     if (what === 'boom') {
       const live = list.filter((b) => b.alive);
@@ -4363,7 +4394,7 @@ document.addEventListener('keydown', (e) => {
 
 function update(dt) {
   if (cheatsOn()) {
-    if (cheats.slowmo && game.mode === 'solo') dt *= 0.35;
+    if (cheats.slowmo && simHost()) dt *= 0.35;
     if (cheats.ammo) for (const s of weapon.slots) s.ammo = weapon.magSize(stats, s.def);
     if (cheats.god) player.health = Math.max(player.health, stats.maxHealth);
   }
@@ -4405,7 +4436,7 @@ function worldTick(dt) {
   if (structures.list.length) updateTurrets(dt);
   if (zombieGame()) {
     if (simHost()) {
-      if (!(cheatsOn() && cheats.freeze && game.mode === 'solo')) zombies.update(dt, isCoop() ? zombieTargets() : player, zombieHooks);
+      if (!(cheatsOn() && cheats.freeze && simHost())) zombies.update(dt, isCoop() ? zombieTargets() : player, zombieHooks);
       if (isDefend()) tickDefend(dt);
       updateWave(dt);
     } else {
@@ -4615,7 +4646,8 @@ loadMap(game.map);
 renderBest();
 applyProfile();
 showOnly('menu');
-account.init();
+// no guests: straight to sign up / log in when you open the site without an account
+account.init().then(() => needAccount());
 requestAnimationFrame(frame);
 
 if (import.meta.env.DEV) {
