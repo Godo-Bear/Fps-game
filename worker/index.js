@@ -48,7 +48,7 @@ function sameString(a, b) {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
-const USERNAME = /^[A-Za-z0-9_]{3,16}$/;
+const USERNAME = /^[A-Za-z0-9_]{3,40}$/;
 const DAY = 86400000;
 const ONLINE_MS = 3 * 60000;
 const LIVE_MS = 45000;
@@ -247,6 +247,16 @@ export class GameDB extends DurableObject {
     }
   }
 
+  // the admin's announcement for every player (until they press OK)
+  _announce() {
+    try {
+      const a = JSON.parse(this.sql.exec("SELECT value FROM config WHERE key = 'announce'").toArray()[0]?.value || 'null');
+      return a && a.id && a.text ? a : null;
+    } catch {
+      return null;
+    }
+  }
+
   _updates() {
     try {
       const u = JSON.parse(this.sql.exec("SELECT value FROM config WHERE key = 'updates'").toArray()[0]?.value || '{}');
@@ -431,7 +441,7 @@ export class GameDB extends DurableObject {
       if (g?.banned) return json({ blocked: 'You have been banned from online play' });
       if (g && g.timeout_until > Date.now()) return json({ blocked: `You're timed out for ${Math.ceil((g.timeout_until - Date.now()) / 60000)} more minute(s)` });
       const room = typeof body.room === 'string' && /^[A-Z0-9]{5}$/.test(body.room) ? body.room : null;
-      const name = typeof body.name === 'string' ? body.name.slice(0, 16) : null;
+      const name = typeof body.name === 'string' ? body.name.slice(0, 40) : null;
       const now = Date.now();
       this.sql.exec(
         `INSERT INTO guests (id, level, best_wave, games, first_seen, last_seen, room, name, ip) VALUES (?, 1, 0, 0, ?, ?, ?, ?, ?)
@@ -522,7 +532,7 @@ export class GameDB extends DurableObject {
           this.sql.exec('UPDATE users SET sb_id = ? WHERE id = ?', sb.id, old.id);
         } else if (typeof body.username === 'string') {
           const username = body.username;
-          if (!USERNAME.test(username)) return err('Player name must be 3-16 letters, numbers or _');
+          if (!USERNAME.test(username)) return err('Player name must be 3-40 letters, numbers or _');
           if (nameBlocked(username, this._words())) return err("That player name isn't allowed");
           if (this._byName(username)) return err('That player name is taken', 409);
           const salt = randomHex(16);
@@ -540,7 +550,7 @@ export class GameDB extends DurableObject {
     if (path === '/register' && method === 'POST') {
       if (this.paywall) return err('Sign up with your email instead', 403);
       const { username, password } = body;
-      if (typeof username !== 'string' || !USERNAME.test(username)) return err('Username must be 3-16 letters, numbers or _');
+      if (typeof username !== 'string' || !USERNAME.test(username)) return err('Username must be 3-40 letters, numbers or _');
       if (nameBlocked(username, this._words())) return err("That username isn't allowed");
       if (this._ipBanned(ip)) return err('You have been banned', 403);
       if (typeof password !== 'string' || password.length < 6 || password.length > 128) return err('Password must be at least 6 characters');
@@ -784,7 +794,7 @@ export class GameDB extends DurableObject {
     // admin: everyone online on every server (or a name search), plus who's banned
     if (path === '/admin/players' && method === 'GET') {
       if (!me.admin) return err('Admins only', 403);
-      const q = String(url.searchParams.get('q') || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
+      const q = String(url.searchParams.get('q') || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
       const rows = q
         ? this.sql.exec("SELECT * FROM users WHERE username LIKE ? ESCAPE '\\' ORDER BY last_seen DESC LIMIT 40", `${q.replace(/_/g, '\\_')}%`).toArray()
         : this.sql.exec('SELECT * FROM users ORDER BY (last_seen > ?) DESC, last_seen DESC LIMIT 300', Date.now() - ONLINE_MS).toArray();
@@ -799,7 +809,7 @@ export class GameDB extends DurableObject {
     // admin: every account on the site (newest activity first), plus every guest browser
     if (path === '/admin/accounts' && method === 'GET') {
       if (!me.admin) return err('Admins only', 403);
-      const q = String(url.searchParams.get('q') || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
+      const q = String(url.searchParams.get('q') || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
       const page = Math.max(0, Math.min(1000, Number(url.searchParams.get('page')) | 0));
       const like = `${q.replace(/_/g, '\\_')}%`;
       const where = q ? "WHERE username LIKE ? ESCAPE '\\'" : '';
@@ -848,7 +858,7 @@ export class GameDB extends DurableObject {
       if (set.games !== undefined) put('games', int(set.games, 100000000));
       if (set.username !== undefined && set.username !== u.username) {
         const n = String(set.username);
-        if (!USERNAME.test(n)) return err('Player names are 3-16 letters, numbers or _');
+        if (!USERNAME.test(n)) return err('Player names are 3-40 letters, numbers or _');
         const other = this._byName(n);
         if (other && other.id !== u.id) return err('That player name is taken');
         put('username', n);
@@ -934,6 +944,21 @@ export class GameDB extends DurableObject {
       const user = after.id === me.id ? this._publicUser(after, true) : undefined;
       return json({ note, player: this._adminRow(after), user });
     }
+    // admin: an announcement every player sees (in any room, or on the menu) until they press OK
+    if (path === '/admin/announce' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      if (body.action === 'clear') {
+        this.sql.exec("DELETE FROM config WHERE key = 'announce'");
+        return json({ ok: true, note: 'Announcement taken down.' });
+      }
+      const text = String(body.text || '').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').trim().slice(0, 300);
+      if (!text) return err('Type a message first.');
+      const prev = this._announce();
+      if (prev && Date.now() - prev.at < 3000) return err('Wait a moment before announcing again.');
+      const a = { id: Date.now(), text, from: me.username, at: Date.now() };
+      this.sql.exec("INSERT INTO config (key, value) VALUES ('announce', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify(a));
+      return json({ ok: true, note: 'Announced to every player. They see it until they press OK.', announce: a });
+    }
     // admin: edit, remove, bring back or add entries on the Updates tab
     if (path === '/admin/updates' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);
@@ -982,7 +1007,7 @@ export class GameDB extends DurableObject {
     if (path === '/saves' && method === 'PUT') {
       const save = body.save;
       if (!save || typeof save !== 'object' || Array.isArray(save)) return err('Bad save');
-      if (typeof save.id !== 'string' || !/^[a-z0-9]{1,16}$/.test(save.id)) return err('Bad save id');
+      if (typeof save.id !== 'string' || !/^[a-z0-9]{1,40}$/.test(save.id)) return err('Bad save id');
       save.name = cleanSaveName(save.name);
       const text = JSON.stringify(save);
       if (text.length > 6000) return err('Save too large', 413);
@@ -1123,7 +1148,7 @@ export class GameDB extends DurableObject {
       const groupUnread = this.sql
         .exec('SELECT COUNT(*) AS n FROM group_messages g JOIN chat_members c ON c.grp = g.grp WHERE c.user = ? AND g.id > c.last_read AND g.sender != ?', me.id, me.id)
         .one().n;
-      return json({ unread, requests, timeoutMins: t, groupUnread });
+      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce() });
     }
     if (path === '/messages' && (method === 'GET' || method === 'POST')) {
       const name = method === 'GET' ? url.searchParams.get('with') : body.to;
@@ -1284,7 +1309,7 @@ export class GameDB extends DurableObject {
 const TEAMS = ['red', 'blue'];
 const SPAWN_SHIELD_MS = 4000; // multiplayer spawn force field
 const MAX_HIT = 520; // biggest single hit (sniper headshot) with a little slack
-const NAME = /^[A-Za-z0-9_ ]{1,16}$/;
+const NAME = /^[A-Za-z0-9_ ]{1,40}$/;
 
 export class Room extends DurableObject {
   constructor(ctx, env) {
@@ -1476,7 +1501,7 @@ export class Room extends DurableObject {
         const taken = new Set([...this.players.values()].filter((o) => o.joined).map((o) => o.name.toLowerCase()));
         let unique = name;
         for (let i = 2; taken.has(unique.toLowerCase()); i++) unique = `${name}${i}`;
-        p.name = unique.slice(0, 18);
+        p.name = unique.slice(0, 42);
         const counts = this._teamCounts();
         p.team = counts.red <= counts.blue ? 'red' : 'blue';
         // infection: late joiners are zombies once the infection has started

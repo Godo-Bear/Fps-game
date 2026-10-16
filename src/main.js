@@ -4646,6 +4646,26 @@ loadMap(game.map);
 renderBest();
 applyProfile();
 showOnly('menu');
+// the admin's announcement: on every player's screen (any room, or the menu) until they press OK
+account.onAnnounce = (a, seen) => {
+  let el = $('announce-pop');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'announce-pop';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<div class="ap-card"><div class="ap-head">📢 ANNOUNCEMENT</div><div class="ap-text">${esc(a.text)}</div>
+    <div class="ap-from">from admin <b>${esc(a.from)}</b> · ${new Date(a.at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</div>
+    <button class="btn" id="announce-ok">OK</button></div>`;
+  el.classList.remove('hidden');
+  // free the mouse so they can press OK
+  if (document.pointerLockElement) document.exitPointerLock();
+  $('announce-ok').onclick = () => {
+    seen();
+    el.classList.add('hidden');
+  };
+};
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && account.pollUnread());
 // no guests: straight to sign up / log in when you open the site without an account
 account.init().then(() => needAccount());
 requestAnimationFrame(frame);

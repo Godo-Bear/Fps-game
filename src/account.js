@@ -457,14 +457,25 @@ export class Account {
       return this._setUnread({});
     }
     try {
-      const { unread, requests, timeoutMins, groupUnread } = await this._api('/messages/unread');
+      const { unread, requests, timeoutMins, groupUnread, announce } = await this._api('/messages/unread');
       this.timeoutMins = timeoutMins || 0;
+      this._setAnnounce(announce || null);
       this.groupUnread = groupUnread || 0;
       this._setRequests(requests || []);
       this._setUnread(unread || {});
     } catch {
       /* offline */
     }
+  }
+  // the admin's announcement: stays on screen until you press OK (remembered per account in this browser)
+  _setAnnounce(a) {
+    this.announce = a;
+    const key = `deadplains.announceSeen.${this.user?.username || ''}`;
+    if (!a || Number(store.get(key) || 0) >= a.id) return;
+    this.onAnnounce?.(a, () => store.set(key, String(a.id)));
+  }
+  adminAnnounce(body) {
+    return this._api('/admin/announce', { method: 'POST', body });
   }
   markRead(name) {
     if (!this.unread[name]) return;
@@ -941,10 +952,10 @@ export class AccountUI {
       this.body.innerHTML = `<div class="paygate">
         <h2>You're in! 🎉</h2>
         <p>Pick the name other players will see.</p>
-        <form id="pay-name" class="auth"><input name="username" placeholder="Player name (3-16 letters, numbers or _)" maxlength="16" required /><button class="btn pay-main">START PLAYING</button></form>
+        <form id="pay-name" class="auth"><input name="username" placeholder="Player name (3-40 letters, numbers or _)" maxlength="40" required /><button class="btn pay-main">START PLAYING</button></form>
         <details class="pay-terms"><summary>I already have a Hollow Ground account</summary>
           <p class="muted small">Log in with your old player name and password once to keep your level, coins and unlocks.</p>
-          <form id="pay-link" class="auth"><input name="username" placeholder="Old player name" maxlength="16" required /><input name="password" type="password" placeholder="Old password" required /><button class="btn small">LINK MY OLD ACCOUNT</button></form>
+          <form id="pay-link" class="auth"><input name="username" placeholder="Old player name" maxlength="40" required /><input name="password" type="password" placeholder="Old password" required /><button class="btn small">LINK MY OLD ACCOUNT</button></form>
         </details>
         <div class="msg pay-msg"></div></div>`;
       wire('pay-name', (f) => a.supaSync({ username: String(f.get('username')).trim() }));
@@ -972,7 +983,7 @@ export class AccountUI {
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make a free account (or log in) to start playing.</b> It only takes a username and a password.</p>' : ''}
       <p class="muted">An account saves your level, unlocks and stats on the server, and lets you add friends.</p>
       <form id="auth-form" class="auth">
-        <input name="username" placeholder="Username" autocomplete="username" maxlength="16" required />
+        <input name="username" placeholder="Username" autocomplete="username" maxlength="40" required />
         <input name="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" maxlength="128" required />
         <div class="row">
           <button type="submit" data-action="login" class="btn small">LOG IN</button>
@@ -1030,7 +1041,7 @@ export class AccountUI {
     if (!el.dataset.ready) {
       el.dataset.ready = '1';
       el.innerHTML = `<h3>⭐ Every account</h3>
-        <form id="acc-find" class="auth inline admin-row"><input name="q" placeholder="Search by name" maxlength="16" /><button class="btn small">SEARCH</button></form>
+        <form id="acc-find" class="auth inline admin-row"><input name="q" placeholder="Search by name" maxlength="40" /><button class="btn small">SEARCH</button></form>
         <div id="acc-list" class="admin-players acc-list">Loading…</div>`;
       document.getElementById('acc-find').onsubmit = (e) => {
         e.preventDefault();
@@ -1239,10 +1250,14 @@ export class AccountUI {
       <div class="asubtabs">${tabs.map(([id, n]) => `<button class="chipbtn ${id === sec ? 'on' : ''}" data-asec="${id}">${n}</button>`).join('')}</div>
       <div id="admin-msg" class="msg admin-msg"></div>
     <section class="asec" data-sec="players">
+      <div class="acard"><h4>📢 Announce to every player <span class="muted small">(any room or the menu; it stays on their screen until they press OK)</span></h4>
+      <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="300" placeholder="Message for every player" /><button class="btn small">📢 ANNOUNCE</button></form>
+      <div class="admin-grid"><button class="btn small ghost" id="admin-announce-clear">TAKE DOWN THE ANNOUNCEMENT</button></div>
+      </div>
       <div class="acard"><h4>👥 Every player <span class="muted small">(online first)</span></h4>
-      <form class="auth inline admin-row" id="admin-find"><input name="q" maxlength="16" placeholder="Search by name (empty: everyone)" /><button class="btn small">FIND</button></form>
+      <form class="auth inline admin-row" id="admin-find"><input name="q" maxlength="40" placeholder="Search by name (empty: everyone)" /><button class="btn small">FIND</button></form>
       <div id="admin-players" class="admin-players muted">Loading…</div>
-      <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="16" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
+      <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="40" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
       </div>
     </section>
     <section class="asec" data-sec="game">
@@ -1323,7 +1338,6 @@ export class AccountUI {
     <section class="asec" data-sec="mp">
       ${mp ? '' : '<p class="muted small">Join or create a room to use these.</p>'}
       <div class="acard"><h4>📢 Room</h4>
-      <form class="auth inline admin-row" id="admin-announce"><input name="v" maxlength="80" placeholder="Announce to everyone in your room" /><button class="btn small">📢 ANNOUNCE</button></form>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
       </div>
       <div class="acard"><h4>👥 Teams in this room</h4>
@@ -1414,9 +1428,14 @@ export class AccountUI {
     document.getElementById('admin-announce').addEventListener('submit', (e) => {
       e.preventDefault();
       const input = e.target.querySelector('input');
-      msg(act.announce(input.value));
-      input.value = '';
+      if (!input.value.trim()) return msg('Type a message first.');
+      a.adminAnnounce({ text: input.value }).then((r) => {
+        msg(r.note);
+        input.value = '';
+        a._setAnnounce(r.announce);
+      }, (err) => msg(err.message));
     });
+    document.getElementById('admin-announce-clear').onclick = () => a.adminAnnounce({ action: 'clear' }).then((r) => msg(r.note), (err) => msg(err.message));
     for (const b of this.body.querySelectorAll('[data-agun]')) b.onclick = () => msg(act.gunPreset(b.dataset.agun));
     document.getElementById('admin-night').onchange = (e) => msg(act.setNightMode(e.target.value));
     document.getElementById('admin-map').onchange = (e) => msg(act.setSoloMap(e.target.value));
@@ -1545,7 +1564,7 @@ export class AccountUI {
       <p class="muted small">Joined ${esc(joined)} · ${p.xp} XP · ${p.badges} achievements · ${p.items} shop items${p.admin ? ' · ⭐ admin' : ''}</p>
       ${mod}
       <form class="manage-grid">${fields
-        .map(([k, label, v, type]) => `<label><span>${label}</span><input name="${k}" type="${type || 'number'}" ${type ? 'maxlength="16"' : 'min="0"'} value="${esc(v)}" /></label>`)
+        .map(([k, label, v, type]) => `<label><span>${label}</span><input name="${k}" type="${type || 'number'}" ${type ? 'maxlength="40"' : 'min="0"'} value="${esc(v)}" /></label>`)
         .join('')}
         <div class="manage-actions"><button class="btn small">SAVE CHANGES</button><button type="button" class="btn small ghost" data-reset>RESET PROGRESS</button><span class="manage-msg muted small"></span></div>
       </form>`;
@@ -1688,7 +1707,7 @@ export class AccountUI {
     this._stopDm();
     this.body.innerHTML = `
       <form id="friend-form" class="auth inline">
-        <input name="username" placeholder="Friend's username" maxlength="16" required />
+        <input name="username" placeholder="Friend's username" maxlength="40" required />
         <button class="btn small">ADD FRIEND</button>
       </form>
       <div id="friend-msg" class="msg"></div>

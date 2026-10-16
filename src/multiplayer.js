@@ -17,8 +17,11 @@ function tagSprite(text, ally) {
   c.width = 512;
   c.height = 104;
   const g = c.getContext('2d');
-  g.font = 'bold 54px Rajdhani, sans-serif';
   const label = `${ally ? '▲' : '◆'} ${text}`;
+  // long names: shrink the letters so the whole name fits
+  let size = 54;
+  g.font = `bold ${size}px Rajdhani, sans-serif`;
+  while (size > 22 && g.measureText(label).width > 456) g.font = `bold ${(size -= 2)}px Rajdhani, sans-serif`;
   const w = Math.min(500, g.measureText(label).width + 44);
   const x = (512 - w) / 2;
   g.fillStyle = 'rgba(8, 10, 14, 0.62)';

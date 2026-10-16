@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.12', date: '16 Oct 2026', title: 'Announcements for everyone & longer names',
+    items: [
+      'Admin announcements now reach every player, whatever room they are in (or on the menu), and stay on screen until they press OK.',
+      'Player names can now be up to 40 letters long (was 16).',
+      'Admin: the announcement box is at the top of the Players tab, with a button to take the announcement down.',
+    ],
+  },
+  {
     v: '5.11', date: '16 Oct 2026', title: 'Group chats, gun position & bigger names',
     items: [
       'Everyone needs an account now: no more guests. Opening the site takes you straight to sign up / log in.',

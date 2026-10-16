@@ -3261,3 +3261,16 @@ body.infected #game::after {
 .gun-pos { margin: 10px 0; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px; background: rgba(255, 255, 255, 0.03); }
 .gun-pos h4 { margin: 0 0 8px; }
 .gun-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+
+/* the admin's announcement: stays until OK */
+#announce-pop { position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); padding: 16px; }
+#announce-pop.hidden { display: none; }
+#announce-pop .ap-card { max-width: 520px; width: 100%; background: #1c1d22; border: 2px solid #ffd34d; border-radius: 14px; padding: 22px 24px; text-align: center; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
+#announce-pop .ap-head { color: #ffd34d; font-weight: 800; letter-spacing: 2px; margin-bottom: 10px; }
+#announce-pop .ap-text { font-size: 22px; line-height: 1.35; color: #fff; white-space: pre-wrap; word-break: break-word; margin-bottom: 10px; }
+#announce-pop .ap-from { color: #aaa; font-size: 13px; margin-bottom: 16px; }
+#announce-pop .btn { min-width: 140px; }
+
+/* long player names (up to 40 letters) don't stretch buttons and rows */
+.fn-me { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend b, .board td { overflow-wrap: anywhere; }
