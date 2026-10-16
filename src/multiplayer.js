@@ -968,11 +968,8 @@ export class Multiplayer {
     const list = MODE_SETTINGS[this.lobby.mode] || [];
     const set = this.lobby.settings || {};
     const el = $('lobby-settings');
-    if (!list.length) {
-      el.innerHTML = '';
-      return;
-    }
-    const key = JSON.stringify([this.lobby.mode, set, host, this.lobby.open]);
+    const botsOk = !MODES[this.lobby.mode]?.coop && !MODES[this.lobby.mode]?.infection;
+    const key = JSON.stringify([this.lobby.mode, set, host, this.lobby.open, this.lobby.bots]);
     if (el.dataset.key === key) return;
     el.dataset.key = key;
     el.innerHTML = `<h4>Match settings${host ? '' : ' <span class="muted small">(the host picks these)</span>'}</h4><div class="lset-grid">${list
@@ -981,8 +978,10 @@ export class Multiplayer {
           .map(([v, n]) => `<option value="${esc(v)}" ${v === set[o.key] ? 'selected' : ''}>${esc(n)}${v === o.def ? ' ·' : ''}</option>`)
           .join('')}</select></label>`,
       )
-      .join('')}<label class="lset"><span>🌍 Open to quick play</span><select data-open ${host ? '' : 'disabled'}><option value="0" ${this.lobby.open ? '' : 'selected'}>No (code only)</option><option value="1" ${this.lobby.open ? 'selected' : ''}>Yes, anyone can join</option></select></label></div>${host ? '<button id="lobby-reset" class="btn small ghost">BACK TO NORMAL</button>' : ''}`;
+      .join('')}<label class="lset"><span>${this.lobby.open ? '🌍' : '🔒'} Who can join</span><select data-open ${host ? '' : 'disabled'}><option value="0" ${this.lobby.open ? '' : 'selected'}>🔒 Private: only people with the code</option><option value="1" ${this.lobby.open ? 'selected' : ''}>🌍 Public: quick join can put anyone here</option></select></label>
+      ${botsOk ? `<label class="lset"><span>🤖 AI bots</span><select data-bots ${host ? '' : 'disabled'}>${[0, 2, 4, 6, 8].map((n) => `<option value="${n}" ${n === (this.lobby.bots || 0) ? 'selected' : ''}>${n ? `Fill the match up to ${n} players` : 'No bots'}</option>`).join('')}</select></label>` : ''}</div>${host ? '<button id="lobby-reset" class="btn small ghost">BACK TO NORMAL</button>' : ''}`;
     el.querySelector('select[data-open]').addEventListener('change', (e) => this.send({ t: 'open', on: e.target.value === '1' }));
+    el.querySelector('select[data-bots]')?.addEventListener('change', (e) => this.send({ t: 'bots', n: Number(e.target.value) }));
     el.querySelectorAll('select[data-set]').forEach((sel) =>
       sel.addEventListener('change', () => {
         const o = list.find((x) => x.key === sel.dataset.set);

@@ -1310,6 +1310,12 @@ const TEAMS = ['red', 'blue'];
 const SPAWN_SHIELD_MS = 4000; // multiplayer spawn force field
 const MAX_HIT = 520; // biggest single hit (sniper headshot) with a little slack
 const NAME = /^[A-Za-z0-9_ ]{1,40}$/;
+// AI bots: fill empty spots in PvP matches (the host's game moves them; the server keeps score as usual)
+const BOT_FILLS = [0, 2, 4, 6, 8];
+const BOT_NAMES = ['Viper', 'Rex', 'Ghost', 'Blaze', 'Nova', 'Tank', 'Raven', 'Spike', 'Echo', 'Fang', 'Jinx', 'Bolt', 'Shade', 'Duke'];
+const BOT_LOOKS = [['🤖', '#7fd4ff'], ['👾', '#ff8a5c'], ['💀', '#d9d9d9'], ['🦾', '#c9ff5d'], ['🎯', '#ff5d8f'], ['🛰️', '#b48cff']];
+const botsAllowed = (mode) => !!MODES[mode] && !MODES[mode].coop && !MODES[mode].infection;
+const NOWS = { send() {}, close() {} };
 
 export class Room extends DurableObject {
   constructor(ctx, env) {
@@ -1323,6 +1329,7 @@ export class Room extends DurableObject {
     this.match = null;
     this.interval = null;
     this.settings = {}; // mode -> the host's custom match settings
+    this.botFill = 0; // AI bots fill the match up to this many players (0 = no bots)
     this.wordRe = null; // blocked words (from the database)
     this.wordList = [];
     this.wordsAt = 0;
@@ -1380,9 +1387,10 @@ export class Room extends DurableObject {
       server.close(1000, msg);
       return new Response(null, { status: 101, webSocket: client });
     };
-    if (create && this.players.size > 0) return fail('taken');
-    if (!create && this.players.size === 0) return fail('Room not found. Check the code.');
-    if (this.players.size >= MAX_PLAYERS) return fail('Room is full');
+    const humans = this._humans().length + [...this.players.values()].filter((o) => !o.bot && !o.joined).length;
+    if (create && humans > 0) return fail('taken');
+    if (!create && humans === 0) return fail('Room not found. Check the code.');
+    if (humans >= MAX_PLAYERS) return fail('Room is full');
 
     const p = {
       id: this.nextId++, ws: server, joined: false, name: 'Player', avatar: '🧟', color: '#e9d9b8', account: false,
@@ -1419,9 +1427,44 @@ export class Room extends DurableObject {
   _lobby() {
     this._report();
     return {
-      t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set, open: !!this.open,
-      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, team: p.team, account: p.account, admin: !!p.admin })),
+      t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set, open: !!this.open, bots: this.botFill,
+      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
     };
+  }
+
+  // real people (not bots)
+  _humans() {
+    return [...this.players.values()].filter((p) => p.joined && !p.bot);
+  }
+  // adds or removes bots so the match has botFill players (PvP modes only)
+  _fillBots() {
+    const want = this.phase === 'playing' && botsAllowed(this.mode) ? Math.max(0, Math.min(this.botFill, MAX_PLAYERS) - this._humans().length) : 0;
+    const bots = [...this.players.values()].filter((p) => p.bot);
+    let changed = false;
+    for (const b of bots.slice(want)) {
+      this.players.delete(b.id);
+      this._dropFlag(b);
+      this._broadcast({ t: 'left', id: b.id });
+      changed = true;
+    }
+    for (let i = bots.length; i < want; i++) {
+      const used = new Set([...this.players.values()].map((o) => o.name));
+      const name = `Bot ${BOT_NAMES.find((n) => !used.has(`Bot ${n}`)) || this.nextId}`;
+      const [avatar, color] = BOT_LOOKS[Math.floor(Math.random() * BOT_LOOKS.length)];
+      const counts = this._teamCounts();
+      const b = {
+        id: this.nextId++, ws: NOWS, bot: true, joined: true, name, avatar, color, account: false, team: counts.red <= counts.blue ? 'red' : 'blue',
+        alive: false, hp: MAX_HP, pos: [0, 0, 0], rot: [0, 0], gun: 'rifle', flags: 0, kills: 0, deaths: 0, score: 0, respawnAt: 0, protectUntil: 0,
+        hits: [0, 0], msgs: [0, 0], level: 0, ip: 'bot', username: null,
+      };
+      this.players.set(b.id, b);
+      this._spawn(b);
+      changed = true;
+    }
+    if (changed) this._broadcast(this._lobby());
+  }
+  _removeBots() {
+    for (const b of [...this.players.values()].filter((p) => p.bot)) this.players.delete(b.id);
   }
 
   _teamCounts() {
@@ -1514,6 +1557,7 @@ export class Room extends DurableObject {
         if (this.phase === 'playing') {
           this._send(p, this._matchStart());
           this._spawn(p);
+          this._fillBots(); // a bot makes room for a real player
         }
         this._broadcast({ t: 'msg', text: `${p.name} joined` }, p);
         break;
@@ -1797,6 +1841,45 @@ export class Room extends DurableObject {
         this._broadcast({ t: 'votes', tally });
         break;
       }
+      case 'bots': {
+        // the host (or an admin): how many players AI bots fill the match up to
+        if ((p.id !== this.hostId && !p.admin) || !BOT_FILLS.includes(m.n)) return;
+        this.botFill = m.n;
+        if (this.phase === 'playing') this._fillBots();
+        this._broadcast(this._lobby());
+        break;
+      }
+      // the host's game moves the bots: where they are now
+      case 'bs': {
+        if (p.id !== this.hostId || this.phase !== 'playing' || !Array.isArray(m.b)) return;
+        for (const row of m.b.slice(0, MAX_PLAYERS)) {
+          if (!Array.isArray(row) || row.length < 6 || !row.slice(0, 6).every(Number.isFinite)) continue;
+          const b = this.players.get(row[0]);
+          if (!b?.bot || !b.alive) continue;
+          b.pos = [row[1], row[2], row[3]].map((v) => Math.max(-500, Math.min(500, v)));
+          b.rot = [row[4], row[5]];
+          if (typeof row[6] === 'string' && row[6].length < 12) b.gun = row[6];
+          b.flags = Number.isInteger(row[7]) ? row[7] & 0xff : 0;
+        }
+        break;
+      }
+      // a bot shoots (the tracer) or hits someone
+      case 'bshot': {
+        const b = this.players.get(m.b);
+        if (p.id !== this.hostId || !b?.bot || !b.alive || this.phase !== 'playing') return;
+        const vec = (v) => (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) ? v.map((n) => Math.max(-600, Math.min(600, n))) : null);
+        const o = vec(m.o);
+        const e = vec(m.e);
+        this._dropSpawnShield(b);
+        if (o && e) this._broadcast({ t: 'shot', id: b.id, o, e, g: b.gun }, p);
+        break;
+      }
+      case 'bhit': {
+        const b = this.players.get(m.b);
+        if (p.id !== this.hostId || !b?.bot) return;
+        this._hit(b, { id: m.id, dmg: Math.min(Number(m.dmg) || 0, 60), head: !!m.head, melee: !!m.melee });
+        break;
+      }
       case 'open':
         // the host lets quick play drop strangers into this room (or not)
         if (p.id !== this.hostId) return;
@@ -1834,10 +1917,11 @@ export class Room extends DurableObject {
     }
     this._dropFlag(p);
     if (this.hostId === p.id) {
-      const next = [...this.players.values()].find((o) => o.joined);
+      const next = this._humans()[0];
       this.hostId = next ? next.id : 0;
     }
-    if (this.players.size === 0) {
+    if (![...this.players.values()].some((o) => !o.bot)) {
+      this._removeBots();
       this._stopTimer();
       this.phase = 'lobby';
       this.match = null;
@@ -1860,6 +1944,7 @@ export class Room extends DurableObject {
     }
     this._broadcast({ t: 'msg', text: `${p.name} left` });
     this._broadcast(this._lobby());
+    if (this.phase === 'playing') this._fillBots(); // a bot takes the empty spot
   }
 
   // co-op modes (everyone vs the zombies): the host runs the zombies, the server passes messages along
@@ -1990,6 +2075,7 @@ export class Room extends DurableObject {
     this._broadcast(this._lobby());
     this._broadcast(this._matchStart());
     for (const p of this.players.values()) if (p.joined) this._spawn(p);
+    this._fillBots();
     this._stopTimer();
     this.interval = setInterval(() => this._tick(), 66);
   }
@@ -2159,6 +2245,11 @@ export class Room extends DurableObject {
       if (!this._coop && p.alive && p.hp < this._maxHp(p) && now - (p.lastHurt || 0) > 5000) p.hp = Math.min(this._maxHp(p), p.hp + 8 * dt);
     }
 
+    // keep quick play's list of rooms fresh during a long match
+    if (now - (this.reportAt || 0) > 30000) {
+      this.reportAt = now;
+      this._report();
+    }
     this._tickDrops(now);
     if (MODES[this.mode].infection) this._tickInfection(now);
     if (MODES[this.mode].jugg) this._tickJugg(now);
@@ -2278,7 +2369,7 @@ export class Room extends DurableObject {
     if (this.reportT) return;
     this.reportT = setTimeout(() => {
       this.reportT = null;
-      const players = [...this.players.values()].filter((p) => p.joined).length;
+      const players = this._humans().length;
       this._db
         .fetch('https://db/api/internal/room', { method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ code: this.code, players, phase: this.phase, mode: this.mode, open: !!this.open }) })
         .catch(() => {});
@@ -2297,6 +2388,7 @@ export class Room extends DurableObject {
       if (this.phase !== 'ended') return;
       this.phase = 'lobby';
       this._applyVotes();
+      this._removeBots();
       for (const p of this.players.values()) p.alive = false;
       this._broadcast(this._lobby());
     }, 12000);
@@ -2344,6 +2436,7 @@ export class Room extends DurableObject {
       if (this.phase !== 'ended') return;
       this.phase = 'lobby';
       this._applyVotes();
+      this._removeBots();
       for (const p of this.players.values()) p.alive = false;
       this._broadcast(this._lobby());
     }, 12000);

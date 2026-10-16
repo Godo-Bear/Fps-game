@@ -202,6 +202,8 @@ Press Esc for the pause menu with **Resume** and **Exit**.
 - **Paid access (optional, $3 for every 6 months):** with Supabase set up, players sign up by email and you switch them on by setting `has_paid` to TRUE. Full step-by-step guide: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
 - **You need a free account to play** (username + password). PLAY asks you to sign up or log in first.
 - **You need an account to play** (no guests): the site opens on sign up / log in, and rooms refuse anyone without one.
+- **AI bots** (normal difficulty) fill PvP matches: quick join with nobody around starts a TDM against bots, and hosts can set bots in the lobby (0/2/4/6/8 players). The host's game moves the bots; the server keeps score as usual.
+- Rooms are **Private** (code only, the default) or **Public** (quick join can put anyone in).
 - **Settings → Gun position** moves your gun on screen (left/right, up/down, closer/further, or a preset).
 - Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).
 - **Friends**: add people by username, accept requests (a pop-up with ACCEPT / DECLINE appears when one comes in), see who's online with their level and best wave.

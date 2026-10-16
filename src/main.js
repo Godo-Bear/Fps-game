@@ -26,6 +26,7 @@ import { heightAt } from './terrain.js';
 import { Weapon } from './weapon.js';
 import { WEATHER, Weather } from './weather.js';
 import { buildWorld } from './world.js';
+import { Bots } from './bots.js';
 import { BOSSES, BOSS_IDS, ZOMBIE_TYPES, ZombieManager, bossForWave } from './zombies.js';
 
 // ---------------------------------------------------------------- setup
@@ -48,6 +49,7 @@ scene.add(camera);
 
 const audio = new GameAudio();
 const effects = new Effects(scene);
+const bots = new Bots();
 const player = new Player(camera);
 const weapon = new Weapon(camera, audio);
 weapon.resize(camera.aspect);
@@ -3354,8 +3356,13 @@ $('mp-quick').addEventListener('click', async () => {
   }
   let err = code ? await mp.join(code) : 'none';
   if (err) {
+    // nobody to join: a new public room with AI bots, straight into a match (people who quick join later take a bot's place)
     err = await mp.create();
-    if (!err) mp.send({ t: 'open', on: true });
+    if (!err) {
+      mp.send({ t: 'open', on: true });
+      mp.send({ t: 'bots', n: 6 });
+      mp.send({ t: 'start' });
+    }
   }
   $('mp-error').textContent = err || '';
 });
@@ -4123,6 +4130,11 @@ account.onUnread((now, before) => {
 });
 
 accountUI.adminActions = {
+  setBots(n) {
+    if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
+    mp.send({ t: 'bots', n });
+    return n ? `Bots fill this room up to ${n} players (in PvP modes).` : 'No bots in this room.';
+  },
   gunPresets: () => Object.entries(GUN_PRESETS).map(([id, p]) => [id, p[0]]),
   gunPreset: (id) => (setGunPreset(id) ? `Gun moved: ${GUN_PRESETS[id][0]}.` : 'Unknown spot.'),
   get god() {
@@ -4612,7 +4624,11 @@ function frame(now) {
     player.update(dt, world.colliders, stats, false, audio, 1, world.ladders);
   }
   if (isCoop() && ['playing', 'paused', 'choosing'].includes(game.state)) worldTick(dt);
-  if (game.mode === 'mp') mp.update(dt, time);
+  if (game.mode === 'mp') {
+    mp.update(dt, time);
+    // AI bots: the host's game moves them
+    bots.update(dt, { mp, world, player, effects, audio });
+  }
   const fov = inMenu() ? 75 : settings.fov + (weapon.def.zoomFov - 75) * weapon.ads;
   if (Math.abs(camera.fov - fov) > 0.01) {
     camera.fov = fov;
@@ -4703,6 +4719,7 @@ if (import.meta.env.DEV) {
     get savedGames() {
       return savedGames;
     },
+    bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio }); },
     game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

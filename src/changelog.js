@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.13', date: '16 Oct 2026', title: 'AI bots & private rooms',
+    items: [
+      'Quick join with nobody else online now drops you straight into a Team Deathmatch against AI bots (normal difficulty). Real players who quick join take a bot\'s place.',
+      'Room hosts can add AI bots to any PvP match: in the room lobby pick "Fill the match up to 2, 4, 6 or 8 players". Bots walk round walls, strafe, and shoot in bursts.',
+      'Rooms can be Public or Private. Private rooms (the default when you make one) can only be joined with the code; quick join never puts strangers in them.',
+      'Admin: Multiplayer tab can set the bots in any room you are in, even if you are not the host.',
+    ],
+  },
+  {
     v: '5.12', date: '16 Oct 2026', title: 'Announcements for everyone & longer names',
     items: [
       'Admin announcements now reach every player, whatever room they are in (or on the menu), and stay on screen until they press OK.',

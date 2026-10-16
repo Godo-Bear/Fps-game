@@ -1340,6 +1340,9 @@ export class AccountUI {
       <div class="acard"><h4>📢 Room</h4>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
       </div>
+      <div class="acard"><h4>🤖 AI bots in this room <span class="muted small">(PvP modes; they fill empty spots)</span></h4>
+      <div class="gun-presets">${[0, 2, 4, 6, 8].map((n) => `<button class="chipbtn" data-abots="${n}" ${mp ? '' : 'disabled'}>${n ? `Up to ${n}` : 'No bots'}</button>`).join('')}</div>
+      </div>
       <div class="acard"><h4>👥 Teams in this room</h4>
       <div id="admin-teams" class="admin-players"></div>
       </div>
@@ -1436,6 +1439,7 @@ export class AccountUI {
       }, (err) => msg(err.message));
     });
     document.getElementById('admin-announce-clear').onclick = () => a.adminAnnounce({ action: 'clear' }).then((r) => msg(r.note), (err) => msg(err.message));
+    for (const b of this.body.querySelectorAll('[data-abots]')) b.onclick = () => msg(act.setBots(Number(b.dataset.abots)));
     for (const b of this.body.querySelectorAll('[data-agun]')) b.onclick = () => msg(act.gunPreset(b.dataset.agun));
     document.getElementById('admin-night').onchange = (e) => msg(act.setNightMode(e.target.value));
     document.getElementById('admin-map').onchange = (e) => msg(act.setSoloMap(e.target.value));
