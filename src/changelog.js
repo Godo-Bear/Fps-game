@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.18', date: '17 Oct 2026', title: 'Coming soon',
+    items: [
+      'The Updates page has a new COMING SOON tab: see what\'s being worked on next, like Be the Zombie, Prop Hunt, Extraction, a Story Campaign, a Halloween event, pets and more.',
+      'Admin: add, edit or remove Coming soon entries right on that tab.',
+    ],
+  },
+  {
     v: '5.17', date: '17 Oct 2026', title: 'Zombie outfits',
     items: [
       'Zombies wear all sorts now, not just a shirt and tie: t-shirts, tank tops, hoodies, no shirt at all, sports kit with shorts, hospital scrubs, police uniforms and hi-vis work gear.',
@@ -394,3 +401,74 @@ export const CHANGELOG = [
 ];
 
 export const LATEST_VERSION = CHANGELOG[0].v;
+
+// What's being worked on, shown on the Updates page's "Coming soon" tab. No release dates on purpose.
+// Move an entry into CHANGELOG (and delete it here) when it ships.
+export const UPCOMING = [
+  {
+    v: 'soon-story', title: '📖 Story Campaign',
+    items: [
+      'Chapters that tell how the outbreak started, from Day 1 onwards, with missions, objectives and a boss at the end of each chapter.',
+      'It all comes together with the new modes below as one big update.',
+    ],
+  },
+  {
+    v: 'soon-bezombie', title: '🧟 Be the Zombie (solo)',
+    items: [
+      'Play as a zombie and stay away from the hunters patrolling with flashlights and guns.',
+      'Zombie powers: pounce, a stunning scream, climbing and smelling hunters through walls.',
+      'Every hunter you catch joins your horde. Turn them all to win.',
+    ],
+  },
+  {
+    v: 'soon-prophunt', title: '📦 Prop Hunt',
+    items: ['One team hides as barrels, cars and crates. The other team has to find them before time runs out.'],
+  },
+  {
+    v: 'soon-extract', title: '🚁 Extraction',
+    items: ['Drop into a big map, grab loot and reach the helicopter before the horde overruns you. Die and you lose what you were carrying.'],
+  },
+  {
+    v: 'soon-lastone', title: '🎯 Last One Standing',
+    items: ['Battle royale with bots: the safe zone shrinks and zombies flood in behind it. Be the last one alive.'],
+  },
+  {
+    v: 'soon-halloween', title: '🎃 Halloween Event',
+    items: ['A pumpkin-head zombie boss, a foggy night map, candy to collect for limited-time skins, and jack-o\'-lanterns on the zombies.'],
+  },
+  {
+    v: 'soon-challenges', title: '🏅 Weekly Challenges',
+    items: ['Bigger challenges on top of the daily quests, like "50 headshots" or "win 3 Gun Game matches", for skins and XP.'],
+  },
+  {
+    v: 'soon-season', title: '🎟️ Season Pass',
+    items: ['Level up through each season to unlock rewards, with a free track and a premium track.'],
+  },
+  {
+    v: 'soon-creator', title: '👕 Character Creator',
+    items: ['Make your own look: outfits, hats and colours for your character.'],
+  },
+  {
+    v: 'soon-ranked', title: '🏆 Ranked PvP',
+    items: ['Ranked matches from Bronze to Diamond, with your rank shown next to your name and a ranked leaderboard.'],
+  },
+  {
+    v: 'soon-pets', title: '🐺 Pets with Powers',
+    items: [
+      'A companion that fights by your side and levels up, starting with a wolf.',
+      'Zombies get pets too, and both have their own special powers.',
+    ],
+  },
+  {
+    v: 'soon-vehicles', title: '🚚 Vehicles',
+    items: ['Drive a truck through the horde while a friend shoots from the back. Only in certain rounds, so they don\'t get too powerful.'],
+  },
+  {
+    v: 'soon-killcam', title: '🎬 Replays & Clips',
+    items: ['Replay how your kills happened from their point of view, and save and share your best moments as clips.'],
+  },
+  {
+    v: 'soon-clans', title: '🛡️ Clans (maybe)',
+    items: ['Clan tags, clan chat and clan wars. Still deciding on this one.'],
+  },
+];

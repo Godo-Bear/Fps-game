@@ -9,7 +9,7 @@ import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
-import { CHANGELOG, LATEST_VERSION } from './changelog.js';
+import { CHANGELOG, LATEST_VERSION, UPCOMING } from './changelog.js';
 import { DefendPoints } from './defend.js';
 import { Structures } from './structures.js';
 import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
@@ -3110,9 +3110,12 @@ function renderUpdatesBadge() {
 let updatesExtra = { edits: {}, hidden: [], added: [] };
 let showRemovedUpdates = false;
 let editingUpdate = null; // version being edited, or 'new'
-function mergedUpdates() {
-  const built = CHANGELOG.map((u) => ({ ...u, ...(updatesExtra.edits[u.v] || {}), builtIn: true }));
-  return [...updatesExtra.added.map((u) => ({ ...u, added: true })), ...built].map((u) => ({ ...u, hidden: updatesExtra.hidden.includes(u.v) }));
+let updatesTab = 'new'; // 'new' = what's changed, 'soon' = what's coming (no dates)
+function mergedUpdates(tab = 'new') {
+  const soon = tab === 'soon';
+  const built = (soon ? UPCOMING : CHANGELOG).map((u) => ({ ...u, ...(updatesExtra.edits[u.v] || {}), builtIn: true }));
+  const added = updatesExtra.added.filter((u) => (u.list === 'soon') === soon).map((u) => ({ ...u, added: true }));
+  return [...added, ...built].map((u) => ({ ...u, soon, hidden: updatesExtra.hidden.includes(u.v) }));
 }
 const latestUpdate = () => mergedUpdates().find((u) => !u.hidden)?.v || LATEST_VERSION;
 async function loadUpdates() {
@@ -3126,26 +3129,30 @@ async function loadUpdates() {
 function updateForm(u) {
   return `<form class="u-edit" data-uform="${esc(u?.v || 'new')}">
     <input name="title" maxlength="120" placeholder="Title" value="${esc(u?.title || '')}" required />
-    <input name="date" maxlength="40" placeholder="Date (e.g. 16 Oct 2026)" value="${esc(u?.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}" />
+    ${updatesTab === 'soon' ? '' : `<input name="date" maxlength="40" placeholder="Date (e.g. 16 Oct 2026)" value="${esc(u?.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}" />`}
     <textarea name="items" rows="5" placeholder="One change per line">${esc((u?.items || []).join('\n'))}</textarea>
     <div class="u-actions"><button class="btn small">SAVE</button><button type="button" class="btn small ghost" data-ucancel>CANCEL</button></div>
   </form>`;
 }
 function renderUpdates() {
   const admin = account.admin;
-  const list = mergedUpdates().filter((u) => !u.hidden || (admin && showRemovedUpdates));
-  const firstShown = list.find((u) => !u.hidden);
+  const soon = updatesTab === 'soon';
+  for (const b of document.querySelectorAll('#updates-tabs [data-utab]')) b.classList.toggle('active', b.dataset.utab === updatesTab);
+  const list = mergedUpdates(updatesTab).filter((u) => !u.hidden || (admin && showRemovedUpdates));
+  const firstShown = soon ? null : list.find((u) => !u.hidden);
+  const removed = mergedUpdates(updatesTab).filter((u) => u.hidden).length;
   const tools = (u) =>
     admin
       ? `<span class="u-tools">${u.hidden ? `<button data-uact="restore" data-v="${esc(u.v)}">BRING BACK</button>` : `<button data-uact="edit" data-v="${esc(u.v)}">EDIT</button>${u.added ? `<button data-uact="delete" data-v="${esc(u.v)}" class="bad">DELETE</button>` : `<button data-uact="remove" data-v="${esc(u.v)}" class="bad">REMOVE</button>`}`}</span>`
       : '';
-  $('updates-list').innerHTML = `${admin ? `<div class="u-admin">⭐ <button class="btn small" data-uact="add">+ ADD UPDATE</button><label class="muted small"><input type="checkbox" id="u-show-removed" ${showRemovedUpdates ? 'checked' : ''} /> Show removed (${updatesExtra.hidden.length})</label></div>${editingUpdate === 'new' ? updateForm(null) : ''}` : ''}
+  $('updates-list').innerHTML = `${admin ? `<div class="u-admin">⭐ <button class="btn small" data-uact="add">${soon ? '+ ADD COMING SOON' : '+ ADD UPDATE'}</button><label class="muted small"><input type="checkbox" id="u-show-removed" ${showRemovedUpdates ? 'checked' : ''} /> Show removed (${removed})</label></div>${editingUpdate === 'new' ? updateForm(null) : ''}` : ''}
+    ${soon ? '<p class="muted small soon-note">What we\'re working on next. No release dates yet: they\'ll show up under What\'s new when they\'re ready.</p>' : ''}
     ${list
       .map((u) =>
         editingUpdate === u.v
           ? updateForm(u)
           : `<div class="update ${u === firstShown ? 'latest' : ''} ${u.hidden ? 'u-hidden' : ''}">
-        <div class="u-head"><b>${esc(u.title)}</b><span class="muted small">${u.added ? '' : `v${esc(u.v)} · `}${esc(u.date || '')}${u.hidden ? ' · removed' : ''}</span>${tools(u)}</div>
+        <div class="u-head"><b>${esc(u.title)}</b><span class="muted small">${u.soon ? '<span class="soon-tag">COMING SOON</span>' : `${u.added ? '' : `v${esc(u.v)} · `}${esc(u.date || '')}`}${u.hidden ? ' · removed' : ''}</span>${tools(u)}</div>
         <ul>${(u.items || []).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
       </div>`,
       )
@@ -3171,6 +3178,13 @@ $('updates-list').addEventListener('click', async (e) => {
   }
   renderUpdates();
 });
+$('updates-tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-utab]');
+  if (!b) return;
+  updatesTab = b.dataset.utab;
+  editingUpdate = null;
+  renderUpdates();
+});
 $('updates-list').addEventListener('change', (e) => {
   if (e.target.id !== 'u-show-removed') return;
   showRemovedUpdates = e.target.checked;
@@ -3184,7 +3198,7 @@ $('updates-list').addEventListener('submit', async (e) => {
   const entry = { title: d.get('title'), date: d.get('date'), items: String(d.get('items') || '').split('\n') };
   const v = f.dataset.uform;
   try {
-    updatesExtra = await account.adminUpdates(v === 'new' ? { action: 'add', entry } : { action: 'edit', v, entry });
+    updatesExtra = await account.adminUpdates(v === 'new' ? { action: 'add', entry, list: updatesTab } : { action: 'edit', v, entry });
     editingUpdate = null;
   } catch (err) {
     subBanner(err.message, 2);

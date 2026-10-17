@@ -21,3 +21,8 @@ The owner may ask for these steps again; give them like this:
 Tips: keep files under ~5 MB (GitHub's website refuses over 25 MB); everything in `public` is downloadable by anyone;
 free models: Sketchfab / Poly Pizza (download as glTF/.glb, check the licence).
 Before your next push after an upload: `git fetch origin main` and merge it so the owner's files aren't lost.
+
+## Plans
+- The "Coming soon" tab lists planned updates (`UPCOMING` in `src/changelog.js`, no dates). When one ships, move it into
+  `CHANGELOG`. The Story Campaign is meant to ship together with the new modes as one big update.
+- The owner has downloaded a wolf companion model for the pets update (not uploaded yet). Vehicles only in certain rounds.

@@ -981,7 +981,8 @@ export class GameDB extends DurableObject {
         delete u.edits[v];
       } else if (body.action === 'add') {
         if (u.added.length >= 100) return err('Too many added updates');
-        u.added.unshift({ v: `n${Date.now().toString(36)}`, ...clean(body.entry) });
+        // list 'soon' = the Coming soon tab
+        u.added.unshift({ v: `n${Date.now().toString(36)}`, ...clean(body.entry), ...(body.list === 'soon' ? { list: 'soon' } : {}) });
       } else if (body.action === 'delete') {
         // an update an admin added: gone for good
         u.added = u.added.filter((a) => a.v !== v);

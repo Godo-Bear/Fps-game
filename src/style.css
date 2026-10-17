@@ -2235,6 +2235,18 @@ body.touch-mode #emotes .w-pointer {
 .update li {
   margin: 2px 0;
 }
+.updates-tabs {
+  justify-content: center;
+}
+.soon-note {
+  text-align: center;
+  margin: 0 0 10px;
+}
+.soon-tag {
+  color: #8fd3ff;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
 
 /* ---- quick chat */
 .quick-chat {
