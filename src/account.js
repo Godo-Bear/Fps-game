@@ -1263,6 +1263,7 @@ export class AccountUI {
     <section class="asec" data-sec="game">
       ${solo || mp ? '' : '<p class="muted small">Most of these need a game running (solo, or a co-op room you host): start one, then press F2.</p>'}
       <div class="acard"><h4>🧟 Zombie look <span class="muted small">(yours; new zombies change)</span></h4>
+        <div class="admin-grid"><button class="btn small ghost" data-run="lineup" ${solo || mp ? '' : 'disabled'}>👀 SPAWN ONE OF EVERY KIND</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-zmodel">${act?.zombieModels?.() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL'}</button></div></div>
       <div class="acard"><h4>🔫 Gun position <span class="muted small">(yours; everyone can change theirs in Settings)</span></h4>
         <div class="gun-presets">${(act?.gunPresets?.() || []).map(([id, n]) => `<button class="chipbtn" data-agun="${id}">${n}</button>`).join('')}</div></div>

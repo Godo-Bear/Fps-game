@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.16', date: '17 Oct 2026', title: 'No two zombies alike',
+    items: [
+      'Every zombie now looks different: its own skin colour, shirt and trousers, height and build, and a hunched or upright, tilted, faster or slower shuffle.',
+      'Some wear hard hats, police caps, beanies, bandanas, headphones or backpacks.',
+      'You can tell the dangerous ones apart: runners have red eyes and a sweatband and kick up dust; brutes wear armour and have orange eyes; spitters have a glowing throat sac; mutated zombies and bloaters are covered in glowing green boils; bosses have spikes down their backs.',
+      'Admin: Game tab button to spawn one of every kind of zombie.',
+    ],
+  },
+  {
     v: '5.15', date: '17 Oct 2026', title: 'A second zombie model',
     items: [
       'A second kind of zombie model joins the horde, so not every zombie looks the same.',

@@ -4308,6 +4308,13 @@ accountUI.adminActions = {
         game.toSpawn = 0;
         game.bossToSpawn = 0;
         return 'All zombies killed (wave ends).';
+      case 'lineup': {
+        // one of every kind (and a mutated one), to see all the different looks
+        for (const t of ['walker', 'runner', 'brute', 'crawler', 'spitter', 'bloater']) zombies.spawn(t, Math.max(1, game.wave), player.pos, false);
+        zombies.spawn('walker', Math.max(1, game.wave), player.pos, true);
+        if (game.phase !== 'active') game.phase = 'active';
+        return 'Spawned one of every kind of zombie (and a mutated one).';
+      }
       case 'spawn': {
         for (let i = 0; i < 5; i++) zombies.spawn(value, Math.max(1, game.wave), player.pos, false);
         if (game.phase !== 'active') game.phase = 'active';

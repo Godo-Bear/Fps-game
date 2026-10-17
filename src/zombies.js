@@ -131,6 +131,7 @@ class Zombie {
     const goreMat = new THREE.MeshStandardMaterial({ color: 0x4a0d0a, roughness: 0.6 });
     const glowMat = new THREE.MeshStandardMaterial({ color: 0x9dff4a, emissive: 0x4a9a10, roughness: 0.4 });
     this.mats.push(eyeMat, goreMat, glowMat);
+    this.bossEyes = BV ? BV.eyes : null;
     this.goreMat = goreMat;
 
     const root = (this.root = new THREE.Group());
@@ -772,6 +773,8 @@ export class ZombieManager {
       }
       if (z.jaw.parent) z.jaw.position.y = -0.12 - Math.abs(Math.sin(z.phase * 1.7)) * 0.04;
       animateZombieModel(z, dt, { moving, speed: z.speed * speedMul, attacking: z.windup > 0 && !T.bloated });
+      // runners kick up dust: you can see the fast ones coming
+      if (z.typeId === 'runner' && moving && Math.random() < dt * 7) this.effects.dust(new THREE.Vector3(rp.x + rand(-0.3, 0.3), rp.y + 0.1, rp.z + rand(-0.3, 0.3)));
 
       z.groanT -= dt;
       if (z.groanT <= 0) {
