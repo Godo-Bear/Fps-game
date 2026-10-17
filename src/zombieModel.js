@@ -7,7 +7,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 // Each model and which of its animations to use. walk/run: how many metres a second the clip covers.
 const MODELS = [
   {
-    url: '/models/Zombie by bachosoftdesign - xqEzosAVYX.glb',
+    url: '/models/Zombie by bachosoftdesign - xqEzosAVYX.glb', tie: true,
     walk: ['Walk', 'Walk2'], walkSpeed: 1.3, run: null, idle: ['Idle'], attack: ['Attack', 'Attack', 'Headbutt'],
     crawl: ['Running_Crawl'], crawlIdle: ['Crawl'], crawlAttack: ['Bite_ground'], die: ['Die', 'Die2'],
   },
@@ -27,9 +27,35 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const rand = (a, b) => a + Math.random() * (b - a);
 // skin: [hue (null keeps it), saturation x, brightness x]
 const SKINS = [[null, 1, 1], [null, 0.15, 0.95], [55, 0.45, 1.08], [78, 1.35, 0.78], [195, 0.55, 0.95], [110, 1.15, 0.72], [35, 0.7, 0.85]];
-const SHIRTS = [0xffffff, 0xd8d0c0, 0x9a3a32, 0x3a5a8a, 0x4a6a3a, 0x6a5a8a, 0xb08a4a, 0x555555, 0xc8a0a0, 0x2a3a3a];
-const PANTS = [0x3a4a7a, 0x3a3228, 0x2a2a2a, 0x5a4a32, 0x4a5a3a, 0x6a6a6a, 0x2a3450];
-const VARIANTS = 10; // different colourings made per model
+const VARIANTS = 16; // different looks made per model
+const JEANS = [0x3a4a7a, 0x2a3450, 0x4a5a8a];
+// Outfits: which bits of the clothes become bare skin, whether the tie stays, the colours, and a hat that goes with it.
+// tie: keep the tie; sleeves: 'short' (bare forearms) or 'none' (bare arms); bare: no shirt at all; shorts: bare lower legs
+const OUTFITS = [
+  { id: 'office', w: 2, tie: true, shirts: [0xffffff, 0xd8e4f0, 0xf0d8d8, 0xd8d0c0], pants: [0x2a2a2a, 0x2a3450, 0x3a3228, 0x555555] },
+  { id: 'tshirt', w: 4, sleeves: 'short', shirts: [0xb02a2a, 0x2a4ab0, 0x2a7a3a, 0xd8c040, 0x222222, 0x6a3a8a, 0xd86a20, 0xeeeeee], pants: [...JEANS, 0x8a7a5a, 0x3a3228] },
+  { id: 'tank', w: 2, sleeves: 'none', shirts: [0xeeeeee, 0x555555, 0x222222, 0x9a2a2a], pants: [...JEANS, 0x4a5a3a, 0x8a7a5a] },
+  { id: 'shirtless', w: 1.5, bare: true, shirts: [0xffffff], pants: [...JEANS, 0x3a3228, 0x4a5a3a] },
+  { id: 'hoodie', w: 2.5, shirts: [0x555555, 0x222222, 0x1c2a4a, 0x6a1c24, 0x2a4a2a, 0xb06a8a], pants: [0x444444, 0x222222, ...JEANS] },
+  { id: 'police', w: 1, shirts: [0x1c2a4a], pants: [0x1c2a4a], hat: 'police' },
+  { id: 'worker', w: 1.2, sleeves: 'short', shirts: [0xff7a1a, 0xe8e020], pants: [0x2a3450, 0x3a4a7a], hat: 'hardhat' },
+  { id: 'hospital', w: 1, sleeves: 'short', shirts: [0x9ec8e0, 0xa0d8c0, 0xeeeeee], same: true }, // scrubs: trousers match
+  { id: 'sports', w: 1.5, sleeves: 'short', shorts: true, shirts: [0xd82a2a, 0x2a6ad8, 0xeeeeee, 0x2ab06a, 0xf0c020], pants: [0x222222, 0x1c2a4a, 0xeeeeee] },
+];
+function pickOutfit() {
+  let n = Math.random() * OUTFITS.reduce((a, o) => a + o.w, 0);
+  for (const o of OUTFITS) if ((n -= o.w) <= 0) return o;
+  return OUTFITS[0];
+}
+// what a colour on the chart is: 'skin', 'shirt', 'pants', 'red' (tie / blood) or null
+function colourKind(r, g, b) {
+  const [h, sat, v] = rgbToHsv(r, g, b);
+  if (h >= 35 && h <= 170 && sat >= 0.08 && sat <= 0.7 && v > 0.2) return 'skin';
+  if (v > 0.72 && sat < 0.25) return 'shirt';
+  if ((h >= 190 && h <= 260 && sat > 0.25) || (h >= 10 && h < 35 && sat > 0.3 && v < 0.38)) return 'pants';
+  if ((h < 15 || h > 340) && sat > 0.5) return 'red';
+  return null;
+}
 
 function rgbToHsv(r, g, b) {
   const max = Math.max(r, g, b);
@@ -87,16 +113,91 @@ function recolour(base, skin, shirt, pants) {
   tex.minFilter = size <= 64 ? THREE.NearestFilter : base.minFilter;
   return tex;
 }
-function variantsFor(template, baseMap) {
-  if (!template.variants) {
-    template.variants = [baseMap];
+// Which colour each point of the model is painted with, and which bone it moves with.
+// Then an outfit just points some of those at the skin colour instead (bare arms, no shirt, shorts)
+// or at the shirt colour (no tie).
+function analyse(template, mesh) {
+  const img = mesh.material.map.image;
+  const size = Math.min(256, img.width);
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0, size, size);
+  const px = g.getImageData(0, 0, size, size).data;
+  const geo = mesh.geometry;
+  const uv = geo.attributes.uv;
+  const si = geo.attributes.skinIndex;
+  const sw = geo.attributes.skinWeight;
+  const names = mesh.skeleton.bones.map((b) => b.name.replace(/^mixamorig:?/, ''));
+  const kinds = [];
+  const parts = [];
+  let skinUv = null;
+  let shirtUv = null;
+  for (let i = 0; i < uv.count; i++) {
+    const u = ((uv.getX(i) % 1) + 1) % 1;
+    const v = ((uv.getY(i) % 1) + 1) % 1;
+    const o = (Math.min(size - 1, Math.floor(v * size)) * size + Math.min(size - 1, Math.floor(u * size))) * 4;
+    const kind = colourKind(px[o] / 255, px[o + 1] / 255, px[o + 2] / 255);
+    let best = 0;
+    let bw = -1;
+    for (let k = 0; k < 4; k++) {
+      const w = sw.getComponent(i, k);
+      if (w > bw) (bw = w), (best = si.getComponent(i, k));
+    }
+    const n = names[best] || '';
+    const part = /ForeArm|Hand/.test(n) ? 'forearm' : /Arm|Shoulder/.test(n) ? 'arm' : /Spine|Neck/.test(n) ? 'torso' : /UpLeg/.test(n) ? 'thigh' : /Leg|Foot|Toe/.test(n) ? 'shin' : /Head/.test(n) ? 'head' : 'hips';
+    kinds.push(kind);
+    parts.push(part);
+    if (kind === 'skin' && part === 'head' && !skinUv) skinUv = [uv.getX(i), uv.getY(i)];
+    if (kind === 'shirt' && part === 'torso' && !shirtUv) shirtUv = [uv.getX(i), uv.getY(i)];
+  }
+  template.paint = { kinds, parts, skinUv, shirtUv, geometries: {} };
+}
+// the model's shape with one outfit's colouring (shared by every zombie wearing it)
+function outfitGeometry(template, mesh, outfit) {
+  const P = template.paint;
+  if (P.geometries[outfit.id]) return P.geometries[outfit.id];
+  const base = mesh.geometry;
+  if (!P.skinUv || !P.shirtUv) return base;
+  const uv = base.attributes.uv.clone();
+  for (let i = 0; i < uv.count; i++) {
+    const kind = P.kinds[i];
+    const part = P.parts[i];
+    let to = null;
+    if (kind === 'shirt') {
+      if (outfit.bare && (part === 'torso' || part === 'arm' || part === 'forearm' || part === 'hips')) to = P.skinUv;
+      else if (outfit.sleeves === 'none' && (part === 'arm' || part === 'forearm')) to = P.skinUv;
+      else if (outfit.sleeves === 'short' && part === 'forearm') to = P.skinUv;
+    } else if (kind === 'red' && part === 'torso' && template.def.tie && !outfit.tie) to = outfit.bare ? P.skinUv : P.shirtUv;
+    else if (kind === 'pants' && outfit.shorts && part === 'shin') to = P.skinUv;
+    if (to) uv.setXY(i, to[0], to[1]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(base.index);
+  for (const [name, attr] of Object.entries(base.attributes)) geo.setAttribute(name, attr);
+  geo.setAttribute('uv', uv);
+  geo.groups = base.groups;
+  geo.boundingBox = base.boundingBox;
+  geo.boundingSphere = base.boundingSphere;
+  P.geometries[outfit.id] = geo;
+  return geo;
+}
+// a set of looks per model: an outfit (its shape) and its colours (skin, shirt, trousers)
+function looksFor(template, mesh) {
+  if (!template.looks) {
+    template.looks = [{ outfit: OUTFITS[0], geo: mesh.geometry, map: mesh.material.map }];
     try {
-      for (let i = 1; i < VARIANTS; i++) template.variants.push(recolour(baseMap, pick(SKINS), pick(SHIRTS), pick(PANTS)));
+      analyse(template, mesh);
+      for (let i = 1; i < VARIANTS; i++) {
+        const outfit = pickOutfit();
+        const shirt = pick(outfit.shirts);
+        template.looks.push({ outfit, geo: outfitGeometry(template, mesh, outfit), map: recolour(mesh.material.map, pick(SKINS), shirt, outfit.same ? shirt : pick(outfit.pants)) });
+      }
     } catch {
-      /* no canvas: everyone keeps the original colours */
+      /* no canvas: everyone keeps the original look */
     }
   }
-  return template.variants;
+  return template.looks;
 }
 
 // gear: small shapes on the head and back
@@ -192,9 +293,11 @@ export function attachZombieModel(z) {
   model.scale.set(template.scale * w, template.scale * h, template.scale * w);
   model.position.set(template.offset.x * w, template.offset.y * h, template.offset.z * w);
   let mat = null;
+  let skinned = null;
   const bones = {};
   model.traverse((o) => {
     if (o.isMesh) {
+      if (!mat) skinned = o;
       mat = mat || o.material.clone();
       o.material = mat;
     }
@@ -205,8 +308,18 @@ export function attachZombieModel(z) {
   });
   const head = bones.Head;
   const BV = z.variant;
-  // its own skin and clothes colours (bosses keep their own colour)
-  if (mat.map && !BV) mat.map = pick(variantsFor(template, mat.map));
+  // its own outfit and colours (bosses keep their own look)
+  let outfit = null;
+  if (mat.map && !BV) {
+    let src = null;
+    template.scene.traverse((o) => {
+      if (o.isSkinnedMesh && !src) src = o;
+    });
+    const look = pick(looksFor(template, src));
+    outfit = look.outfit;
+    mat.map = look.map;
+    if (skinned && look.geo) skinned.geometry = look.geo;
+  }
   mat.color.setHex(BV ? z.skinMat.color.getHex() : TINT[z.typeId] ?? 0xffffff);
   if (BV) mat.color.lerp(new THREE.Color(0xffffff), 0.45);
   mat.emissive = new THREE.Color(z.baseEmissive);
@@ -246,7 +359,7 @@ export function attachZombieModel(z) {
     tilt: crawl ? 0 : rand(-0.3, 0.3),
     tempo: rand(0.85, 1.15),
   };
-  z.model = { root: model, mixer, anims, current: null, head, bones, pose, stride: running ? def.runSpeed : def.walkSpeed };
+  z.model = { root: model, mixer, anims, current: null, head, bones, pose, outfit, stride: running ? def.runSpeed : def.walkSpeed };
   play(z, 'idle', 0);
   mixer.update(Math.random() * 2); // not everyone in step
   dressUp(z, bones);
@@ -352,7 +465,12 @@ function dressUp(z, b) {
       },
     );
   }
-  if (hats.length && Math.random() < 0.55) {
+  // police wear their caps and workers their hard hats; everyone else maybe something random
+  const outfitHat = { police: 1, hardhat: 0 }[z.model.outfit?.hat];
+  if (hats.length && outfitHat !== undefined && Math.random() < 0.8) {
+    const [hat, y] = hats[outfitHat]();
+    onHead(hat, y);
+  } else if (hats.length && Math.random() < 0.45) {
     const [hat, y] = pick(hats)();
     onHead(hat, y);
   }

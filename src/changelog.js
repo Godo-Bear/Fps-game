@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.17', date: '17 Oct 2026', title: 'Zombie outfits',
+    items: [
+      'Zombies wear all sorts now, not just a shirt and tie: t-shirts, tank tops, hoodies, no shirt at all, sports kit with shorts, hospital scrubs, police uniforms and hi-vis work gear.',
+      'Only office workers still wear a tie. Police zombies usually have their cap on, and workers their hard hat.',
+    ],
+  },
+  {
     v: '5.16', date: '17 Oct 2026', title: 'No two zombies alike',
     items: [
       'Every zombie now looks different: its own skin colour, shirt and trousers, height and build, and a hunched or upright, tilted, faster or slower shuffle.',
