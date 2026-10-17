@@ -2,6 +2,16 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.14', date: '17 Oct 2026', title: 'New zombie models',
+    items: [
+      'Zombies now use a proper 3D model with real animations: they shamble, crawl, lunge to attack, and fall when they die. Headshot kills still take the head off.',
+      'Each kind of zombie keeps its own size and a slightly different colour, so you can still tell runners, brutes, spitters and bloaters apart.',
+      'Slow computer? Settings → Show all settings → turn off "3D zombie models" to get the old block zombies back.',
+      'Admin: the Game tab can switch between the 3D model and the old blocks.',
+      'Zombie model by bachosoftdesign.',
+    ],
+  },
+  {
     v: '5.13', date: '16 Oct 2026', title: 'AI bots & private rooms',
     items: [
       'Quick join with nobody else online now drops you straight into a Team Deathmatch against AI bots (normal difficulty). Real players who quick join take a bot\'s place.',

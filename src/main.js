@@ -27,6 +27,7 @@ import { Weapon } from './weapon.js';
 import { WEATHER, Weather } from './weather.js';
 import { buildWorld } from './world.js';
 import { Bots } from './bots.js';
+import { loadZombieModel, setZombieModels } from './zombieModel.js';
 import { BOSSES, BOSS_IDS, ZOMBIE_TYPES, ZombieManager, bossForWave } from './zombies.js';
 
 // ---------------------------------------------------------------- setup
@@ -3893,6 +3894,7 @@ const DEFAULT_SETTINGS = {
   hudScale: 1, crosshairSize: 1, minimap: true, chat: true, hitmarkers: true, shake: 1, bob: true, toggleAim: false, bubbles: true, flashlight: true,
   // where the gun sits on screen (0 = the normal spot)
   gunX: 0, gunY: 0, gunZ: 0,
+  zombieModels: true,
 };
 const settings = { ...DEFAULT_SETTINGS };
 try {
@@ -3924,6 +3926,7 @@ function applySettings() {
   player.shakeMul = settings.shake;
   player.bobMul = settings.bob ? 1 : 0;
   mp.showBubbles = settings.bubbles;
+  setZombieModels(settings.zombieModels);
   weapon.offset.x = settings.gunX;
   weapon.offset.y = settings.gunY;
   weapon.offset.z = -settings.gunZ;
@@ -3971,6 +3974,7 @@ const MORE_SETTING_ROWS = [
   ['bob', 'View bob when walking', 'check'],
   ['bubbles', "Show other players' quick chat over their heads", 'check'],
   ['flashlight', 'Flashlight at night', 'check'],
+  ['zombieModels', '3D zombie models (turn off on a slow computer for the old block zombies)', 'check'],
 ];
 const ALL_SETTING_ROWS = [...SETTING_ROWS, ...GUN_ROWS, ...MORE_SETTING_ROWS];
 let showAllSettings = false;
@@ -4130,6 +4134,12 @@ account.onUnread((now, before) => {
 });
 
 accountUI.adminActions = {
+  zombieModels: () => settings.zombieModels,
+  toggleZombieModels() {
+    settings.zombieModels = !settings.zombieModels;
+    applySettings();
+    return settings.zombieModels ? 'New zombies use the 3D model.' : 'New zombies use the old blocks.';
+  },
   setBots(n) {
     if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
     mp.send({ t: 'bots', n });
@@ -4682,6 +4692,8 @@ account.onAnnounce = (a, seen) => {
   };
 };
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && account.pollUnread());
+// the zombie model from public/models (the block zombies are used until it has loaded)
+loadZombieModel();
 // no guests: straight to sign up / log in when you open the site without an account
 account.init().then(() => needAccount());
 requestAnimationFrame(frame);

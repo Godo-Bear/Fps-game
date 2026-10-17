@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ARENA_RADIUS, heightAt } from './terrain.js';
+import { animateZombieModel, attachZombieModel, decapitateZombieModel } from './zombieModel.js';
 
 // Boss waves (every 5th) bring one of these. Each has its own trick.
 export const BOSSES = {
@@ -249,6 +250,8 @@ class Zombie {
         upper.add(spike);
       }
     }
+    // the 3D zombie model (if it's loaded and switched on); the blocks above become invisible hitboxes
+    attachZombieModel(this);
   }
 
   get alive() {
@@ -385,6 +388,11 @@ export class ZombieManager {
     head.position.copy(pos);
     head.quaternion.copy(quat);
     head.scale.setScalar(z.scale);
+    if (z.model) {
+      // the model loses its head; the flying head is the block one, shown again
+      head.traverse((o) => (o.visible = true));
+      decapitateZombieModel(z);
+    }
     this.scene.add(head);
     const v = new THREE.Vector3(rand(-1, 1), rand(3, 5), rand(-1, 1));
     if (dir) v.addScaledVector(dir, 4);
@@ -392,6 +400,7 @@ export class ZombieManager {
     // stump
     const neck = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.2), z.goreMat);
     neck.position.set(0, 0.76, 0);
+    neck.visible = !z.model;
     z.upper.add(neck);
     z.neckSpray = 0.7;
     this.audio.splat?.();
@@ -528,6 +537,7 @@ export class ZombieManager {
         const k = Math.min(1, z.riseT / 1.1);
         rp.y = ground - (1 - k) * 2 * z.scale;
         z.body.rotation.x = (1 - k) * 0.5;
+        animateZombieModel(z, dt);
         if (Math.random() < dt * 14) this.effects.dust(new THREE.Vector3(rp.x + rand(-0.5, 0.5), ground + 0.1, rp.z + rand(-0.5, 0.5)));
         if (k >= 1) z.state = 'alive';
         continue;
@@ -536,16 +546,19 @@ export class ZombieManager {
       if (z.state === 'dead') {
         z.deadT += dt;
         const k = Math.min(1, z.deadT / 0.45);
-        z.body.rotation.x = -k * k * (Math.PI / 2) * 0.95 * (T.crawl ? 0.2 : 1);
-        z.body.rotation.z = z.fallDir * k * 0.2;
-        rp.y = z.deathY - Math.max(0, z.deadT - 1.6) * 0.5;
+        if (z.model) animateZombieModel(z, dt); // the model plays its own death
+        else {
+          z.body.rotation.x = -k * k * (Math.PI / 2) * 0.95 * (T.crawl ? 0.2 : 1);
+          z.body.rotation.z = z.fallDir * k * 0.2;
+        }
+        rp.y = z.deathY - Math.max(0, z.deadT - (z.model ? 2.1 : 1.6)) * 0.5;
         if (z.neckSpray > 0) {
           z.neckSpray -= dt;
           const neck = new THREE.Vector3();
           z.upper.localToWorld(neck.set(0, 0.8, 0));
           this.effects.burst(neck, { count: 2, color: [0x9b1010, 0x6a0505], speed: 2.2, size: 0.07, life: 0.6, up: 2.5, spread: 0.4 });
         }
-        if (z.deadT > 3.5) {
+        if (z.deadT > (z.model ? 4 : 3.5)) {
           z.remove = true;
           removed = true;
         }
@@ -758,6 +771,7 @@ export class ZombieManager {
         z.body.scale.set(z.scale * s, z.scale, z.scale * s);
       }
       if (z.jaw.parent) z.jaw.position.y = -0.12 - Math.abs(Math.sin(z.phase * 1.7)) * 0.04;
+      animateZombieModel(z, dt, { moving, speed: z.speed * speedMul, attacking: z.windup > 0 && !T.bloated });
 
       z.groanT -= dt;
       if (z.groanT <= 0) {
@@ -1014,15 +1028,16 @@ export class ZombieManager {
       if (z.state === 'dead') {
         z.deadT += dt;
         const k = Math.min(1, z.deadT / 0.45);
-        z.body.rotation.x = -k * k * (Math.PI / 2) * 0.95 * (z.type.crawl ? 0.2 : 1);
-        z.root.position.y = z.deathY - Math.max(0, z.deadT - 1.6) * 0.5;
+        if (z.model) animateZombieModel(z, dt);
+        else z.body.rotation.x = -k * k * (Math.PI / 2) * 0.95 * (z.type.crawl ? 0.2 : 1);
+        z.root.position.y = z.deathY - Math.max(0, z.deadT - (z.model ? 2.1 : 1.6)) * 0.5;
         if (z.neckSpray > 0) {
           z.neckSpray -= dt;
           const neck = new THREE.Vector3();
           z.upper.localToWorld(neck.set(0, 0.8, 0));
           this.effects.burst(neck, { count: 2, color: [0x9b1010, 0x6a0505], speed: 2.2, size: 0.07, life: 0.6, up: 2.5, spread: 0.4 });
         }
-        if (z.deadT > 3.5) {
+        if (z.deadT > (z.model ? 4 : 3.5)) {
           z.remove = true;
           removed = true;
         }
@@ -1038,6 +1053,7 @@ export class ZombieManager {
       const speed = Math.hypot(rp.x - bx, rp.z - bz) / Math.max(dt, 1e-3);
       if (speed > 0.3) z.phase += dt * speed * 2.6 / z.scale;
       const sw = speed > 0.3 ? Math.sin(z.phase) : 0;
+      animateZombieModel(z, dt, { moving: speed > 0.3, speed });
       if (z.type.crawl) {
         z.armL.rotation.x = -1.6 + sw * 0.7;
         z.armR.rotation.x = -1.6 - sw * 0.7;

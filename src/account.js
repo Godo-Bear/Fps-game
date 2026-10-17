@@ -1262,6 +1262,8 @@ export class AccountUI {
     </section>
     <section class="asec" data-sec="game">
       ${solo || mp ? '' : '<p class="muted small">Most of these need a game running (solo, or a co-op room you host): start one, then press F2.</p>'}
+      <div class="acard"><h4>🧟 Zombie look <span class="muted small">(yours; new zombies change)</span></h4>
+        <div class="admin-grid"><button class="btn small ghost" id="admin-zmodel">${act?.zombieModels?.() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL'}</button></div></div>
       <div class="acard"><h4>🔫 Gun position <span class="muted small">(yours; everyone can change theirs in Settings)</span></h4>
         <div class="gun-presets">${(act?.gunPresets?.() || []).map(([id, n]) => `<button class="chipbtn" data-agun="${id}">${n}</button>`).join('')}</div></div>
       <div class="acard"><h4>Cheats ${mp ? '<span class="muted small">(in multiplayer they only affect you, except freeze and slow motion as co-op host)</span>' : ''}</h4>
@@ -1439,6 +1441,11 @@ export class AccountUI {
       }, (err) => msg(err.message));
     });
     document.getElementById('admin-announce-clear').onclick = () => a.adminAnnounce({ action: 'clear' }).then((r) => msg(r.note), (err) => msg(err.message));
+    const zm = document.getElementById('admin-zmodel');
+    if (zm) zm.onclick = () => {
+      msg(act.toggleZombieModels());
+      zm.textContent = act.zombieModels() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL';
+    };
     for (const b of this.body.querySelectorAll('[data-abots]')) b.onclick = () => msg(act.setBots(Number(b.dataset.abots)));
     for (const b of this.body.querySelectorAll('[data-agun]')) b.onclick = () => msg(act.gunPreset(b.dataset.agun));
     document.getElementById('admin-night').onchange = (e) => msg(act.setNightMode(e.target.value));
