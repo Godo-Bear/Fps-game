@@ -3151,8 +3151,8 @@ function renderUpdates() {
       .map((u) =>
         editingUpdate === u.v
           ? updateForm(u)
-          : `<div class="update ${u === firstShown ? 'latest' : ''} ${u.hidden ? 'u-hidden' : ''}">
-        <div class="u-head"><b>${esc(u.title)}</b><span class="muted small">${u.soon ? '<span class="soon-tag">COMING SOON</span>' : `${u.added ? '' : `v${esc(u.v)} · `}${esc(u.date || '')}`}${u.hidden ? ' · removed' : ''}</span>${tools(u)}</div>
+          : `<div class="update ${u === firstShown ? 'latest' : ''} ${u.soon ? 'soon' : ''} ${u.hidden ? 'u-hidden' : ''}">
+        <div class="u-head"><b>${esc(u.title)}</b><span class="muted small">${u.soon ? '' : `${u.added ? '' : `v${esc(u.v)} · `}${esc(u.date || '')}`}${u.hidden ? ' · removed' : ''}</span>${tools(u)}</div>
         <ul>${(u.items || []).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
       </div>`,
       )

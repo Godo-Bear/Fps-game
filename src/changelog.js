@@ -5,6 +5,7 @@ export const CHANGELOG = [
     v: '5.18', date: '17 Oct 2026', title: 'Coming soon',
     items: [
       'The Updates page has a new COMING SOON tab: see what\'s being worked on next, like Be the Zombie, Prop Hunt, Extraction, a Story Campaign, a Halloween event, pets and more.',
+      'The Updates page got a fresh look: a cleaner switch between What\'s new and Coming soon, a new background and tidier cards.',
       'Admin: add, edit or remove Coming soon entries right on that tab.',
     ],
   },
