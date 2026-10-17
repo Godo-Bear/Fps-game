@@ -2,15 +2,27 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
-// The owner's zombie model (public/models). Every zombie gets its own copy with its own animations;
+// The owner's zombie models (public/models). Every zombie gets its own copy with its own animations;
 // the old block zombie stays underneath, invisible, so hits and headshots work exactly as before.
-const URL = encodeURI('/models/Zombie by bachosoftdesign - xqEzosAVYX.glb');
+// Each model and which of its animations to use. walk/run: how many metres a second the clip covers.
+const MODELS = [
+  {
+    url: '/models/Zombie by bachosoftdesign - xqEzosAVYX.glb',
+    walk: ['Walk', 'Walk2'], walkSpeed: 1.3, run: null, idle: ['Idle'], attack: ['Attack', 'Attack', 'Headbutt'],
+    crawl: ['Running_Crawl'], crawlIdle: ['Crawl'], crawlAttack: ['Bite_ground'], die: ['Die', 'Die2'],
+  },
+  {
+    url: '/models/Animated Zombie by Quaternius - jkrEvQZb8J.glb',
+    walk: ['ZombieWalk'], walkSpeed: 1.2, run: ['ZombieRun'], runSpeed: 3.6, idle: ['ZombieIdle'], attack: ['ZombieBite'],
+    crawl: ['ZombieCrawl'], crawlIdle: ['ZombieCrawl'], crawlAttack: ['ZombieBite'], die: null, // no death clip: it falls over like the blocks did
+  },
+];
 const HEIGHT = 1.85; // metres tall at zombie scale 1 (the block zombies are about this tall)
 
 // a gentle colour per kind of zombie, so you can still tell them apart
 const TINT = { walker: 0xffffff, runner: 0xffd6cc, brute: 0xb4bca4, crawler: 0xe6e2c4, spitter: 0xccffb4, bloater: 0xeeff9e };
 
-let template = null; // { scene, clips, scale, offset }
+let templates = []; // loaded models: { def, scene, clips, scale, offset }
 let enabled = true;
 
 export function setZombieModels(on) {
@@ -19,9 +31,12 @@ export function setZombieModels(on) {
 export const zombieModelsOn = () => enabled;
 
 export function loadZombieModel() {
+  return Promise.all(MODELS.map(loadOne));
+}
+function loadOne(def) {
   return new Promise((resolve) => {
     new GLTFLoader().load(
-      URL,
+      encodeURI(def.url),
       (gltf) => {
         const scene = gltf.scene;
         scene.updateMatrixWorld(true);
@@ -43,7 +58,7 @@ export function loadZombieModel() {
             }
           }
         });
-        template = { scene, clips, scale, offset };
+        templates.push({ def, scene, clips, scale, offset });
         resolve(true);
       },
       undefined,
@@ -54,7 +69,12 @@ export function loadZombieModel() {
 
 // Gives a zombie its model (or leaves the blocks if the model isn't loaded / is switched off).
 export function attachZombieModel(z) {
-  if (!template || !enabled) return;
+  if (!templates.length || !enabled) return;
+  // runners want a model that can really run; everyone else gets either, for variety
+  const runner = z.typeId === 'runner';
+  const choices = runner && templates.some((t) => t.def.run) ? templates.filter((t) => t.def.run) : templates;
+  const template = choices[Math.floor(Math.random() * choices.length)];
+  const def = template.def;
   const model = cloneSkinned(template.scene);
   model.scale.setScalar(template.scale);
   model.position.copy(template.offset);
@@ -82,25 +102,26 @@ export function attachZombieModel(z) {
   z.mats.push(z.shirtMat);
 
   const mixer = new THREE.AnimationMixer(model);
-  const act = (name) => {
-    const c = template.clips[name];
-    return c ? mixer.clipAction(c) : null;
+  // one of the listed clips, picked at random (null if the model has none)
+  const act = (names) => {
+    const have = (names || []).filter((n) => template.clips[n]);
+    return have.length ? mixer.clipAction(template.clips[have[Math.floor(Math.random() * have.length)]]) : null;
   };
   const crawl = !!z.type.crawl;
-  const walk = act(crawl ? 'Running_Crawl' : Math.random() < 0.5 ? 'Walk' : 'Walk2') || act('Walk');
+  const running = runner && def.run;
+  const walk = act(crawl ? def.crawl : running ? def.run : def.walk) || act(def.walk);
   const anims = {
     walk,
-    idle: act(crawl ? 'Crawl' : 'Idle') || walk,
-    attack: act(crawl ? 'Bite_ground' : Math.random() < 0.7 ? 'Attack' : 'Headbutt') || act('Attack'),
-    die: act(Math.random() < 0.5 ? 'Die' : 'Die2') || act('Die'),
-    scream: act('Scream'),
+    idle: act(crawl ? def.crawlIdle : def.idle) || walk,
+    attack: act(crawl ? def.crawlAttack : def.attack),
+    die: act(def.die),
   };
-  for (const a of [anims.die, anims.attack, anims.scream]) {
+  for (const a of [anims.die, anims.attack]) {
     if (!a) continue;
     a.setLoop(THREE.LoopOnce, 1);
     a.clampWhenFinished = true;
   }
-  z.model = { root: model, mixer, anims, current: null, head };
+  z.model = { root: model, mixer, anims, current: null, head, stride: running ? def.runSpeed : def.walkSpeed };
   play(z, 'idle', 0);
   mixer.update(Math.random() * 2); // not everyone in step
 }
@@ -122,16 +143,20 @@ export function animateZombieModel(z, dt, { moving = false, speed = 0, attacking
   if (z.state === 'dead') {
     const a = play(z, 'die', 0.12);
     if (a) a.timeScale = 1.5;
+    else return; // no death clip: frozen while it falls over
   } else if (attacking) {
     const a = play(z, 'attack', 0.1);
     if (a) a.timeScale = 1.6;
   } else if (moving) {
     const a = play(z, 'walk');
-    // the walk clip covers about 1.3 m per second at normal speed
-    if (a) a.timeScale = THREE.MathUtils.clamp(speed / (1.3 * z.scale), 0.6, 2.6);
+    // sped up or slowed down so the feet keep up with how fast it really moves
+    if (a) a.timeScale = THREE.MathUtils.clamp(speed / (m.stride * z.scale), 0.6, 2.6);
   } else play(z, 'idle');
   m.mixer.update(dt);
 }
+
+// does this zombie's model have its own death animation? (if not, it tips over like the blocks)
+export const hasDeathClip = (z) => !!z.model?.anims.die;
 
 // headshot kill: the model loses its head too
 export function decapitateZombieModel(z) {

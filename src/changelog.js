@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.15', date: '17 Oct 2026', title: 'A second zombie model',
+    items: [
+      'A second kind of zombie model joins the horde, so not every zombie looks the same.',
+      'Runners now really run (a proper running animation) instead of fast walking.',
+      'Zombie model by Quaternius.',
+    ],
+  },
+  {
     v: '5.14', date: '17 Oct 2026', title: 'New zombie models',
     items: [
       'Zombies now use a proper 3D model with real animations: they shamble, crawl, lunge to attack, and fall when they die. Headshot kills still take the head off.',

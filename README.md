@@ -203,7 +203,7 @@ Press Esc for the pause menu with **Resume** and **Exit**.
 - **You need a free account to play** (username + password). PLAY asks you to sign up or log in first.
 - **You need an account to play** (no guests): the site opens on sign up / log in, and rooms refuse anyone without one.
 - **AI bots** (normal difficulty) fill PvP matches: quick join with nobody around starts a TDM against bots, and hosts can set bots in the lobby (0/2/4/6/8 players). The host's game moves the bots; the server keeps score as usual.
-- **Zombie model**: `public/models/Zombie by bachosoftdesign - xqEzosAVYX.glb` (rigged, 13 animations; loaded by `src/zombieModel.js`). The old block zombies stay as invisible hitboxes, and come back if the model is switched off in Settings.
+- **Zombie models**: `public/models/Zombie by bachosoftdesign - xqEzosAVYX.glb` (13 animations) and `Animated Zombie by Quaternius - jkrEvQZb8J.glb` (walk, run, crawl, bite, idle; used for runners). Both are listed in `MODELS` in `src/zombieModel.js`, with which clips to use. The old block zombies stay as invisible hitboxes, and come back if the model is switched off in Settings.
 - Rooms are **Private** (code only, the default) or **Public** (quick join can put anyone in).
 - **Settings → Gun position** moves your gun on screen (left/right, up/down, closer/further, or a preset).
 - Earn XP every game and level up to unlock avatars, name colours, titles, crosshair colours and gun finishes (Customise).

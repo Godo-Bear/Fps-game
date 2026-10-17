@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ARENA_RADIUS, heightAt } from './terrain.js';
-import { animateZombieModel, attachZombieModel, decapitateZombieModel } from './zombieModel.js';
+import { animateZombieModel, attachZombieModel, decapitateZombieModel, hasDeathClip } from './zombieModel.js';
 
 // Boss waves (every 5th) bring one of these. Each has its own trick.
 export const BOSSES = {
@@ -546,7 +546,7 @@ export class ZombieManager {
       if (z.state === 'dead') {
         z.deadT += dt;
         const k = Math.min(1, z.deadT / 0.45);
-        if (z.model) animateZombieModel(z, dt); // the model plays its own death
+        if (hasDeathClip(z)) animateZombieModel(z, dt); // the model plays its own death
         else {
           z.body.rotation.x = -k * k * (Math.PI / 2) * 0.95 * (T.crawl ? 0.2 : 1);
           z.body.rotation.z = z.fallDir * k * 0.2;
@@ -1028,7 +1028,7 @@ export class ZombieManager {
       if (z.state === 'dead') {
         z.deadT += dt;
         const k = Math.min(1, z.deadT / 0.45);
-        if (z.model) animateZombieModel(z, dt);
+        if (hasDeathClip(z)) animateZombieModel(z, dt);
         else z.body.rotation.x = -k * k * (Math.PI / 2) * 0.95 * (z.type.crawl ? 0.2 : 1);
         z.root.position.y = z.deathY - Math.max(0, z.deadT - (z.model ? 2.1 : 1.6)) * 0.5;
         if (z.neckSpray > 0) {
