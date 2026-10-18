@@ -8,7 +8,7 @@ export const CHANGELOG = [
       'Your wolf lives forever: nothing can hurt it, so no health bar to worry about.',
       'Make it yours: pick one of nine fur colours, or any colour you like with Custom (Profile or Shop).',
       'Other players see your wolf, in its colour, in online games.',
-      'The wolf is bought with real money, paid to the owner, who switches it on for your account. The price is in the Shop.',
+      'The wolf is bought with real money, paid to the owner, who switches it on for your account. It costs $1.',
       'Admin: give or take a player\'s wolf (in MANAGE, or the new Wolf companion card) and set its price.',
     ],
   },

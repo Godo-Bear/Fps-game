@@ -268,7 +268,7 @@ export class GameDB extends DurableObject {
 
   // what the wolf companion costs in real money (the admin sets it)
   _wolfPrice() {
-    return this.sql.exec("SELECT value FROM config WHERE key = 'wolfPrice'").toArray()[0]?.value || '$2';
+    return this.sql.exec("SELECT value FROM config WHERE key = 'wolfPrice'").toArray()[0]?.value || '$1';
   }
 
   _badges(u) {

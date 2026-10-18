@@ -617,7 +617,7 @@ export class Account {
     return ownsWolf(this.unlockLevel, this.items);
   }
   get wolfPrice() {
-    return this.cfg?.wolfPrice || '$2';
+    return this.cfg?.wolfPrice || '$1';
   }
 
   async saveProfile(profile) {
