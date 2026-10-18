@@ -29,6 +29,7 @@ import { WEATHER, Weather } from './weather.js';
 import { buildWorld } from './world.js';
 import { Bots } from './bots.js';
 import { loadZombieModel, setZombieModels } from './zombieModel.js';
+import { Wolf, loadWolfModel } from './pet.js';
 import { BOSSES, BOSS_IDS, ZOMBIE_TYPES, ZombieManager, bossForWave } from './zombies.js';
 
 // ---------------------------------------------------------------- setup
@@ -2432,6 +2433,52 @@ function applyProfile() {
 }
 account.onChange(applyProfile);
 
+// ---------------------------------------------------------------- your wolf companion
+// Bought with real money (the owner switches it on). It runs at your side in a game and, in zombie
+// modes, bites the zombies closest to you.
+let myWolf = null;
+const wolfHunt = { prey: null, findT: 0, biteT: 0 };
+function updatePets(dt) {
+  const p = account.profile;
+  const show = p.pet === 'wolf' && ['playing', 'paused', 'choosing'].includes(game.state);
+  if (!show) {
+    if (myWolf) {
+      myWolf.look.root.visible = false;
+      myWolf.placed = false; // back at your side next game
+    }
+    return;
+  }
+  if (!myWolf) myWolf = new Wolf(scene, p.petColor);
+  myWolf.look.root.visible = true;
+  myWolf.setColor(p.petColor);
+  // hunting: the nearest zombie within 9 m of you
+  const hunting = zombieGame() && !player.dead && game.state === 'playing';
+  wolfHunt.findT -= dt;
+  if (hunting && wolfHunt.findT <= 0) {
+    wolfHunt.findT = 0.3;
+    let best = null;
+    let bestD = 9;
+    for (const z of zombies.list) {
+      if (!z.alive || z.state === 'rising') continue;
+      const d = Math.hypot(z.root.position.x - player.pos.x, z.root.position.z - player.pos.z);
+      if (d < bestD) (best = z), (bestD = d);
+    }
+    wolfHunt.prey = best;
+  }
+  const z = hunting && wolfHunt.prey?.alive ? wolfHunt.prey : null;
+  const d = myWolf.update(dt, player.pos, z ? z.root.position : null);
+  wolfHunt.biteT -= dt;
+  if (z && d < 1.3 + z.radius && wolfHunt.biteT <= 0) {
+    wolfHunt.biteT = 1.1;
+    myWolf.bite();
+    const dmg = Math.round((15 + game.wave * 2) * (z.typeId === 'boss' ? 0.5 : 1));
+    if (!simHost()) mp.relay('host', { k: 'zhit', id: z.id, dmg, head: false, mut: null, slow: 0, src: 'wolf' });
+    else {
+      hitSoundPlayed = true;
+      applyZombieHit(z, dmg, { shooter: 'me', src: 'wolf' });
+    }
+  }
+}
 // ---------------------------------------------------------------- saved games (solo)
 // You name a game when you start it. It's saved when it starts and after every wave (once you
 // pick a power-up); continuing starts the next wave. Saves are kept in this browser and, when
@@ -4687,6 +4734,7 @@ function frame(now) {
   updateDamageNumbers(dt);
   updateZombieMarkers();
   defend.update(dt, time);
+  updatePets(dt);
   structures.update(dt, effects);
   updateChat();
 
@@ -4749,6 +4797,11 @@ function newVersionPop(build) {
 const versionWatch = watchVersion(newVersionPop);
 // the zombie model from public/models (the block zombies are used until it has loaded)
 loadZombieModel();
+// the wolf model (the block wolf is used until it has loaded)
+loadWolfModel().then(() => {
+  myWolf?.refresh();
+  mp.refreshPets?.();
+});
 // no guests: straight to sign up / log in when you open the site without an account
 account.init().then(() => needAccount());
 requestAnimationFrame(frame);
@@ -4787,6 +4840,7 @@ if (import.meta.env.DEV) {
       return savedGames;
     },
     bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio }); },
+    get wolf() { return myWolf; }, wolfHunt,
     game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

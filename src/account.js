@@ -1,4 +1,4 @@
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, TITLES, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, TITLES, cleanProfile, levelFromXp, ownsWolf, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -567,6 +567,11 @@ export class Account {
     }
     return r;
   }
+  async adminWolfPrice(price) {
+    const r = await this._api('/admin/wolf-price', { method: 'POST', body: { price } });
+    if (this.cfg) this.cfg.wolfPrice = r.price;
+    return r;
+  }
   adminUpdates(body) {
     return this._api('/admin/updates', { method: 'POST', body });
   }
@@ -606,6 +611,13 @@ export class Account {
     const { user } = await this._api('/admin/xp', { method: 'POST', body: { xp } });
     this.user = user;
     this._changed();
+  }
+
+  get ownsWolf() {
+    return ownsWolf(this.unlockLevel, this.items);
+  }
+  get wolfPrice() {
+    return this.cfg?.wolfPrice || '$2';
   }
 
   async saveProfile(profile) {
@@ -1114,6 +1126,7 @@ export class AccountUI {
       ${section('title', 'Title', TITLES, (id) => esc(id))}
       ${section('crosshair', 'Crosshair', CROSSHAIRS, (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
       ${section('finish', 'Gun finish', FINISHES, (id, label, color) => `<span class="swatch" style="background:${color}"></span>${label}`)}
+      ${this._petPicker(p)}
       <h4>Quick chat wheel <span class="muted small">(press Z in game · up to ${QUICK_LEN} letters each · leave one empty for the default)</span></h4>
       <form id="quick-form" class="quick-chat">
         ${cleanQuick(a.items.quick)
@@ -1131,6 +1144,7 @@ export class AccountUI {
         (err) => (document.getElementById('profile-msg').textContent = err.message),
       );
     });
+    this._petEvents(p, (t) => (document.getElementById('profile-msg').textContent = t));
     // achievements as badges
     const have = new Set(a.badges);
     this.body.insertAdjacentHTML(
@@ -1138,7 +1152,7 @@ export class AccountUI {
       `<h3>🏅 Achievements <span class="muted small">${have.size}/${ACHIEVEMENTS.length}</span></h3>
       <div class="badges">${ACHIEVEMENTS.map((b) => `<div class="badge ${have.has(b.id) ? 'got' : ''}" title="${esc(b.desc)}"><b>${b.icon}</b><span>${esc(b.name)}</span><small>${esc(b.desc)}</small></div>`).join('')}</div>`,
     );
-    this.body.querySelectorAll('.pick-row').forEach((row) => {
+    this.body.querySelectorAll('.pick-row[data-kind]').forEach((row) => {
       row.addEventListener('click', async (e) => {
         const b = e.target.closest('.pick');
         if (!b || b.disabled) return;
@@ -1150,6 +1164,50 @@ export class AccountUI {
         }
       });
     });
+  }
+
+  // The wolf companion: how to buy it (real money, paid to the owner), or turning it on and picking its colour.
+  _petPicker(p, shop = false) {
+    const a = this.account;
+    const note = esc(a.cfg?.payNote || 'paid cash in hand to the site owner');
+    if (!a.ownsWolf) {
+      return `<div class="pet-card">
+        <div class="pet-art">🐺</div>
+        <div class="pet-info"><b>Wolf companion</b> <span class="pet-price">${esc(a.wolfPrice)}</span>
+          <p class="muted small">A wolf that runs by your side in every mode and bites zombies near you. You pick its colour. Real money, ${note}.</p>
+          <p class="small">${a.loggedIn ? `To buy it: pay the owner and tell them your player name, <b>${esc(a.name)}</b>. They switch your wolf on, then it shows up here.` : 'Log in first: the wolf goes on your account.'}</p></div>
+      </div>`;
+    }
+    const color = p.petColor || '#8a8f96';
+    return `<div class="pet-card owned">
+        <div class="pet-art" style="color:${esc(color)}">🐺</div>
+        <div class="pet-info"><b>Your wolf</b> <span class="muted small">${shop ? '(owned · change it in Profile too)' : '(owned)'}</span>
+          <div class="pick-row pet-on">
+            <button class="pick ${p.pet === 'wolf' ? 'on' : ''}" data-pet="wolf">🐺 Out with me</button>
+            <button class="pick ${p.pet !== 'wolf' ? 'on' : ''}" data-pet="none">Stay home</button>
+          </div>
+          <div class="pick-row pet-colors">${PET_COLORS.map(([c, n]) => `<button class="pick ${color === c ? 'on' : ''}" data-petcolor="${c}" title="${n}"><span class="swatch" style="background:${c}"></span>${n}</button>`).join('')}
+            <label class="pick pet-custom" title="Any colour you like"><input type="color" value="${esc(color)}" data-petcustom /> Custom</label>
+          </div></div>
+      </div>`;
+  }
+  _petEvents(p, msg) {
+    const a = this.account;
+    const save = async (change) => {
+      Object.assign(p, change);
+      try {
+        await a.saveProfile(p);
+      } catch (err) {
+        msg(err.message);
+      }
+    };
+    this.body.querySelectorAll('[data-pet]').forEach((b) => (b.onclick = (e) => (e.stopPropagation(), save({ pet: b.dataset.pet }))));
+    this.body.querySelectorAll('[data-petcolor]').forEach((b) => (b.onclick = (e) => (e.stopPropagation(), save({ petColor: b.dataset.petcolor, pet: 'wolf' }))));
+    const custom = this.body.querySelector('[data-petcustom]');
+    if (custom) {
+      custom.onclick = (e) => e.stopPropagation();
+      custom.onchange = () => save({ petColor: custom.value, pet: 'wolf' });
+    }
   }
 
   _shop() {
@@ -1196,6 +1254,8 @@ export class AccountUI {
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>
       <h4>Items</h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
+      <h4>🐺 Pets <span class="muted small">(real money)</span></h4>
+      ${this._petPicker({ ...a.profile }, true)}
       <h4>Cosmetics <span class="muted small">(skip the level requirement)</span></h4>
       <div class="cos-list">${cosmetics || '<p class="muted">You own every cosmetic!</p>'}</div>
       ${a.loggedIn ? '' : '<p class="muted small">Guest: coins and purchases are saved in this browser. Log in to keep them on your account.</p>'}`;
@@ -1210,6 +1270,7 @@ export class AccountUI {
         }
       })
     );
+    this._petEvents({ ...a.profile }, msg);
     this.body.querySelectorAll('[data-equip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(b.dataset.equip).catch((e) => msg(e.message))));
     this.body.querySelectorAll('[data-unequip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(null).catch((e) => msg(e.message))));
   }
@@ -1258,6 +1319,11 @@ export class AccountUI {
       <form class="auth inline admin-row" id="admin-find"><input name="q" maxlength="40" placeholder="Search by name (empty: everyone)" /><button class="btn small">FIND</button></form>
       <div id="admin-players" class="admin-players muted">Loading…</div>
       <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="40" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
+      </div>
+      <div class="acard"><h4>🐺 Wolf companion <span class="muted small">(real money: when someone pays you, give them the wolf here)</span></h4>
+      <form class="auth inline admin-row" id="admin-wolf"><input name="u" maxlength="40" placeholder="Player name" required /><button class="btn small" data-on="1">🐺 GIVE WOLF</button><button class="btn small ghost" data-on="0">TAKE WOLF</button></form>
+      <form class="auth inline admin-row" id="admin-wolf-price"><input name="p" maxlength="20" placeholder="Price (now ${esc(a.wolfPrice)})" required /><button class="btn small">SET WOLF PRICE</button></form>
+      <p class="muted small">Players see this price in the Shop and Profile, ${esc(a.cfg?.payNote || 'paid cash in hand to the site owner')}. You can also give or take it with MANAGE on a player.</p>
       </div>
     </section>
     <section class="asec" data-sec="game">
@@ -1410,6 +1476,28 @@ export class AccountUI {
         msg(r.note);
         e.target.reset();
         this._adminPlayers(this.adminQuery || '');
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    const wolfForm = document.getElementById('admin-wolf');
+    let wolfOn = true;
+    wolfForm.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (wolfOn = b.dataset.on === '1')));
+    wolfForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const r = await a.adminPlayer(String(new FormData(wolfForm).get('u')).trim(), 'wolf', { on: wolfOn });
+        msg(r.note);
+        wolfForm.reset();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    document.getElementById('admin-wolf-price').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        msg((await a.adminWolfPrice(String(new FormData(e.target).get('p')).trim())).note);
+        e.target.reset();
       } catch (err) {
         msg(err.message);
       }
@@ -1570,6 +1658,7 @@ export class AccountUI {
     const mins = [[5, '5 min'], [30, '30 min'], [60, '1 hour'], [1440, '1 day'], [10080, '1 week']];
     const mod = `<div class="manage-mod">
         <button type="button" data-mod="give100">+100 🪙</button>
+        ${p.wolf ? '<button type="button" data-mod="wolf-off" title="Take their wolf companion away">TAKE 🐺 WOLF</button>' : '<button type="button" data-mod="wolf-on" class="hot" title="They paid you for the wolf companion">GIVE 🐺 WOLF</button>'}
         ${me || p.admin
           ? `<span class="muted small">${me ? "That's you" : 'Admins'}: no kick, timeout or ban</span>`
           : `<button type="button" data-mod="kick" ${p.room ? '' : 'disabled'} title="${p.room ? 'Throw them out of their room' : "They aren't in a room"}">KICK</button>
@@ -1616,6 +1705,10 @@ export class AccountUI {
         if (action === 'give100') {
           action = 'give';
           extra.coins = 100;
+        }
+        if (action === 'wolf-on' || action === 'wolf-off') {
+          extra.on = action === 'wolf-on';
+          action = 'wolf';
         }
         if (action === 'timeout') extra.minutes = Number(box.querySelector('[data-mod-mins]').value);
         if (action === 'ban' && !confirm(`Ban ${name}? They can't log in or play online until you unban them.`)) return;

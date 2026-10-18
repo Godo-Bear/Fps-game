@@ -31,7 +31,16 @@ export const FINISHES = [
   ['toxic', 15, 'Toxic', '#5fd13a'],
 ];
 
-export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', finish: 'standard' };
+// Pets: bought with real money (paid to the owner, who switches it on from the admin panel: items.pet_wolf).
+// petColor is any colour; these are the quick picks.
+export const PET_COLORS = [
+  ['#8a8f96', 'Grey'], ['#3a3a3e', 'Black'], ['#eeeeea', 'Snow'], ['#a8743f', 'Brown'], ['#d9b26a', 'Golden'],
+  ['#c4562e', 'Red fox'], ['#6f8fb8', 'Frost blue'], ['#7a4fc4', 'Shadow purple'], ['#4fbf5a', 'Toxic green'],
+];
+export const PET_ITEM = 'pet_wolf';
+export const ownsWolf = (level, items = {}) => !!items[PET_ITEM] || level >= 999; // admins have everything
+
+export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', finish: 'standard', pet: 'none', petColor: '#8a8f96' };
 
 const LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
 
@@ -48,6 +57,8 @@ export function cleanProfile(input, level, items = {}) {
     for (const kind of Object.keys(LISTS)) {
       if (typeof input[kind] === 'string' && unlocked(kind, input[kind], level, items)) out[kind] = input[kind];
     }
+    if (input.pet === 'wolf' && ownsWolf(level, items)) out.pet = 'wolf';
+    if (typeof input.petColor === 'string' && /^#[0-9a-f]{6}$/i.test(input.petColor)) out.petColor = input.petColor.toLowerCase();
   }
   return out;
 }

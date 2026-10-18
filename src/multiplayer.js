@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GUN_LADDERS, INFECTED, MAPS, MODES, MODE_SETTINGS, MP_MAPS, FLAG_BASES, POINT, SURVIVORS, cleanSettings, limitFor, makeRoomCode } from '../shared/modes.js';
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
+import { Wolf } from './pet.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -225,6 +226,7 @@ class Avatar {
     for (const m of this.mats) m.dispose();
     this.label.material.map.dispose();
     this.label.material.dispose();
+    this.wolf?.dispose();
   }
 }
 let teamsMode = true;
@@ -646,6 +648,11 @@ export class Multiplayer {
     }
   }
 
+  // the wolf model finished loading: swap the block wolves for it
+  refreshPets() {
+    for (const a of this.avatars.values()) a.wolf?.refresh();
+  }
+
   _rebuildParts() {
     this.parts = [];
     for (const a of this.avatars.values()) for (const p of a.parts) this.parts.push(p);
@@ -748,6 +755,16 @@ export class Multiplayer {
     if (!this.inMatch) return;
     for (const a of this.avatars.values()) {
       a.update(dt, a.flags || 0);
+      // their wolf companion, if they have one out
+      const pet = this.lobby?.players.find((p) => p.id === a.id)?.pet;
+      if (pet && !a.wolf) a.wolf = new Wolf(this.ctx.scene, pet);
+      if (a.wolf) {
+        a.wolf.look.root.visible = !!pet; // it never dies, even when they do
+        if (pet) {
+          a.wolf.setColor(pet);
+          a.wolf.update(dt, a.root.position);
+        }
+      }
       // the name tag follows who's on your side (teams can change mid-match)
       const ally = !this.isEnemy(a.id);
       if (a.label.userData.ally !== ally) {

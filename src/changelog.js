@@ -2,6 +2,17 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.20', date: '18 Oct 2026', title: '🐺 The wolf companion',
+    items: [
+      'The first pet is here: a wolf that runs at your side in every mode and bites the zombies closest to you.',
+      'Your wolf lives forever: nothing can hurt it, so no health bar to worry about.',
+      'Make it yours: pick one of nine fur colours, or any colour you like with Custom (Profile or Shop).',
+      'Other players see your wolf, in its colour, in online games.',
+      'The wolf is bought with real money, paid to the owner, who switches it on for your account. The price is in the Shop.',
+      'Admin: give or take a player\'s wolf (in MANAGE, or the new Wolf companion card) and set its price.',
+    ],
+  },
+  {
     v: '5.19', date: '18 Oct 2026', title: 'Always the newest version',
     items: [
       'When a new version of the game goes live, everyone still on the old one is restarted onto it automatically (straight away on the menu, or after a 15 second countdown if you\'re mid-game).',
@@ -461,9 +472,9 @@ export const UPCOMING = [
     items: ['Ranked matches from Bronze to Diamond, with your rank shown next to your name and a ranked leaderboard.'],
   },
   {
-    v: 'soon-pets', title: '🐺 Pets with Powers',
+    v: 'soon-pets', title: '🐾 More Pets with Powers',
     items: [
-      'A companion that fights by your side and levels up, starting with a wolf.',
+      'The wolf is out now. Next: more pets, and pets that level up.',
       'Zombies get pets too, and both have their own special powers.',
     ],
   },

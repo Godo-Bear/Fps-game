@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { PET_ITEM, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
@@ -266,6 +266,11 @@ export class GameDB extends DurableObject {
     }
   }
 
+  // what the wolf companion costs in real money (the admin sets it)
+  _wolfPrice() {
+    return this.sql.exec("SELECT value FROM config WHERE key = 'wolfPrice'").toArray()[0]?.value || '$2';
+  }
+
   _badges(u) {
     try {
       const list = JSON.parse(u.achievements || '[]');
@@ -415,6 +420,7 @@ export class GameDB extends DurableObject {
     return {
       ...this._adminRow(u), xp: u.xp, created: u.created, bestWave: u.best_wave, bestScore: u.best_score, kills: u.kills, headshots: u.headshots,
       pvpKills: u.pvp_kills, pvpWins: u.pvp_wins, games: u.games, badges: this._badges(u).length, items: Object.keys(this._items(u)).length,
+      wolf: !!this._items(u)[PET_ITEM],
     };
   }
 
@@ -512,6 +518,7 @@ export class GameDB extends DurableObject {
         price: this.env.PAY_PRICE || '$3',
         months: this.env.PAY_MONTHS === undefined ? 6 : Number(this.env.PAY_MONTHS) || 0, // 0 = pay once, yours forever
         payNote: this.env.PAY_NOTE || 'paid cash in hand to the site owner',
+        wolfPrice: this._wolfPrice(),
       });
     }
 
@@ -909,7 +916,7 @@ export class GameDB extends DurableObject {
       const u = typeof body.username === 'string' ? this._byName(body.username) : null;
       if (!u) return err('No player with that name', 404);
       const action = String(body.action);
-      if (u.id === me.id && action !== 'give') return err("You can't do that to yourself");
+      if (u.id === me.id && !['give', 'wolf'].includes(action)) return err("You can't do that to yourself");
       if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
       let note = '';
       if (action === 'kick') {
@@ -939,10 +946,32 @@ export class GameDB extends DurableObject {
         const coins = Math.max(0, Math.min(1000000000, (u.coins || 0) + amount));
         this.sql.exec('UPDATE users SET coins = ? WHERE id = ?', coins, u.id);
         note = amount > 0 ? `Gave ${coins - (u.coins || 0)} coins to ${u.username} (they have ${coins}).` : `Took ${(u.coins || 0) - coins} coins from ${u.username} (they have ${coins}).`;
+      } else if (action === 'wolf') {
+        // they paid the owner for the wolf companion (or it's taken back)
+        const items = this._items(u);
+        if (body.on) items[PET_ITEM] = 1;
+        else delete items[PET_ITEM];
+        // and it's out by their side straight away
+        let profile = {};
+        try {
+          profile = JSON.parse(u.profile || '{}') || {};
+        } catch {
+          /* a broken profile starts fresh */
+        }
+        if (body.on) profile.pet = 'wolf';
+        this.sql.exec('UPDATE users SET items = ?, profile = ? WHERE id = ?', JSON.stringify(items), JSON.stringify(profile), u.id);
+        note = body.on ? `${u.username} now owns the 🐺 wolf. They pick its colour in Profile.` : `Took the 🐺 wolf from ${u.username}.`;
       } else return err('Unknown action');
       const after = this._byName(u.username);
       const user = after.id === me.id ? this._publicUser(after, true) : undefined;
       return json({ note, player: this._adminRow(after), user });
+    }
+    if (path === '/admin/wolf-price' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const price = String(body.price || '').trim().slice(0, 20);
+      if (!price) return err('Type a price, like $2');
+      this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('wolfPrice', ?)", price);
+      return json({ note: `The wolf now costs ${price}.`, price });
     }
     // admin: an announcement every player sees (in any room, or on the menu) until they press OK
     if (path === '/admin/announce' && method === 'POST') {
@@ -1429,7 +1458,7 @@ export class Room extends DurableObject {
     this._report();
     return {
       t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set, open: !!this.open, bots: this.botFill,
-      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
+      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
     };
   }
 
@@ -1521,6 +1550,7 @@ export class Room extends DurableObject {
             p.admin = !!user.admin;
             p.avatar = user.profile.avatar;
             p.color = user.profile.color;
+            p.pet = user.profile.pet === 'wolf' ? user.profile.petColor : null; // their wolf's colour
             p.items = user.items || {};
           }
         } catch {

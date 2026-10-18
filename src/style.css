@@ -1422,6 +1422,56 @@ b.coin {
   font-size: 22px;
 }
 
+/* ---- pets */
+.pet-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 211, 77, 0.35);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 6px 0 10px;
+}
+.pet-card .pet-art {
+  font-size: 44px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+.pet-card .pet-info {
+  flex: 1;
+  min-width: 0;
+}
+.pet-card .pet-info p {
+  margin: 4px 0;
+}
+.pet-price {
+  display: inline-block;
+  background: #ffd34d;
+  color: #120e0a;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 0 6px;
+  margin-left: 6px;
+}
+.pet-card .pick-row {
+  margin-top: 6px;
+}
+.pet-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.pet-custom input {
+  width: 26px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
 /* ---- saved games */
 #run-name {
   font-size: 14px;
