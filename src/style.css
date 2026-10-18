@@ -3303,6 +3303,11 @@ body.infected #game::after {
 .gun-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 
 /* the admin's announcement: stays until OK */
+#version-pop { position: fixed; inset: 0; z-index: 9500; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.7); padding: 16px; }
+#version-pop .ap-card { max-width: 460px; width: 100%; background: #1c1d22; border: 2px solid #7fd4ff; border-radius: 14px; padding: 22px 24px; text-align: center; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
+#version-pop .ap-head { color: #7fd4ff; font-weight: 800; letter-spacing: 2px; margin-bottom: 10px; }
+#version-pop .ap-text { font-size: 22px; color: #fff; margin-bottom: 8px; }
+#version-pop .ap-from { color: #aaa; font-size: 14px; margin-bottom: 16px; }
 #announce-pop { position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); padding: 16px; }
 #announce-pop.hidden { display: none; }
 #announce-pop .ap-card { max-width: 520px; width: 100%; background: #1c1d22; border: 2px solid #ffd34d; border-radius: 14px; padding: 22px 24px; text-align: center; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }

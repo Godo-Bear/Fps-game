@@ -1265,6 +1265,9 @@ export class AccountUI {
       <div class="acard"><h4>🧟 Zombie look <span class="muted small">(yours; new zombies change)</span></h4>
         <div class="admin-grid"><button class="btn small ghost" data-run="lineup" ${solo || mp ? '' : 'disabled'}>👀 SPAWN ONE OF EVERY KIND</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-zmodel">${act?.zombieModels?.() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL'}</button></div></div>
+      <div class="acard"><h4>🔄 Game version <span class="muted small">(players on an old version are restarted onto the new one automatically)</span></h4>
+        <p class="muted small">This copy: <b>${esc(act?.build?.().build || '?')}</b>${act?.build?.().at && act.build().build !== 'dev' ? ` · built ${esc(new Date(act.build().at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}` : ''}</p>
+        <div class="admin-grid"><button class="btn small ghost" id="admin-version">CHECK FOR A NEW VERSION</button></div></div>
       <div class="acard"><h4>🔫 Gun position <span class="muted small">(yours; everyone can change theirs in Settings)</span></h4>
         <div class="gun-presets">${(act?.gunPresets?.() || []).map(([id, n]) => `<button class="chipbtn" data-agun="${id}">${n}</button>`).join('')}</div></div>
       <div class="acard"><h4>Cheats ${mp ? '<span class="muted small">(in multiplayer they only affect you, except freeze and slow motion as co-op host)</span>' : ''}</h4>
@@ -1447,6 +1450,8 @@ export class AccountUI {
       msg(act.toggleZombieModels());
       zm.textContent = act.zombieModels() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL';
     };
+    const vb = document.getElementById('admin-version');
+    if (vb) vb.onclick = async () => msg(await act.checkVersion());
     for (const b of this.body.querySelectorAll('[data-abots]')) b.onclick = () => msg(act.setBots(Number(b.dataset.abots)));
     for (const b of this.body.querySelectorAll('[data-agun]')) b.onclick = () => msg(act.gunPreset(b.dataset.agun));
     document.getElementById('admin-night').onchange = (e) => msg(act.setNightMode(e.target.value));

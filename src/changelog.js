@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.19', date: '18 Oct 2026', title: 'Always the newest version',
+    items: [
+      'When a new version of the game goes live, everyone still on the old one is restarted onto it automatically (straight away on the menu, or after a 15 second countdown if you\'re mid-game).',
+      'Admin: the Game tab shows which version you\'re on and can check for a new one.',
+    ],
+  },
+  {
     v: '5.18', date: '17 Oct 2026', title: 'Coming soon',
     items: [
       'The Updates page has a new COMING SOON tab: see what\'s being worked on next, like Be the Zombie, Prop Hunt, Extraction, a Story Campaign, a Halloween event, pets and more.',

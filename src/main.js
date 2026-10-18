@@ -10,6 +10,7 @@ import { Account, AccountUI } from './account.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
 import { CHANGELOG, LATEST_VERSION, UPCOMING } from './changelog.js';
+import { BUILD, BUILT_AT, liveBuild, watchVersion, restartToNew } from './version.js';
 import { DefendPoints } from './defend.js';
 import { Structures } from './structures.js';
 import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
@@ -4148,6 +4149,15 @@ account.onUnread((now, before) => {
 });
 
 accountUI.adminActions = {
+  build: () => ({ build: BUILD, at: BUILT_AT }),
+  async checkVersion() {
+    if (BUILD === 'dev') return 'This is the test version (no version check here).';
+    const live = await liveBuild();
+    if (!live) return "Couldn't reach the server to check.";
+    if (live === BUILD) return 'You have the newest version. Everyone else gets moved onto it within a minute of it going live.';
+    versionWatch.check();
+    return 'A newer version is live: restarting…';
+  },
   zombieModels: () => settings.zombieModels,
   toggleZombieModels() {
     settings.zombieModels = !settings.zombieModels;
@@ -4713,6 +4723,30 @@ account.onAnnounce = (a, seen) => {
   };
 };
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && account.pollUnread());
+// a new version went live: everyone restarts onto it (straight away on the menu, after a short countdown mid-game)
+function newVersionPop(build) {
+  let el = $('version-pop');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'version-pop';
+    document.body.appendChild(el);
+  }
+  let left = inMenu() ? 3 : 15;
+  el.innerHTML = `<div class="ap-card"><div class="ap-head">🔄 NEW VERSION</div><div class="ap-text">Hollow Ground has been updated!</div>
+    <div class="ap-from">Restarting to the new version in <b id="version-left">${left}</b>…</div>
+    <button class="btn" id="version-now">RESTART NOW</button></div>`;
+  if (document.pointerLockElement) document.exitPointerLock();
+  $('version-now').onclick = () => restartToNew(build);
+  const t = setInterval(() => {
+    if (--left <= 0) {
+      clearInterval(t);
+      restartToNew(build);
+    }
+    const n = $('version-left');
+    if (n) n.textContent = Math.max(0, left);
+  }, 1000);
+}
+const versionWatch = watchVersion(newVersionPop);
 // the zombie model from public/models (the block zombies are used until it has loaded)
 loadZombieModel();
 // no guests: straight to sign up / log in when you open the site without an account
