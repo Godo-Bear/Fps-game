@@ -57,11 +57,16 @@ export function loadCharacterModel(id) {
           resolve(true);
         },
         undefined,
-        () => resolve(false),
+        () => {
+          delete loading[id]; // a failed download is tried again next time
+          resolve(false);
+        },
       ),
     );
   return loading[id];
 }
+// all of them (the Locker loads them up front so switching is instant)
+export const loadAllCharacterModels = () => Promise.all(Object.keys(CHARACTER_MODELS).map(loadCharacterModel));
 export const characterModelReady = (id) => !!templates[id];
 
 const lum = (c) => c.r * 0.3 + c.g * 0.59 + c.b * 0.11 || 0.01;
@@ -285,6 +290,7 @@ export function buildCharacter(lookIn, { vest = null, part: onPart = null } = {}
 // A small spinning preview of a look, drawn into `canvas` (the Locker's Character section).
 export class CharacterPreview {
   constructor(canvas) {
+    this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.renderer.setSize(canvas.clientWidth || 220, canvas.clientHeight || 300, false);
@@ -301,7 +307,13 @@ export class CharacterPreview {
     this.alive = true;
     const loop = () => {
       if (!this.alive) return;
-      if (!canvas.isConnected) return this.dispose();
+      // off the page: wait a moment (the Locker may be putting it back), then let it go
+      if (!this.canvas.isConnected) {
+        this.offT = (this.offT || 0) + 1;
+        if (this.offT > 120) return this.dispose();
+        return requestAnimationFrame(loop);
+      }
+      this.offT = 0;
       this.spin += 0.012;
       if (this.char) this.char.root.rotation.y = this.spin;
       this.char?.mixer?.update(1 / 60);
@@ -315,9 +327,16 @@ export class CharacterPreview {
     this.look = look;
     const model = look?.model && look.model !== 'blocky';
     if (model && !characterModelReady(look.model)) {
-      // load it, then show it (if it's still the one picked)
-      loadCharacterModel(look.model).then(() => this.look === look && characterModelReady(look.model) && this.show(look));
-    }
+      // load it, then show it (if it's still the one picked); a failed download gets one more try
+      this.onLoading?.(true);
+      loadCharacterModel(look.model)
+        .then((ok) => ok || loadCharacterModel(look.model))
+        .then((ok) => {
+          if (this.look !== look) return;
+          if (ok) this.show(look);
+          else this.onLoading?.('fail');
+        });
+    } else this.onLoading?.(false);
     if (this.char) {
       this.scene.remove(this.char.root);
       for (const m of this.char.mats) m.dispose();

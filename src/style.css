@@ -3520,3 +3520,14 @@ body.infected #game::after {
     align-items: center;
   }
 }
+.look-wrap {
+  position: relative;
+  flex: none;
+}
+.look-loading {
+  position: absolute;
+  inset: auto 0 12px;
+  text-align: center;
+  font-size: 13px;
+  color: #ffd34d;
+}

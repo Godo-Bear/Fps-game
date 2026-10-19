@@ -1,4 +1,4 @@
-import { CharacterPreview } from './character.js';
+import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
@@ -1194,7 +1194,7 @@ export class AccountUI {
     const note = CHARACTERS_LIVE ? 'free · other players see it online, and your arms match it' : 'ADMIN PREVIEW: hidden from players until the big update';
     return `<h4>🧍 Character <span class="muted small">(${note})</span></h4>
       <div class="look-box">
-        <canvas id="look-preview" class="look-preview"></canvas>
+        <div class="look-wrap"><canvas id="look-preview" class="look-preview"></canvas><div id="look-loading" class="look-loading hidden">Loading…</div></div>
         <div class="look-opts">
           <h5>Character</h5><div class="pick-row">${LOOK_MODELS.map(([id, n]) => `<button class="pick ${L.model === id ? 'on' : ''}" data-look="model" data-v="${id}">${n}</button>`).join('')}</div>
           <h5>Skin</h5>${swatches('skin', LOOK_SKIN)}
@@ -1210,9 +1210,17 @@ export class AccountUI {
     const canvas = document.getElementById('look-preview');
     if (canvas) {
       try {
-        this.lookPreview?.dispose();
-        this.lookPreview = new CharacterPreview(canvas);
+        // one preview for good: its canvas moves into each new copy of the page (no new 3D view per click)
+        if (this.lookPreview?.alive) canvas.replaceWith(this.lookPreview.canvas);
+        else this.lookPreview = new CharacterPreview(canvas);
+        const loadingEl = document.getElementById('look-loading');
+        this.lookPreview.onLoading = (on) => {
+          if (!loadingEl.isConnected) return;
+          loadingEl.classList.toggle('hidden', !on);
+          loadingEl.textContent = on === 'fail' ? "Couldn't load: check your connection" : 'Loading…';
+        };
         this.lookPreview.show(p.look);
+        loadAllCharacterModels();
       } catch {
         canvas.remove(); // no WebGL for a second canvas: the pickers still work
       }
