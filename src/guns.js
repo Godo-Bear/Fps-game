@@ -2,36 +2,59 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // The owner's gun models (public/models). Until one has loaded, that gun keeps its block model.
-// size: metres long; at: where the model's grip goes; mag: the part that comes out when reloading.
+// Each is turned to point down -z (rotY), scaled to `length` metres, then placed with its muzzle at `muzzleZ`
+// and its top at `topY` (or moved by `at`). mag: the part that comes out when reloading.
 const GUN_MODELS = {
-  lmg: { url: '/models/MK14 by austincford - lNGPW2NGPZ.glb', size: 1.25, at: [0, -0.06, -0.29], mag: 'Magazine_Standard', muzzleZ: -0.82 },
+  rifle: { url: '/models/Assault Rifle by Zsky - XGeBGFQxYg.glb', length: 1.36, muzzleZ: -0.92, topY: 0.055 },
+  smg: { url: '/models/Submachine Gun by Quaternius - 7ehatxr7FY.glb', rotY: Math.PI / 2, length: 0.86, muzzleZ: -0.58, topY: 0.062 },
+  shotgun: { url: '/models/Shotgun_3.fbx', rotY: Math.PI / 2, length: 1.18, muzzleZ: -0.76, topY: 0.06 },
+  revolver: { url: '/models/Pistol by Zsky - 3To2e7sKmO.glb', length: 0.4, muzzleZ: -0.36, topY: 0.075 },
+  lmg: { url: '/models/MK14 by austincford - lNGPW2NGPZ.glb', length: 1.25, at: [0, -0.06, -0.29], mag: 'Magazine_Standard', muzzleZ: -0.82 },
+  dmr: { url: '/models/Sniper Rifle by Zsky - ZkwSIy3JOV.glb', length: 1.3, muzzleZ: -0.8, topY: 0.13 },
+  sniper: { url: '/models/AWP Sniper by Kyler Swanson - fKsTWWhSkqt.glb', length: 1.55, muzzleZ: -1.05, topY: 0.135 },
 };
 const gunModels = {};
+const loadModel = (url) =>
+  new Promise((resolve) => {
+    const done = (obj) => resolve(obj);
+    if (url.endsWith('.fbx'))
+      import('three/examples/jsm/loaders/FBXLoader.js').then(({ FBXLoader }) => new FBXLoader().load(encodeURI(url), done, undefined, () => resolve(null)));
+    else new GLTFLoader().load(encodeURI(url), (g) => done(g.scene), undefined, () => resolve(null));
+  });
 export function loadGunModels() {
   return Promise.all(
-    Object.entries(GUN_MODELS).map(
-      ([id, def]) =>
-        new Promise((resolve) => {
-          new GLTFLoader().load(
-            encodeURI(def.url),
-            (gltf) => {
-              const scene = gltf.scene;
-              scene.updateMatrixWorld(true);
-              const box = new THREE.Box3().setFromObject(scene, true);
-              const size = box.getSize(new THREE.Vector3());
-              scene.scale.setScalar(def.size / (Math.max(size.x, size.y, size.z) || 1));
-              scene.position.set(...def.at);
-              scene.traverse((o) => {
-                if (o.isMesh) o.userData.finishable = true; // gun finishes tint it
-              });
-              gunModels[id] = { scene, def };
-              resolve(true);
-            },
-            undefined,
-            () => resolve(false),
-          );
-        }),
-    ),
+    Object.entries(GUN_MODELS).map(async ([id, def]) => {
+      const obj = await loadModel(def.url);
+      if (!obj) return false;
+      const holder = new THREE.Group();
+      const spin = new THREE.Group();
+      spin.rotation.y = def.rotY || 0;
+      spin.add(obj);
+      holder.add(spin);
+      holder.updateMatrixWorld(true);
+      let box = new THREE.Box3().setFromObject(holder, true);
+      const size = box.getSize(new THREE.Vector3());
+      holder.scale.setScalar(def.length / (Math.max(size.x, size.y, size.z) || 1));
+      holder.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(holder, true);
+      if (def.at) holder.position.set(...def.at);
+      else holder.position.set(-(box.min.x + box.max.x) / 2, def.topY - box.max.y, def.muzzleZ - box.min.z);
+      obj.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = true;
+        const mats = [].concat(o.material).map((m) => {
+          // a plain matte look like the rest of the game
+          const out = new THREE.MeshStandardMaterial({ color: m.color ? m.color.clone() : 0x444444, map: m.map || null, roughness: 0.6, metalness: 0.2 });
+          return out;
+        });
+        o.material = Array.isArray(o.material) ? mats : mats[0];
+        // gun finishes tint the dark metal, not the wood
+        const c = mats[0].color;
+        o.userData.finishable = c.r * 0.3 + c.g * 0.59 + c.b * 0.11 < 0.35 && !(c.r > c.g * 1.3);
+      });
+      gunModels[id] = { scene: holder, def };
+      return true;
+    }),
   );
 }
 export const hasGunModel = (id) => !!gunModels[id];
@@ -214,6 +237,14 @@ function buildGunBase(id) {
   const out = { group: g, mag: null, muzzleZ: -0.9, muzzleY: 0.02, extra: null };
   switch (id) {
     case 'rifle': {
+      if (gunModels.rifle) {
+        // the AK-style rifle, with the red dot on top
+        modelGun(g, out, 'rifle');
+        part(g, B(0.03, 0.02, 0.06), M.dark, 0, 0.06, 0.02);
+        part(g, new THREE.CylinderGeometry(0.024, 0.024, 0.07, 12, 1, true), M.dark, 0, 0.1, 0.02, H);
+        part(g, new THREE.RingGeometry(0.018, 0.024, 12), M.dark, 0, 0.1, -0.015);
+        break;
+      }
       part(g, B(0.075, 0.1, 0.46), M.metal, 0, 0, 0);
       part(g, B(0.07, 0.07, 0.3), M.wood, 0, -0.01, -0.36);
       part(g, C(0.017, 0.017, 0.42), M.metal, 0, 0.02, -0.66, H);
@@ -230,6 +261,10 @@ function buildGunBase(id) {
       break;
     }
     case 'smg': {
+      if (gunModels.smg) {
+        modelGun(g, out, 'smg');
+        break;
+      }
       part(g, B(0.07, 0.09, 0.32), M.dark, 0, 0, -0.04);
       part(g, B(0.072, 0.05, 0.16), M.olive, 0, -0.01, -0.22);
       part(g, C(0.02, 0.02, 0.18), M.dark, 0, 0.01, -0.36, H);
@@ -244,6 +279,13 @@ function buildGunBase(id) {
       break;
     }
     case 'shotgun': {
+      if (gunModels.shotgun) {
+        modelGun(g, out, 'shotgun');
+        out.extra = part(g, C(0.018, 0.018, 0.07), M.shell, 0, -0.04, 0.0, H); // shell in hand during reload
+        out.extra.visible = false;
+        out.muzzleY = 0.025;
+        break;
+      }
       part(g, B(0.08, 0.09, 0.22), M.dark, 0, 0, 0);
       part(g, C(0.022, 0.022, 0.62), M.metal, 0.022, 0.025, -0.42, H);
       part(g, C(0.022, 0.022, 0.62), M.metal, -0.022, 0.025, -0.42, H);
@@ -258,6 +300,10 @@ function buildGunBase(id) {
       break;
     }
     case 'revolver': {
+      if (gunModels.revolver) {
+        modelGun(g, out, 'revolver');
+        break;
+      }
       part(g, B(0.05, 0.07, 0.12), M.metal, 0, 0, -0.02);
       part(g, C(0.017, 0.017, 0.28), M.metal, 0, 0.02, -0.2, H);
       part(g, B(0.015, 0.02, 0.26), M.metal, 0, 0.042, -0.2);
@@ -297,6 +343,10 @@ function buildGunBase(id) {
       break;
     }
     case 'dmr': {
+      if (gunModels.dmr) {
+        modelGun(g, out, 'dmr');
+        break;
+      }
       part(g, B(0.072, 0.095, 0.44), M.dark, 0, 0, 0);
       part(g, C(0.017, 0.019, 0.5), M.dark, 0, 0.015, -0.48, H);
       part(g, C(0.026, 0.026, 0.07), M.dark, 0, 0.015, -0.74, H);
@@ -314,6 +364,10 @@ function buildGunBase(id) {
       break;
     }
     case 'sniper': {
+      if (gunModels.sniper) {
+        modelGun(g, out, 'sniper');
+        break;
+      }
       part(g, B(0.07, 0.09, 0.4), M.dark, 0, 0, -0.02);
       part(g, C(0.016, 0.02, 0.75), M.dark, 0, 0.015, -0.6, H);
       part(g, C(0.028, 0.028, 0.08), M.dark, 0, 0.015, -0.98, H);
@@ -361,20 +415,58 @@ function buildGunBase(id) {
   return out;
 }
 
-const glove = new THREE.MeshStandardMaterial({ color: 0x4a423a, roughness: 0.9 });
+const glove = new THREE.MeshStandardMaterial({ color: 0x3a342e, roughness: 0.85 });
+const knuckle = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.7 });
 const sleeve = new THREE.MeshStandardMaterial({ color: 0x5b6450, roughness: 1 });
+const cuff = new THREE.MeshStandardMaterial({ color: 0x4a5242, roughness: 1 });
+const skin = new THREE.MeshStandardMaterial({ color: 0xc89a78, roughness: 0.8 });
+const watch = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4, metalness: 0.5 });
+const CAP = (r, len) => new THREE.CapsuleGeometry(r, len, 4, 10);
+
+// A gloved hand: palm, four fingers curled forward around what it holds (-z) and a thumb on top.
+function glovedHand(parent, { fingersDown = true, side = 1 } = {}) {
+  const hand = new THREE.Group();
+  parent.add(hand);
+  part(hand, new THREE.BoxGeometry(0.075, 0.085, 0.07), glove, 0, 0, 0); // palm and back of the hand
+  part(hand, new THREE.BoxGeometry(0.078, 0.02, 0.05), knuckle, 0, 0.042, -0.005); // knuckle pad
+  for (let i = 0; i < 4; i++) {
+    // fingers wrap the grip: forward, then curl back underneath
+    const y = fingersDown ? 0.03 - i * 0.022 : 0;
+    const x = fingersDown ? 0 : -0.03 + i * 0.02;
+    const f = part(hand, CAP(0.011, 0.035), glove, x - side * 0.012, y, -0.05, Math.PI / 2, 0, 0);
+    f.scale.set(1, 1, 0.9);
+    part(hand, CAP(0.01, 0.02), glove, x - side * 0.024, y - (fingersDown ? 0.004 : 0.018), -0.075, fingersDown ? 0 : 0.3, 0, side * 1.2);
+  }
+  part(hand, CAP(0.012, 0.04), glove, side * 0.035, 0.03, -0.035, 1.2, 0, side * -0.4); // thumb
+  return hand;
+}
+// A forearm from the wrist back towards the camera: glove cuff, a bit of wrist, then the rolled-up sleeve.
+function forearm(parent, rx, ry, withWatch = false) {
+  const arm = new THREE.Group();
+  arm.rotation.set(rx, ry, 0);
+  parent.add(arm);
+  part(arm, new THREE.CylinderGeometry(0.036, 0.04, 0.05, 12), glove, 0, 0, 0.04, Math.PI / 2); // glove cuff
+  part(arm, new THREE.CylinderGeometry(0.035, 0.037, 0.06, 12), skin, 0, 0, 0.09, Math.PI / 2); // wrist
+  if (withWatch) part(arm, new THREE.CylinderGeometry(0.038, 0.038, 0.022, 12), watch, 0, 0, 0.085, Math.PI / 2);
+  part(arm, new THREE.TorusGeometry(0.047, 0.014, 6, 14), cuff, 0, 0, 0.125); // rolled sleeve edge
+  part(arm, CAP(0.05, 0.26), sleeve, 0, 0, 0.27, Math.PI / 2); // sleeve
+  return arm;
+}
 
 // Hands and forearms holding a gun. Each hand is a group so reload animations can move it.
 export function buildHands(def) {
   const right = new THREE.Group();
   const [gx, gy, gz] = def.hands.grip;
   right.position.set(gx, gy, gz);
-  part(right, B(0.09, 0.09, 0.09), glove, 0, 0, 0, -0.3);
-  part(right, B(0.1, 0.1, 0.3), sleeve, 0.045, -0.06, 0.17, 0.4, 0.2);
+  const rh = glovedHand(right, { fingersDown: true, side: 1 });
+  rh.rotation.x = -0.3;
+  forearm(right, 0.4, 0.2, true).position.set(0.01, -0.025, 0.02);
   const left = new THREE.Group();
   const [fx, fy, fz] = def.hands.fore;
   left.position.set(fx, fy, fz);
-  part(left, B(0.09, 0.08, 0.11), glove, 0, 0, 0);
-  part(left, B(0.1, 0.1, 0.34), sleeve, -0.1, -0.06, 0.18, 0.3, -0.6);
+  // the support hand cups the handguard from underneath, fingers up the far side
+  const lh = glovedHand(left, { fingersDown: false, side: -1 });
+  lh.rotation.z = 0.25;
+  forearm(left, 0.3, -0.6).position.set(-0.02, -0.03, 0.02);
   return { right, left, leftRest: left.position.clone() };
 }

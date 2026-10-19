@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.22', date: '19 Oct 2026', title: 'Real gun models',
+    items: [
+      'Every gun has a proper 3D model now: an AK-style AR-7 Rifle, a compact Viper SMG, a pump Boomstick, a pistol Hand Cannon, a scoped Marksman DMR and an AWP-style Longshot (plus the MK14 Mule LMG).',
+      'New hands and arms holding them: gloves that wrap around the grip, a rolled-up sleeve and a watch.',
+      'Gun finishes and mastery skins still tint the metal (the wood stays wood).',
+    ],
+  },
+  {
     v: '5.21', date: '19 Oct 2026', title: '🐺 Wolf levels and masteries',
     items: [
       'Your wolf levels up, all the way to level 20: it earns 1 XP for every zombie it kills, and bites 8% harder every level.',
