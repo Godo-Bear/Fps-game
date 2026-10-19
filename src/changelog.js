@@ -13,7 +13,7 @@ export const CHANGELOG = [
     items: [
       'Special limited-time events, hosted every now and then. When one is on, the JOIN EVENT button in Multiplayer lights up and everyone plays together in one big match.',
       'Something new is waiting in them. Keep an eye out for the first one!',
-      'Admin: a new Events tab to host an event (pick one from the list, or give it your own name; how long; drop rate), see how many are playing, and end it.',
+      'Admin: a new Events tab to host an event (pick the event, how long and the drop rate), see how many are playing, and end it.',
     ],
   },
   {

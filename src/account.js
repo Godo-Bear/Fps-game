@@ -1555,7 +1555,7 @@ export class AccountUI {
       </div>
       <div class="acard"><h4>▶ Host an event</h4>
         <form class="auth inline admin-row" id="admin-event-start">
-          <select name="preset" id="admin-event-preset" title="Which event">${EVENT_PRESETS.map((p, i) => `<option value="${i}">🎉 ${esc(p.name)}</option>`).join('')}<option value="custom">✏️ My own name…</option></select>
+          <select name="preset" id="admin-event-preset" title="Which event">${EVENT_PRESETS.map((p, i) => `<option value="${i}">🎉 ${esc(p.name)}</option>`).join('')}</select>
           <input name="name" maxlength="40" placeholder="Event name" class="hidden" id="admin-event-name" />
           <select name="minutes">${EVENT_DURATIONS.map(([v, n]) => `<option value="${v}" ${v === EVENT_PRESETS[0].minutes ? 'selected' : ''}>${n}</option>`).join('')}</select>
           <select name="boost">${DROP_BOOSTS.map(([v, n]) => `<option value="${v}" ${v === EVENT_PRESETS[0].boost ? 'selected' : ''}>${n} drops</option>`).join('')}</select>
