@@ -2717,6 +2717,52 @@ async function joinEvent() {
   $('mp-error').textContent = err || '';
 }
 $('mp-event').addEventListener('click', joinEvent);
+
+// the server list (Multiplayer): every public room, by its host. Private rooms only show to people with the code.
+async function renderServers() {
+  const el = $('mp-servers');
+  let r;
+  try {
+    r = await (await fetch('/api/rooms')).json();
+  } catch {
+    el.innerHTML = '<p class="muted small">Can\'t reach the server list right now.</p>';
+    return;
+  }
+  if (!r.rooms?.length) {
+    el.innerHTML = '<p class="muted small">No public servers right now. Make a room and set it to 🌍 Public, or press Quick play.</p>';
+    return;
+  }
+  el.innerHTML = r.rooms
+    .map(
+      (s) => `<div class="mp-server ${s.players >= r.max ? 'full' : ''}">
+        <button class="mp-host" data-code="${esc(s.code)}" ${s.players >= r.max ? 'disabled' : ''} title="Join ${esc(s.host)}'s server">👑 ${esc(s.host || 'Someone')}</button>
+        <span>${esc(MODES[s.mode]?.name || s.mode)} · ${esc(MAPS[s.map]?.name || '')}</span>
+        <span class="muted small">${s.playing ? 'playing' : 'in the lobby'}</span>
+        <b>${s.players}/${r.max}</b></div>`,
+    )
+    .join('');
+  el.querySelectorAll('[data-code]').forEach(
+    (b) =>
+      (b.onclick = async () => {
+        $('mp-error').textContent = 'Joining…';
+        const err = await mp.join(b.dataset.code);
+        $('mp-error').textContent = err || '';
+        if (err) renderServers();
+      }),
+  );
+}
+$('mp-servers-refresh').addEventListener('click', (e) => {
+  e.preventDefault();
+  renderServers();
+});
+// fresh while the Multiplayer menu is open
+let serversOpen = false;
+let serversTick = 0;
+setInterval(() => {
+  const open = !$('mp-menu').classList.contains('hidden');
+  if (open && (!serversOpen || ++serversTick % 3 === 0)) renderServers(); // straight away, then every 6 seconds
+  serversOpen = open;
+}, 2000);
 account.onChange(renderEventCard);
 renderEventCard();
 setInterval(renderEventCard, 30000);
@@ -4462,6 +4508,11 @@ accountUI.adminActions = {
     applySettings();
     return settings.zombieModels ? 'New zombies use the 3D model.' : 'New zombies use the old blocks.';
   },
+  // admin: join any room by its code (private ones too)
+  async joinRoom(code) {
+    const err = await mp.join(code);
+    return err || `Joined room ${code}.`;
+  },
   setBots(n) {
     if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
     mp.send({ t: 'bots', n });
@@ -5056,7 +5107,7 @@ function newVersionPop(build) {
     document.body.appendChild(el);
   }
   let left = inMenu() ? 3 : 15;
-  el.innerHTML = `<div class="ap-card"><div class="ap-head">🔄 NEW VERSION</div><div class="ap-text">Last Light has been updated!</div>
+  el.innerHTML = `<div class="ap-card"><div class="ap-head">🔄 NEW VERSION</div><div class="ap-text">War Grounds has been updated!</div>
     <div class="ap-from">Restarting to the new version in <b id="version-left">${left}</b>…</div>
     <button class="btn" id="version-now">RESTART NOW</button></div>`;
   if (document.pointerLockElement) document.exitPointerLock();

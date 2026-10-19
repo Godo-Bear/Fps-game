@@ -122,7 +122,7 @@ are what keep `has_paid` locked). **Never** use the `service_role` / **Secret** 
 2. You'll see "Almost there". In Supabase go to **Table Editor** → **profiles**, find your email,
    double-click the `has_paid` cell, pick **TRUE**, and press **Save** (or Enter).
 3. Back in the game press **I've paid — check again**.
-4. On "You're in!", open **I already have a Last Light account** and log in with your **old player
+4. On "You're in!", open **I already have a War Grounds account** and log in with your **old player
    name and password**. That links your old account (admin, level, coins, unlocks) to your email.
    If you don't link it you'd start a new player, and you can claim admin again with the admin code.
 

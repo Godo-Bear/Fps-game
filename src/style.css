@@ -3699,3 +3699,53 @@ body.infected #game::after {
 #mp-event-info {
   margin-top: 4px;
 }
+
+/* ---- the server list (Multiplayer menu) */
+.mp-servers-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.mp-servers-head h4 {
+  margin: 0;
+}
+.mp-servers {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 6px 0;
+  text-align: left;
+}
+.mp-server {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.mp-server.full {
+  opacity: 0.5;
+}
+.mp-host {
+  background: none;
+  border: none;
+  color: #ffd34d;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+}
+.mp-host:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.mp-host:disabled {
+  cursor: not-allowed;
+}

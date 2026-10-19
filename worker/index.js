@@ -490,7 +490,7 @@ export class GameDB extends DurableObject {
       const code = String(body.code || '').slice(0, 8);
       if (!code) return err('No code');
       if (!body.players) this.rooms.delete(code);
-      else this.rooms.set(code, { code, players: Number(body.players) | 0, phase: String(body.phase), mode: String(body.mode), open: !!body.open, at: Date.now() });
+      else this.rooms.set(code, { code, players: Number(body.players) | 0, phase: String(body.phase), mode: String(body.mode), open: !!body.open, map: String(body.map || ''), host: String(body.host || '').slice(0, 42), at: Date.now() });
       return json({ ok: true });
     }
     return err('Not found', 404);
@@ -632,6 +632,16 @@ export class GameDB extends DurableObject {
       const list = [...this.rooms.values()].filter((r) => r.open && r.players < MAX_PLAYERS && now - r.at < 90000 && r.phase !== 'ended' && (want ? r.mode === want : r.mode !== 'event'));
       list.sort((a, b) => (a.phase === 'lobby' ? 0 : 1) - (b.phase === 'lobby' ? 0 : 1) || b.players - a.players);
       return json({ code: list[0]?.code || null });
+    }
+    // the server list: every public room (private ones only by code), busiest first
+    if (path === '/rooms' && method === 'GET') {
+      const now = Date.now();
+      const list = [...this.rooms.values()]
+        .filter((r) => r.open && r.mode !== 'event' && r.players > 0 && r.phase !== 'ended' && now - r.at < 90000)
+        .sort((a, b) => b.players - a.players)
+        .slice(0, 30)
+        .map((r) => ({ code: r.code, host: r.host, mode: r.mode, map: r.map, players: r.players, playing: r.phase === 'playing' }));
+      return json({ rooms: list, max: MAX_PLAYERS });
     }
     // the weekly challenge board
     if (path === '/weekly' && method === 'GET') {
@@ -1111,6 +1121,16 @@ export class GameDB extends DurableObject {
       // how it's going: event rooms and the players in them
       const rooms = [...this.rooms.values()].filter((r) => r.mode === 'event' && Date.now() - r.at < 90000);
       return json({ event: this._event(), rooms: rooms.length, players: rooms.reduce((n, r) => n + r.players, 0) });
+    }
+    // admin: every room on every server, private and event ones too
+    if (path === '/admin/rooms' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const now = Date.now();
+      const list = [...this.rooms.values()]
+        .filter((r) => r.players > 0 && now - r.at < 90000)
+        .sort((a, b) => b.players - a.players)
+        .map((r) => ({ code: r.code, host: r.host, mode: r.mode, map: r.map, players: r.players, playing: r.phase === 'playing', open: r.open }));
+      return json({ rooms: list });
     }
     // admin: an announcement every player sees (in any room, or on the menu) until they press OK
     if (path === '/admin/announce' && method === 'POST') {
@@ -2590,7 +2610,7 @@ export class Room extends DurableObject {
       this.reportT = null;
       const players = this._humans().length;
       this._db
-        .fetch('https://db/api/internal/room', { method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ code: this.code, players, phase: this.phase, mode: this.mode, open: !!this.open }) })
+        .fetch('https://db/api/internal/room', { method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ code: this.code, players, phase: this.phase, mode: this.mode, open: !!this.open, map: this.map, host: this.players.get(this.hostId)?.name || '' }) })
         .catch(() => {});
     }, 1000);
   }

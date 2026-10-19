@@ -1005,7 +1005,7 @@ export class AccountUI {
         <h2>You're in! 🎉</h2>
         <p>Pick the name other players will see.</p>
         <form id="pay-name" class="auth"><input name="username" placeholder="Player name (3-40 letters, numbers or _)" maxlength="40" required /><button class="btn pay-main">START PLAYING</button></form>
-        <details class="pay-terms"><summary>I already have a Last Light account</summary>
+        <details class="pay-terms"><summary>I already have a War Grounds account</summary>
           <p class="muted small">Log in with your old player name and password once to keep your level, coins and unlocks.</p>
           <form id="pay-link" class="auth"><input name="username" placeholder="Old player name" maxlength="40" required /><input name="password" type="password" placeholder="Old password" required /><button class="btn small">LINK MY OLD ACCOUNT</button></form>
         </details>
@@ -1017,7 +1017,7 @@ export class AccountUI {
     this.body.innerHTML = `<div class="paygate">
       ${g?.kind === 'confirm' ? `<p class="must-login">📧 We sent a link to <b>${esc(g.email)}</b>. Click it to confirm your email, then log in here.</p>` : ''}
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make an account (or log in) to start playing.</b></p>' : ''}
-      <h2>Get Last Light</h2>
+      <h2>Get War Grounds</h2>
       <p class="muted">${months ? `${price} for every ${months} months` : `One payment of ${price}, yours forever`}, ${esc(c.payNote || 'paid cash in hand to the site owner')}. No refunds. Make your account first, then pay the owner to have it switched on.</p>
       <form id="pay-auth" class="auth">
         <input name="email" type="email" placeholder="Email" autocomplete="email" required />
@@ -1546,6 +1546,9 @@ export class AccountUI {
       <div class="acard"><h4>📢 Room</h4>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
       </div>
+      <div class="acard"><h4>🗂️ Every room <span class="muted small">(private ones too: players only see the public ones)</span> <a href="#" id="admin-rooms-refresh" class="small">refresh</a></h4>
+      <div id="admin-rooms" class="admin-players muted small">Loading…</div>
+      </div>
       <div class="acard"><h4>🤖 AI bots in this room <span class="muted small">(PvP modes; the host picks this in Match settings too)</span></h4>
       <div class="gun-presets">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<button class="chipbtn" data-abots="${n}" ${mp ? '' : 'disabled'}>${n ? `${n} bot${n > 1 ? 's' : ''}` : 'No bots'}</button>`).join('')}</div>
       </div>
@@ -1625,6 +1628,30 @@ export class AccountUI {
     const msg = (t) => (document.getElementById('admin-msg').textContent = t);
     document.getElementById('admin-drop').onclick = () => msg(act.supplyDrop());
     this._adminTeams(msg);
+    // every room, with a join button
+    const roomsEl = document.getElementById('admin-rooms');
+    const loadRooms = async () => {
+      try {
+        const { rooms } = await a._api('/admin/rooms', { method: 'POST', body: {} });
+        roomsEl.innerHTML = rooms.length
+          ? rooms
+              .map(
+                (r) => `<div class="friend admin-player"><b>${r.open ? '🌍' : '🔒'} ${esc(r.host || '?')}</b>
+                <span class="muted">${esc(r.code)} · ${esc(r.mode)} · ${r.players} player(s) · ${r.playing ? 'playing' : 'lobby'}</span>
+                <span class="actions"><button data-joinroom="${esc(r.code)}">JOIN</button></span></div>`,
+              )
+              .join('')
+          : 'No rooms right now.';
+        roomsEl.querySelectorAll('[data-joinroom]').forEach((b) => (b.onclick = async () => msg(await act.joinRoom(b.dataset.joinroom))));
+      } catch (err) {
+        roomsEl.textContent = err.message;
+      }
+    };
+    loadRooms();
+    document.getElementById('admin-rooms-refresh').onclick = (e) => {
+      e.preventDefault();
+      loadRooms();
+    };
     for (const btn of this.body.querySelectorAll('[data-barrels]')) btn.onclick = () => msg(act.barrels(btn.dataset.barrels));
     this._adminPlayers('');
     document.getElementById('admin-find').addEventListener('submit', (e) => {

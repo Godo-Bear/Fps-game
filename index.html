@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <title>Last Light</title>
+    <title>War Grounds</title>
     <meta name="description" content="Survive zombie waves or fight your friends online. Climb, slide, loot mutated guns." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧟</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -82,7 +82,7 @@
 
     <div id="menu" class="overlay lobby-home">
       <header class="fn-top">
-        <div class="fn-logo">LAST<span>LIGHT</span></div>
+        <div class="fn-logo">WAR<span>GROUNDS</span></div>
         <nav class="fn-nav">
           <button class="on" id="nav-play">PLAY</button>
           <button id="nav-locker">LOCKER</button>
@@ -200,6 +200,9 @@
         <button id="mp-event" class="btn event-btn" disabled>🎉 JOIN EVENT</button>
         <div id="mp-event-info" class="muted small"></div>
         <div id="mp-error" class="msg"></div>
+        <!-- public rooms (private ones only by code): click the host to join -->
+        <div class="mp-servers-head"><h4>🌍 Open servers</h4><a href="#" id="mp-servers-refresh" class="small">refresh</a></div>
+        <div id="mp-servers" class="mp-servers"><p class="muted small">Looking…</p></div>
         <p class="muted small">Quick play drops you into an open room (or makes one). Modes: Co-op Survival, Defend the Points, Extraction, Free-for-all, Team Deathmatch, Capture Point, Capture the Flag, Gun Game, Infection, One in the Chamber, Juggernaut. Up to 16 players.</p>
         <button id="mp-back" class="btn ghost">BACK</button>
       </div>

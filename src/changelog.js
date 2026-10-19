@@ -2,6 +2,20 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.29', date: '19 Oct 2026', title: '⚔️ Now called War Grounds',
+    items: [
+      'The game has a new name: War Grounds. Same game, same accounts: your progress, coins, guns, wolf and pieces are all still yours.',
+    ],
+  },
+  {
+    v: '5.28', date: '19 Oct 2026', title: '🌍 Server list',
+    items: [
+      'Multiplayer now lists every open server by its host: click the host\'s name to join their game. It shows the mode, map, how full it is and whether they\'re playing.',
+      'Private rooms stay off the list: only people with the code can join. Set your room to 🌍 Public in its Match settings to show it.',
+      'Admin: the Multiplayer tab lists every room, private ones too, with a JOIN button.',
+    ],
+  },
+  {
     v: '5.27', date: '19 Oct 2026', title: 'Bigger matches',
     items: [
       'Multiplayer rooms now hold up to 16 players (was 8).',
