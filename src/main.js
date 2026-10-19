@@ -4814,7 +4814,7 @@ function newVersionPop(build) {
     document.body.appendChild(el);
   }
   let left = inMenu() ? 3 : 15;
-  el.innerHTML = `<div class="ap-card"><div class="ap-head">🔄 NEW VERSION</div><div class="ap-text">Hollow Ground has been updated!</div>
+  el.innerHTML = `<div class="ap-card"><div class="ap-head">🔄 NEW VERSION</div><div class="ap-text">Last Light has been updated!</div>
     <div class="ap-from">Restarting to the new version in <b id="version-left">${left}</b>…</div>
     <button class="btn" id="version-now">RESTART NOW</button></div>`;
   if (document.pointerLockElement) document.exitPointerLock();

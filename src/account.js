@@ -976,7 +976,7 @@ export class AccountUI {
         <h2>You're in! 🎉</h2>
         <p>Pick the name other players will see.</p>
         <form id="pay-name" class="auth"><input name="username" placeholder="Player name (3-40 letters, numbers or _)" maxlength="40" required /><button class="btn pay-main">START PLAYING</button></form>
-        <details class="pay-terms"><summary>I already have a Hollow Ground account</summary>
+        <details class="pay-terms"><summary>I already have a Last Light account</summary>
           <p class="muted small">Log in with your old player name and password once to keep your level, coins and unlocks.</p>
           <form id="pay-link" class="auth"><input name="username" placeholder="Old player name" maxlength="40" required /><input name="password" type="password" placeholder="Old password" required /><button class="btn small">LINK MY OLD ACCOUNT</button></form>
         </details>
@@ -988,7 +988,7 @@ export class AccountUI {
     this.body.innerHTML = `<div class="paygate">
       ${g?.kind === 'confirm' ? `<p class="must-login">📧 We sent a link to <b>${esc(g.email)}</b>. Click it to confirm your email, then log in here.</p>` : ''}
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make an account (or log in) to start playing.</b></p>' : ''}
-      <h2>Get Hollow Ground</h2>
+      <h2>Get Last Light</h2>
       <p class="muted">${months ? `${price} for every ${months} months` : `One payment of ${price}, yours forever`}, ${esc(c.payNote || 'paid cash in hand to the site owner')}. No refunds. Make your account first, then pay the owner to have it switched on.</p>
       <form id="pay-auth" class="auth">
         <input name="email" type="email" placeholder="Email" autocomplete="email" required />

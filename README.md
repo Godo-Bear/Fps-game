@@ -1,4 +1,4 @@
-# Hollow Ground
+# Last Light
 
 A first-person zombie survival shooter that runs in the browser (Three.js + Vite).
 

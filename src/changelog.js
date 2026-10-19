@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.24', date: '19 Oct 2026', title: '🔦 Hollow Ground is now Last Light',
+    items: [
+      'The game has a new name: Last Light. Same game, same accounts, and all your progress, coins, guns and wolf are still yours.',
+    ],
+  },
+  {
     v: '5.23', date: '19 Oct 2026', title: 'New LMG sight',
     items: [
       'The Mule LMG has a proper holographic sight: a slim hooded frame with tinted glass and a glowing red ring-and-dot reticle that lines up exactly when you aim.',
