@@ -54,5 +54,5 @@ export const DEFAULT_EVENT_NAME = 'Outfit Hunt';
 export const EVENT_PRESETS = [
   { name: 'Outfit Hunt', minutes: 60, boost: 1, desc: 'Red vs Blue vs the zombies: collect puzzle pieces to unlock SWAT, Adventurer and King.' },
 ];
-// Everyone plays in the one event room (its code comes with the event), so it holds more than a normal room.
-export const EVENT_MAX_PLAYERS = Infinity; // no limit: everyone who joins gets in
+// Event rooms hold this many; when one fills up, the next player opens a new one (same event, same drops).
+export const EVENT_MAX_PLAYERS = 20;

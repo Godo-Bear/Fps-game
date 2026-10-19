@@ -18,7 +18,7 @@ import { Effects } from './effects.js';
 import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, setArmLook, randomMutation, rollGun } from './guns.js';
 import { Minimap } from './minimap.js';
 import { Avatar, Multiplayer } from './multiplayer.js';
-import { DROP_CHANCE, PIECE_COUNT, totalPieces } from '../shared/events.js';
+import { DROP_CHANCE, EVENT_MAX_PLAYERS, PIECE_COUNT, totalPieces } from '../shared/events.js';
 import { showPiece } from './puzzle.js';
 import { NavGrid } from './navgrid.js';
 import { GunPickups } from './pickups.js';
@@ -2693,14 +2693,27 @@ function renderEventCard() {
   const h = Math.floor(left / 3600000);
   const m = Math.ceil((left % 3600000) / 60000);
   btn.textContent = `🎉 JOIN EVENT: ${e.name}`;
-  info.innerHTML = `Everyone's in one match: Red vs Blue vs the zombies · 🧩 pieces unlock new characters${e.boost > 1 ? ` · <b>${e.boost}× drops!</b>` : ''}<br/>${e.endsAt ? `Ends in ${h ? `${h}h ` : ''}${m}m · ` : ''}Your pieces: <b>${totalPieces(account.items)}/${PIECE_COUNT}</b>`;
+  info.innerHTML = `Red vs Blue vs the zombies, up to  a match · 🧩 pieces unlock new characters${e.boost > 1 ? ` · <b>${e.boost}× drops!</b>` : ''}<br/>${e.endsAt ? `Ends in ${h ? `${h}h ` : ''}${m}m · ` : ''}Your pieces: <b>${totalPieces(account.items)}/${PIECE_COUNT}</b>`;
 }
 async function joinEvent() {
-  const e = account.event;
-  if (!e?.room) return;
+  if (!account.event) return;
   if (!account.loggedIn) return accountUI.open('login');
   $('mp-error').textContent = 'Joining the event…';
-  const err = await mp.joinEvent(e.room);
+  // the server picks a room with space (or opens a new one); if it filled up meanwhile, ask for another
+  const full = [];
+  let err = null;
+  for (let i = 0; i < 4; i++) {
+    let code;
+    try {
+      code = (await account.eventRoom(full)).code;
+    } catch (e) {
+      err = e.message;
+      break;
+    }
+    err = await mp.joinEvent(code);
+    if (!err || !/full/i.test(err)) break;
+    full.push(code);
+  }
   $('mp-error').textContent = err || '';
 }
 $('mp-event').addEventListener('click', joinEvent);

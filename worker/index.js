@@ -1033,6 +1033,32 @@ export class GameDB extends DurableObject {
       return json({ note: level ? `A wolf level now costs ${price}.` : `The wolf now costs ${price}.`, price });
     }
     // ---- events
+    // which event room to join: the fullest one that still has space, or a brand new one when they're all full
+    if (path === '/event/room' && method === 'POST') {
+      const ev = this._event();
+      if (!ev) return err('No event is on right now');
+      const now = Date.now();
+      ev.rooms = Array.isArray(ev.rooms) ? ev.rooms : ev.room ? [ev.room] : [];
+      const full = new Set(Array.isArray(body.full) ? body.full.map(String) : []); // rooms that just turned this player away
+      let best = null;
+      let most = -1;
+      for (const code of ev.rooms) {
+        if (full.has(code)) continue;
+        const r = this.rooms.get(code);
+        // a room nobody's reported in a while is empty (the first one in opens it again)
+        const players = r && now - r.at < 90000 ? r.players : 0;
+        if (players < EVENT_MAX_PLAYERS && players > most) {
+          best = code;
+          most = players;
+        }
+      }
+      if (!best) {
+        best = makeRoomCode();
+        ev.rooms.push(best);
+        this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
+      }
+      return json({ code: best, rooms: ev.rooms.length });
+    }
     // a puzzle piece picked up in an event match: the server picks which one
     if (path === '/event/piece' && method === 'POST') {
       const ev = this._event();
@@ -1072,7 +1098,8 @@ export class GameDB extends DurableObject {
         const boost = DROP_BOOSTS.some(([v]) => v === Number(body.boost)) ? Number(body.boost) : 1;
         const now = Date.now();
         // one room for everyone: its code goes out with the event, and the first person in opens it
-        const ev = { id: now, name, by: me.username, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, boost, pieces: 0, announced: body.announce !== false, room: makeRoomCode() };
+        const first = makeRoomCode();
+        const ev = { id: now, name, by: me.username, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, boost, pieces: 0, announced: body.announce !== false, room: first, rooms: [first] };
         this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
         if (ev.announced) {
           // everyone gets told (until they press OK), on the menu or in a match
