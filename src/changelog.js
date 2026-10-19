@@ -2,6 +2,17 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.21', date: '19 Oct 2026', title: '🐺 Wolf levels and masteries',
+    items: [
+      'Your wolf levels up, all the way to level 20: it earns 1 XP for every zombie it kills, and bites 8% harder every level.',
+      'Masteries unlock as it levels: Swift Paws (3), Bleeding Bite (5), Howl (8), Alpha with glowing eyes and a bigger wolf (10), Frenzy (12), Guardian (15) and the huge, golden Dire Wolf (20).',
+      'Skip ahead: wolf levels can be bought with real money, 50c a level, paid to the owner.',
+      'Choose where your wolf walks: on your right, on your left, in front of you or behind you.',
+      'The Mule LMG has a brand new look: a proper 3D rifle model.',
+      'Admin: add wolf levels to a player (in MANAGE, or the Wolf companion card) and set the price of a level.',
+    ],
+  },
+  {
     v: '5.20', date: '18 Oct 2026', title: '🐺 The wolf companion',
     items: [
       'The first pet is here: a wolf that runs at your side in every mode and bites the zombies closest to you.',

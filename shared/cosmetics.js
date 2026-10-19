@@ -38,9 +38,39 @@ export const PET_COLORS = [
   ['#c4562e', 'Red fox'], ['#6f8fb8', 'Frost blue'], ['#7a4fc4', 'Shadow purple'], ['#4fbf5a', 'Toxic green'],
 ];
 export const PET_ITEM = 'pet_wolf';
-export const ownsWolf = (level, items = {}) => !!items[PET_ITEM] || level >= 999; // admins have everything
+// only when it's been given (admins too: give yourself one from the admin panel), so taking it away works
+export const ownsWolf = (level, items = {}) => !!items[PET_ITEM];
 
-export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', finish: 'standard', pet: 'none', petColor: '#8a8f96' };
+// Pet levels: the wolf earns XP from the zombies it kills (1 each), or the owner adds levels someone paid for.
+// items.pet_lvl / items.pet_xp (XP towards the next level).
+export const PET_MAX_LEVEL = 20;
+export const petXpNeeded = (level) => 15 * level; // XP from this level to the next
+export const petLevel = (items = {}) => Math.max(1, Math.min(PET_MAX_LEVEL, Math.floor(Number(items.pet_lvl) || 1)));
+// Adds XP (levelling up as it fills). Changes items in place.
+export function addPetXp(items, xp) {
+  let lvl = petLevel(items);
+  let have = Math.max(0, Math.floor(Number(items.pet_xp) || 0)) + Math.max(0, Math.floor(xp));
+  while (lvl < PET_MAX_LEVEL && have >= petXpNeeded(lvl)) have -= petXpNeeded(lvl++);
+  items.pet_lvl = lvl;
+  items.pet_xp = lvl >= PET_MAX_LEVEL ? 0 : have;
+  return items;
+}
+// Every level: +8% bite damage. Masteries unlock at these levels.
+export const PET_MASTERIES = [
+  { lvl: 1, id: 'bite', icon: '🦷', name: 'Bite', desc: 'Bites the zombies closest to you' },
+  { lvl: 3, id: 'swift', icon: '💨', name: 'Swift Paws', desc: 'Runs faster and hunts further from you' },
+  { lvl: 5, id: 'bleed', icon: '🩸', name: 'Bleeding Bite', desc: 'Bitten zombies keep bleeding' },
+  { lvl: 8, id: 'howl', icon: '🌕', name: 'Howl', desc: 'Every 20 s it howls and slows the zombies around you' },
+  { lvl: 10, id: 'alpha', icon: '👁️', name: 'Alpha', desc: 'Glowing eyes and a bigger wolf, for everyone to see' },
+  { lvl: 12, id: 'frenzy', icon: '⚡', name: 'Frenzy', desc: 'Bites twice as fast' },
+  { lvl: 15, id: 'guardian', icon: '🛡️', name: 'Guardian', desc: 'Goes straight for any zombie that hits you, with a double-damage pounce' },
+  { lvl: 20, id: 'dire', icon: '👑', name: 'Dire Wolf', desc: 'A huge wolf with a golden glow that bites twice as hard' },
+];
+export const petHas = (level, id) => PET_MASTERIES.some((m) => m.id === id && level >= m.lvl);
+// where it walks: [id, label]
+export const PET_SPOTS = [['right', 'On my right'], ['left', 'On my left'], ['front', 'In front'], ['behind', 'Behind']];
+
+export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', finish: 'standard', pet: 'none', petColor: '#8a8f96', petSpot: 'right' };
 
 const LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
 
@@ -59,6 +89,7 @@ export function cleanProfile(input, level, items = {}) {
     }
     if (input.pet === 'wolf' && ownsWolf(level, items)) out.pet = 'wolf';
     if (typeof input.petColor === 'string' && /^#[0-9a-f]{6}$/i.test(input.petColor)) out.petColor = input.petColor.toLowerCase();
+    if (PET_SPOTS.some(([id]) => id === input.petSpot)) out.petSpot = input.petSpot;
   }
   return out;
 }

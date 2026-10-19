@@ -50,6 +50,7 @@ function blockWolf(color) {
   const light = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.45), roughness: 0.95 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
   const eye = new THREE.MeshStandardMaterial({ color: 0xffd34d, emissive: 0xffb020, emissiveIntensity: 0.8 });
+  eye.userData.eye = true;
   const box = (w, h, d, mat, parent, x, y, z) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, y, z);
@@ -132,6 +133,7 @@ export class Wolf {
     this.biteT = 0;
     this.biteAnim = 0;
     this.placed = false;
+    this.level = 1;
     this.build();
   }
 
@@ -146,6 +148,31 @@ export class Wolf {
     if (this.pos) this.look.root.position.copy(this.pos);
     this.pos = this.look.root.position;
     this.scene.add(this.look.root);
+    this._levelLook();
+  }
+
+  // Alpha (level 10): glowing eyes and bigger. Dire Wolf (20): huge, with a golden glow.
+  setLevel(lvl) {
+    if (lvl === this.level) return;
+    this.level = lvl;
+    this._levelLook();
+  }
+  _levelLook() {
+    const L = this.look;
+    const alpha = this.level >= 10;
+    const dire = this.level >= 20;
+    L.root.scale.setScalar(dire ? 1.4 : alpha ? 1.15 : 1);
+    for (const m of L.mats) {
+      if (!m.emissive) continue;
+      const eye = /eye/i.test(m.name) || m.userData.eye;
+      if (eye) {
+        m.emissive.setHex(alpha ? 0xffc030 : m.userData.eye ? 0xffb020 : 0x000000);
+        m.emissiveIntensity = alpha ? 2 : 0.8;
+      } else {
+        m.emissive.setHex(dire ? 0x6a4a10 : 0x000000);
+        m.emissiveIntensity = dire ? 0.6 : 1;
+      }
+    }
   }
 
   setColor(c) {
@@ -164,30 +191,40 @@ export class Wolf {
     for (const m of this.look.mats) m.dispose?.();
   }
 
-  // Follows `owner` (feet position). `prey`: a zombie position to run at instead.
-  update(dt, owner, prey = null) {
+  // Follows `owner` (feet position), keeping to its spot (right, left, front or behind) by the way they
+  // face (`yaw`, like the camera's). `prey`: a zombie position to run at instead. `fast`: Swift Paws.
+  update(dt, owner, { prey = null, yaw = 0, spot = 'right', fast = false } = {}) {
     const p = this.pos;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    const [ox, oz] = spot === 'front' ? [fx * 2.2, fz * 2.2] : spot === 'behind' ? [-fx * 2, -fz * 2] : spot === 'left' ? [fz * 1.6, -fx * 1.6] : [-fz * 1.6, fx * 1.6];
     if (!this.placed || Math.hypot(p.x - owner.x, p.z - owner.z) > 30) {
-      // start (or catch up) next to the owner
-      p.set(owner.x + 1.2, 0, owner.z - 1.2);
+      // start (or catch up) at its spot
+      p.set(owner.x + ox, 0, owner.z + oz);
       this.placed = true;
     }
-    const to = prey || owner;
-    const dx = to.x - p.x;
-    const dz = to.z - p.z;
+    const tx = prey ? prey.x : owner.x + ox;
+    const tz = prey ? prey.z : owner.z + oz;
+    const dx = tx - p.x;
+    const dz = tz - p.z;
     const d = Math.hypot(dx, dz);
-    const stop = prey ? 1.1 : 1.8;
+    const stop = prey ? 1.1 : 0.25;
+    const top = fast ? 11 : 9;
     let want = 0;
-    if (d > stop) want = prey ? 7.5 : Math.min(9, 1.5 + (d - stop) * 2.2);
+    if (d > stop) want = prey ? (fast ? 9.5 : 7.5) : Math.min(top, 1 + (d - stop) * 3);
     this.speed += (want - this.speed) * Math.min(1, dt * 6);
-    if (this.speed > 0.05 && d > 0.01) {
+    let face = null;
+    if (this.speed > 0.4 && d > 0.05) {
       const step = Math.min(this.speed * dt, Math.max(0, d - stop));
       p.x += (dx / d) * step;
       p.z += (dz / d) * step;
-      const yaw = Math.atan2(dx, dz);
-      let r = yaw - this.look.root.rotation.y;
+      face = Math.atan2(dx, dz);
+    } else if (!prey) face = Math.atan2(fx, fz); // standing at its spot: looks the way you do
+    else if (d > 0.01) face = Math.atan2(dx, dz);
+    if (face !== null) {
+      let r = face - this.look.root.rotation.y;
       r = Math.atan2(Math.sin(r), Math.cos(r));
-      this.look.root.rotation.y += r * Math.min(1, dt * 10);
+      this.look.root.rotation.y += r * Math.min(1, dt * 8);
     }
     p.y = heightAt(p.x, p.z);
     this.biteAnim = Math.max(0, this.biteAnim - dt);

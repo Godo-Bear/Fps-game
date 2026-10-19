@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FINISHES, levelFromXp } from '../shared/cosmetics.js';
+import { FINISHES, levelFromXp, petHas, petLevel } from '../shared/cosmetics.js';
 import { EVAC_HOLD, INFECTED, JUGG_HP, MAPS, MODES, SOLO_MAP, SURVIVORS, quickWheel } from '../shared/modes.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../shared/achievements.js';
 import { termsHtml } from '../shared/terms.js';
@@ -15,7 +15,7 @@ import { DefendPoints } from './defend.js';
 import { Structures } from './structures.js';
 import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
 import { Effects } from './effects.js';
-import { GUNS, MUTATIONS, TIER_CSS, randomMutation, rollGun } from './guns.js';
+import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, randomMutation, rollGun } from './guns.js';
 import { Minimap } from './minimap.js';
 import { Multiplayer } from './multiplayer.js';
 import { NavGrid } from './navgrid.js';
@@ -1744,6 +1744,7 @@ function onKill(z, head, src = null) {
 function rewardKill({ type, mut, head, src = null, x, y, z, bounty = false }) {
   const T = ZOMBIE_TYPES[type] || ZOMBIE_TYPES.walker;
   game.kills++;
+  if (src === 'wolf') game.petKills = (game.petKills || 0) + 1;
   achieve('first_kill');
   if (type === 'boss') achieve('boss');
   if (src === 'barrel') {
@@ -1868,6 +1869,7 @@ function clearShields() {
 
 function onPlayerHit(z, dmg, kind) {
   if (!zombieGame() || player.dead) return;
+  wolfGuard(z);
   if (shieldUp()) return; // the force field takes it
   if (game.state !== 'playing' && !isCoop()) return;
   if (cheats.god && cheatsOn()) return;
@@ -2434,10 +2436,11 @@ function applyProfile() {
 account.onChange(applyProfile);
 
 // ---------------------------------------------------------------- your wolf companion
-// Bought with real money (the owner switches it on). It runs at your side in a game and, in zombie
-// modes, bites the zombies closest to you.
+// Bought with real money (the owner switches it on). It walks at its spot by you (right, left, in front
+// or behind) and, in zombie modes, bites the zombies closest to you. It levels up from its kills (or levels
+// the owner adds), getting stronger and unlocking masteries (shared/cosmetics.js PET_MASTERIES).
 let myWolf = null;
-const wolfHunt = { prey: null, findT: 0, biteT: 0 };
+const wolfHunt = { prey: null, findT: 0, biteT: 0, howlT: 20, pounce: false };
 function updatePets(dt) {
   const p = account.profile;
   const show = p.pet === 'wolf' && ['playing', 'paused', 'choosing'].includes(game.state);
@@ -2448,36 +2451,66 @@ function updatePets(dt) {
     }
     return;
   }
+  const lvl = petLevel(account.items);
+  const has = (id) => petHas(lvl, id);
   if (!myWolf) myWolf = new Wolf(scene, p.petColor);
   myWolf.look.root.visible = true;
   myWolf.setColor(p.petColor);
-  // hunting: the nearest zombie within 9 m of you
+  myWolf.setLevel(lvl);
+  // hunting: the nearest zombie near you (further with Swift Paws), or whoever just hit you (Guardian)
   const hunting = zombieGame() && !player.dead && game.state === 'playing';
+  const reach = has('swift') ? 13 : 9;
   wolfHunt.findT -= dt;
-  if (hunting && wolfHunt.findT <= 0) {
+  if (hunting && wolfHunt.findT <= 0 && !(wolfHunt.pounce && wolfHunt.prey?.alive)) {
     wolfHunt.findT = 0.3;
     let best = null;
-    let bestD = 9;
+    let bestD = reach;
     for (const z of zombies.list) {
       if (!z.alive || z.state === 'rising') continue;
       const d = Math.hypot(z.root.position.x - player.pos.x, z.root.position.z - player.pos.z);
       if (d < bestD) (best = z), (bestD = d);
     }
     wolfHunt.prey = best;
+    wolfHunt.pounce = false;
   }
   const z = hunting && wolfHunt.prey?.alive ? wolfHunt.prey : null;
-  const d = myWolf.update(dt, player.pos, z ? z.root.position : null);
+  const d = myWolf.update(dt, player.pos, { prey: z ? z.root.position : null, yaw: player.yaw, spot: p.petSpot, fast: has('swift') });
   wolfHunt.biteT -= dt;
   if (z && d < 1.3 + z.radius && wolfHunt.biteT <= 0) {
-    wolfHunt.biteT = 1.1;
+    wolfHunt.biteT = has('frenzy') ? 0.55 : 1.1;
     myWolf.bite();
-    const dmg = Math.round((15 + game.wave * 2) * (z.typeId === 'boss' ? 0.5 : 1));
-    if (!simHost()) mp.relay('host', { k: 'zhit', id: z.id, dmg, head: false, mut: null, slow: 0, src: 'wolf' });
-    else {
-      hitSoundPlayed = true;
-      applyZombieHit(z, dmg, { shooter: 'me', src: 'wolf' });
+    // +8% a level, double with Dire Wolf, and double again for a Guardian pounce
+    let dmg = (15 + game.wave * 2) * (1 + (lvl - 1) * 0.08) * (has('dire') ? 2 : 1) * (wolfHunt.pounce ? 2 : 1);
+    dmg = Math.round(dmg * (z.typeId === 'boss' ? 0.5 : 1));
+    wolfHunt.pounce = false;
+    wolfBite(z, dmg);
+    if (has('bleed') && simHost()) zombies.addDot(z, 'bleed', 4 + lvl * 0.5, 3);
+  }
+  // Howl: slows every zombie within 10 m of you
+  if (hunting && has('howl')) {
+    wolfHunt.howlT -= dt;
+    if (wolfHunt.howlT <= 0) {
+      const near = zombies.list.filter((o) => o.alive && Math.hypot(o.root.position.x - player.pos.x, o.root.position.z - player.pos.z) < 10);
+      if (near.length) {
+        wolfHunt.howlT = 20;
+        for (const o of near) wolfBite(o, 1, 0.5);
+        banner('🌕 HOWL', 'Your wolf slowed the zombies near you', 'gold', 1.2);
+      }
     }
   }
+}
+function wolfBite(z, dmg, slow = 0) {
+  if (!simHost()) mp.relay('host', { k: 'zhit', id: z.id, dmg, head: false, mut: null, slow, src: 'wolf' });
+  else {
+    hitSoundPlayed = true;
+    applyZombieHit(z, dmg, { shooter: 'me', src: 'wolf', slow });
+  }
+}
+// Guardian: the wolf goes for whatever just hurt you
+function wolfGuard(z) {
+  if (!z || !myWolf || account.profile.pet !== 'wolf' || !petHas(petLevel(account.items), 'guardian')) return;
+  wolfHunt.prey = z;
+  wolfHunt.pounce = true;
 }
 // ---------------------------------------------------------------- saved games (solo)
 // You name a game when you start it. It's saved when it starts and after every wave (once you
@@ -2758,7 +2791,7 @@ function startGame(save = null, name = null, { weekly = false } = {}) {
   weather.set(world.theme.weather, true);
   structures.clear();
   setBuild(false);
-  Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2), spent: 0, perks: new Set(), mod: null, special: null, forceMod: null });
+  Object.assign(game, { wave: 0, kills: 0, petKills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 5, toSpawn: 0, bossToSpawn: 0, runId: Math.random().toString(36).slice(2), spent: 0, perks: new Set(), mod: null, special: null, forceMod: null });
   clearEvac();
   clearShields();
   applyWaveTwist();
@@ -2806,7 +2839,7 @@ async function gameOver() {
   renderBest();
   live.on = false; // saving the run takes you off the live board
   live.wave = 0;
-  const r = await account.recordRun({ mode: 'solo', wave: game.wave, score: game.score, kills: game.kills, headshots: game.headshots });
+  const r = await account.recordRun({ mode: 'solo', wave: game.wave, score: game.score, kills: game.kills, headshots: game.headshots, petKills: game.petKills || 0 });
   showXp(r);
 }
 
@@ -2940,7 +2973,7 @@ const mp = new Multiplayer({
     clearProjectiles();
     clearMedkits();
     player.reset(100);
-    Object.assign(game, { wave: 0, kills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0, night: false, spent: 0, perks: new Set(), mod: null, special: null, forceMod: null, weekly: false });
+    Object.assign(game, { wave: 0, kills: 0, petKills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0, night: false, spent: 0, perks: new Set(), mod: null, special: null, forceMod: null, weekly: false });
     clearEvac();
     applyWaveTwist();
     if (MODES[mode].coop) toPrep(8);
@@ -3098,7 +3131,7 @@ const mp = new Multiplayer({
     showOnly('mp-end');
     $('mp-end-xp').textContent = 'Saving progress…';
     const run = result.coop
-      ? { mode: 'solo', wave: result.wave, score: game.score, kills: game.kills, headshots: game.headshots }
+      ? { mode: 'solo', wave: result.wave, score: game.score, kills: game.kills, headshots: game.headshots, petKills: game.petKills || 0 }
       : { mode: 'pvp', kills: result.kills, headshots: result.headshots, won: result.won };
     live.on = false;
     live.wave = 0;
@@ -4598,12 +4631,12 @@ function onCoopRelay(from, d) {
       const z = zombies.list.find((o) => o.id === d.id);
       if (!z || !z.alive) return;
       const dmg = Math.max(0, Math.min(5000, Number(d.dmg) || 0));
-      const src = ['melee', 'grenade', 'turret'].includes(d.src) ? d.src : null;
+      const src = ['melee', 'grenade', 'turret', 'wolf'].includes(d.src) ? d.src : null;
       applyZombieHit(z, dmg, { head: !!d.head, mut: MUTATIONS[d.mut] ? d.mut : null, slow: Math.min(0.75, Number(d.slow) || 0), shooter: from, src });
       break;
     }
     case 'kill':
-      rewardKill({ type: d.type, mut: !!d.mut, head: !!d.head, src: ['melee', 'grenade', 'turret', 'barrel'].includes(d.src) ? d.src : null, x: d.x, y: d.y, z: d.z, bounty: !!d.bounty });
+      rewardKill({ type: d.type, mut: !!d.mut, head: !!d.head, src: ['melee', 'grenade', 'turret', 'barrel', 'wolf'].includes(d.src) ? d.src : null, x: d.x, y: d.y, z: d.z, bounty: !!d.bounty });
       break;
     case 'ouch':
       onPlayerHit(null, Math.max(0, Math.min(200, Number(d.dmg) || 0)), d.kind);
@@ -4797,6 +4830,11 @@ function newVersionPop(build) {
 const versionWatch = watchVersion(newVersionPop);
 // the zombie model from public/models (the block zombies are used until it has loaded)
 loadZombieModel();
+// the owner's gun models (the MK14 is the LMG): swap them in once loaded
+loadGunModels().then(() => {
+  weapon.refreshModels();
+  pickups.refreshModels?.();
+});
 // the wolf model (the block wolf is used until it has loaded)
 loadWolfModel().then(() => {
   myWolf?.refresh();

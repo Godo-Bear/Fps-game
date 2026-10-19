@@ -1,4 +1,4 @@
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, TITLES, cleanProfile, levelFromXp, ownsWolf, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -280,10 +280,17 @@ export class Account {
     this.ready = true;
     this._changed();
     this.loadQuests();
-    // keeps "online" status fresh for friends
+    // keeps "online" status fresh for friends, and picks up what the admin changed (a wolf given or taken, coins…)
     setInterval(() => {
-      if (this.user && document.visibilityState === 'visible') this._api('/me').then(({ user }) => (this.user = user)).catch(() => {});
-    }, 60000);
+      if (!this.user || document.visibilityState !== 'visible') return;
+      this._api('/me')
+        .then(({ user }) => {
+          const changed = JSON.stringify([user.items, user.profile, user.coins]) !== JSON.stringify([this.user?.items, this.user?.profile, this.user?.coins]);
+          this.user = user;
+          if (changed) this._changed();
+        })
+        .catch(() => {});
+    }, 20000);
     // party: every few seconds while you're in one, otherwise now and then for invites
     this.loadParty();
     let partyTick = 0;
@@ -567,9 +574,9 @@ export class Account {
     }
     return r;
   }
-  async adminWolfPrice(price) {
-    const r = await this._api('/admin/wolf-price', { method: 'POST', body: { price } });
-    if (this.cfg) this.cfg.wolfPrice = r.price;
+  async adminWolfPrice(price, kind = 'wolf') {
+    const r = await this._api('/admin/wolf-price', { method: 'POST', body: { price, kind } });
+    if (this.cfg) this.cfg[kind === 'level' ? 'wolfLevelPrice' : 'wolfPrice'] = r.price;
     return r;
   }
   adminUpdates(body) {
@@ -618,6 +625,9 @@ export class Account {
   }
   get wolfPrice() {
     return this.cfg?.wolfPrice || '$1';
+  }
+  get wolfLevelPrice() {
+    return this.cfg?.wolfLevelPrice || '50c';
   }
 
   async saveProfile(profile) {
@@ -1174,21 +1184,34 @@ export class AccountUI {
       return `<div class="pet-card">
         <div class="pet-art">🐺</div>
         <div class="pet-info"><b>Wolf companion</b> <span class="pet-price">${esc(a.wolfPrice)}</span>
-          <p class="muted small">A wolf that runs by your side in every mode and bites zombies near you. You pick its colour. Real money, ${note}.</p>
+          <p class="muted small">A wolf that runs by your side in every mode and bites zombies near you. You pick its colour and where it walks, and it levels up and unlocks masteries as it kills. Real money, ${note}.</p>
           <p class="small">${a.loggedIn ? `To buy it: pay the owner and tell them your player name, <b>${esc(a.name)}</b>. They switch your wolf on, then it shows up here.` : 'Log in first: the wolf goes on your account.'}</p></div>
       </div>`;
     }
     const color = p.petColor || '#8a8f96';
+    const lvl = petLevel(a.items);
+    const xp = a.items.pet_xp || 0;
+    const need = petXpNeeded(lvl);
+    const max = lvl >= PET_MAX_LEVEL;
+    const next = PET_MASTERIES.find((m) => m.lvl > lvl);
     return `<div class="pet-card owned">
-        <div class="pet-art" style="color:${esc(color)}">🐺</div>
+        <div class="pet-art" style="color:${esc(color)}">🐺<span class="pet-lvl">Lv ${lvl}</span></div>
         <div class="pet-info"><b>Your wolf</b> <span class="muted small">${shop ? '(owned · change it in Profile too)' : '(owned)'}</span>
+          <div class="pet-xp"><i style="width:${max ? 100 : Math.round((xp / need) * 100)}%"></i></div>
+          <p class="muted small">${max ? `Level ${PET_MAX_LEVEL}: as strong as it gets.` : `${xp}/${need} XP to level ${lvl + 1} (1 XP for every zombie it kills)${next ? ` · next mastery at level ${next.lvl}: ${next.icon} ${esc(next.name)}` : ''}.`}
+            Bites +${(lvl - 1) * 8}% harder.</p>
+          ${max ? '' : `<p class="small">⏫ Skip ahead: <b>${esc(a.wolfLevelPrice)} a level</b>, ${note}. Tell the owner your player name, <b>${esc(a.name)}</b>, and how many levels.</p>`}
           <div class="pick-row pet-on">
             <button class="pick ${p.pet === 'wolf' ? 'on' : ''}" data-pet="wolf">🐺 Out with me</button>
             <button class="pick ${p.pet !== 'wolf' ? 'on' : ''}" data-pet="none">Stay home</button>
           </div>
+          <div class="pick-row pet-spots">${PET_SPOTS.map(([id, n]) => `<button class="pick ${(p.petSpot || 'right') === id ? 'on' : ''}" data-petspot="${id}">${n}</button>`).join('')}</div>
           <div class="pick-row pet-colors">${PET_COLORS.map(([c, n]) => `<button class="pick ${color === c ? 'on' : ''}" data-petcolor="${c}" title="${n}"><span class="swatch" style="background:${c}"></span>${n}</button>`).join('')}
             <label class="pick pet-custom" title="Any colour you like"><input type="color" value="${esc(color)}" data-petcustom /> Custom</label>
-          </div></div>
+          </div>
+          <h5 class="pet-mh">Masteries</h5>
+          <div class="pet-masteries">${PET_MASTERIES.map((m) => `<div class="pet-m ${lvl >= m.lvl ? 'got' : ''}" title="${esc(m.desc)}"><b>${m.icon}</b><span>${esc(m.name)}</span><small>${lvl >= m.lvl ? esc(m.desc) : `Level ${m.lvl}`}</small></div>`).join('')}</div>
+        </div>
       </div>`;
   }
   _petEvents(p, msg) {
@@ -1202,6 +1225,7 @@ export class AccountUI {
       }
     };
     this.body.querySelectorAll('[data-pet]').forEach((b) => (b.onclick = (e) => (e.stopPropagation(), save({ pet: b.dataset.pet }))));
+    this.body.querySelectorAll('[data-petspot]').forEach((b) => (b.onclick = (e) => (e.stopPropagation(), save({ petSpot: b.dataset.petspot }))));
     this.body.querySelectorAll('[data-petcolor]').forEach((b) => (b.onclick = (e) => (e.stopPropagation(), save({ petColor: b.dataset.petcolor, pet: 'wolf' }))));
     const custom = this.body.querySelector('[data-petcustom]');
     if (custom) {
@@ -1322,7 +1346,9 @@ export class AccountUI {
       </div>
       <div class="acard"><h4>🐺 Wolf companion <span class="muted small">(real money: when someone pays you, give them the wolf here)</span></h4>
       <form class="auth inline admin-row" id="admin-wolf"><input name="u" maxlength="40" placeholder="Player name" required /><button class="btn small" data-on="1">🐺 GIVE WOLF</button><button class="btn small ghost" data-on="0">TAKE WOLF</button></form>
-      <form class="auth inline admin-row" id="admin-wolf-price"><input name="p" maxlength="20" placeholder="Price (now ${esc(a.wolfPrice)})" required /><button class="btn small">SET WOLF PRICE</button></form>
+      <form class="auth inline admin-row" id="admin-wolf-lvl"><input name="u" maxlength="40" placeholder="Player name" required /><input name="n" type="number" min="-20" max="20" value="1" placeholder="Levels (minus takes away)" required /><button class="btn small">⏫ ADD WOLF LEVELS</button></form>
+      <form class="auth inline admin-row" id="admin-wolf-price"><input name="p" maxlength="20" placeholder="Wolf price (now ${esc(a.wolfPrice)})" required /><button class="btn small">SET WOLF PRICE</button></form>
+      <form class="auth inline admin-row" id="admin-wolf-lvlprice"><input name="p" maxlength="20" placeholder="Price of one level (now ${esc(a.wolfLevelPrice)})" required /><button class="btn small">SET LEVEL PRICE</button></form>
       <p class="muted small">Players see this price in the Shop and Profile, ${esc(a.cfg?.payNote || 'paid cash in hand to the site owner')}. You can also give or take it with MANAGE on a player.</p>
       </div>
     </section>
@@ -1493,6 +1519,24 @@ export class AccountUI {
         msg(err.message);
       }
     });
+    document.getElementById('admin-wolf-lvl').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      try {
+        msg((await a.adminPlayer(String(f.get('u')).trim(), 'wolflevel', { levels: Number(f.get('n')) })).note);
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    document.getElementById('admin-wolf-lvlprice').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        msg((await a.adminWolfPrice(String(new FormData(e.target).get('p')).trim(), 'level')).note);
+        e.target.reset();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
     document.getElementById('admin-wolf-price').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
@@ -1658,7 +1702,7 @@ export class AccountUI {
     const mins = [[5, '5 min'], [30, '30 min'], [60, '1 hour'], [1440, '1 day'], [10080, '1 week']];
     const mod = `<div class="manage-mod">
         <button type="button" data-mod="give100">+100 🪙</button>
-        ${p.wolf ? '<button type="button" data-mod="wolf-off" title="Take their wolf companion away">TAKE 🐺 WOLF</button>' : '<button type="button" data-mod="wolf-on" class="hot" title="They paid you for the wolf companion">GIVE 🐺 WOLF</button>'}
+        ${p.wolf ? `<button type="button" data-mod="wolf-up" class="hot" title="They paid you for a wolf level">+1 🐺 LEVEL (now ${p.wolfLevel})</button><button type="button" data-mod="wolf-off" title="Take their wolf companion away">TAKE 🐺 WOLF</button>` : '<button type="button" data-mod="wolf-on" class="hot" title="They paid you for the wolf companion">GIVE 🐺 WOLF</button>'}
         ${me || p.admin
           ? `<span class="muted small">${me ? "That's you" : 'Admins'}: no kick, timeout or ban</span>`
           : `<button type="button" data-mod="kick" ${p.room ? '' : 'disabled'} title="${p.room ? 'Throw them out of their room' : "They aren't in a room"}">KICK</button>
@@ -1705,6 +1749,10 @@ export class AccountUI {
         if (action === 'give100') {
           action = 'give';
           extra.coins = 100;
+        }
+        if (action === 'wolf-up') {
+          action = 'wolflevel';
+          extra.levels = 1;
         }
         if (action === 'wolf-on' || action === 'wolf-off') {
           extra.on = action === 'wolf-on';

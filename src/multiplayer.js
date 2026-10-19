@@ -756,13 +756,15 @@ export class Multiplayer {
     for (const a of this.avatars.values()) {
       a.update(dt, a.flags || 0);
       // their wolf companion, if they have one out
-      const pet = this.lobby?.players.find((p) => p.id === a.id)?.pet;
+      const info = this.lobby?.players.find((p) => p.id === a.id);
+      const pet = info?.pet;
       if (pet && !a.wolf) a.wolf = new Wolf(this.ctx.scene, pet);
       if (a.wolf) {
         a.wolf.look.root.visible = !!pet; // it never dies, even when they do
         if (pet) {
           a.wolf.setColor(pet);
-          a.wolf.update(dt, a.root.position);
+          a.wolf.setLevel(info?.petLvl || 1);
+          a.wolf.update(dt, a.root.position, { yaw: a.yaw, spot: info?.petSpot });
         }
       }
       // the name tag follows who's on your side (teams can change mid-match)

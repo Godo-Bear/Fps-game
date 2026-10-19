@@ -1,4 +1,60 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+// The owner's gun models (public/models). Until one has loaded, that gun keeps its block model.
+// size: metres long; at: where the model's grip goes; mag: the part that comes out when reloading.
+const GUN_MODELS = {
+  lmg: { url: '/models/MK14 by austincford - lNGPW2NGPZ.glb', size: 1.25, at: [0, -0.06, -0.29], mag: 'Magazine_Standard', muzzleZ: -0.82 },
+};
+const gunModels = {};
+export function loadGunModels() {
+  return Promise.all(
+    Object.entries(GUN_MODELS).map(
+      ([id, def]) =>
+        new Promise((resolve) => {
+          new GLTFLoader().load(
+            encodeURI(def.url),
+            (gltf) => {
+              const scene = gltf.scene;
+              scene.updateMatrixWorld(true);
+              const box = new THREE.Box3().setFromObject(scene, true);
+              const size = box.getSize(new THREE.Vector3());
+              scene.scale.setScalar(def.size / (Math.max(size.x, size.y, size.z) || 1));
+              scene.position.set(...def.at);
+              scene.traverse((o) => {
+                if (o.isMesh) o.userData.finishable = true; // gun finishes tint it
+              });
+              gunModels[id] = { scene, def };
+              resolve(true);
+            },
+            undefined,
+            () => resolve(false),
+          );
+        }),
+    ),
+  );
+}
+export const hasGunModel = (id) => !!gunModels[id];
+
+// a copy of the model, with its magazine pulled out as its own part so reloads can move it
+function modelGun(g, out, id) {
+  const { scene, def } = gunModels[id];
+  const model = scene.clone(true);
+  g.add(model);
+  out.muzzleZ = def.muzzleZ;
+  if (def.mag) {
+    const mag = model.getObjectByName(def.mag);
+    if (mag) {
+      model.updateMatrixWorld(true);
+      g.updateMatrixWorld(true);
+      // re-parent onto the gun group, keeping where it is
+      const holder = new THREE.Group();
+      g.add(holder);
+      holder.attach(mag);
+      out.mag = holder;
+    }
+  }
+}
 
 // Every gun in the game. The rifle is what you start with; the rest are found around the map.
 // tier decides how often a gun spawns and the colour of its loot beam.
@@ -213,6 +269,16 @@ function buildGunBase(id) {
       break;
     }
     case 'lmg': {
+      if (gunModels.lmg) {
+        // the MK14, with the holographic sight on its top rail
+        modelGun(g, out, 'lmg');
+        part(g, B(0.05, 0.06, 0.07), M.dark, 0, 0.085, 0.02);
+        part(g, B(0.07, 0.012, 0.08), M.dark, 0, 0.115, 0.02);
+        part(g, B(0.012, 0.06, 0.08), M.dark, 0.03, 0.145, 0.02);
+        part(g, B(0.012, 0.06, 0.08), M.dark, -0.03, 0.145, 0.02);
+        part(g, B(0.07, 0.012, 0.08), M.dark, 0, 0.178, 0.02);
+        break;
+      }
       part(g, B(0.1, 0.13, 0.5), M.dark, 0, 0, -0.02);
       part(g, C(0.035, 0.035, 0.42, 12), M.metal, 0, 0.02, -0.48, H);
       part(g, C(0.02, 0.02, 0.2), M.dark, 0, 0.02, -0.76, H);

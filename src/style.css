@@ -3417,3 +3417,67 @@ body.infected #game::after {
 #updates .update li {
   color: rgba(243, 230, 204, 0.88);
 }
+
+/* ---- pet levels and masteries */
+.pet-card .pet-art {
+  position: relative;
+}
+.pet-lvl {
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  color: #120e0a;
+  background: #ffd34d;
+  border-radius: 4px;
+  padding: 0 5px;
+  white-space: nowrap;
+  filter: none;
+}
+.pet-xp {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 6px 0 2px;
+}
+.pet-xp i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ffb020, #ffd34d);
+}
+.pet-mh {
+  margin: 10px 0 4px;
+}
+.pet-masteries {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+.pet-m {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 5px 7px;
+  opacity: 0.5;
+}
+.pet-m.got {
+  opacity: 1;
+  border-color: rgba(255, 211, 77, 0.5);
+}
+.pet-m b {
+  font-size: 18px;
+}
+.pet-m span {
+  font-weight: 700;
+  font-size: 13px;
+}
+.pet-m small {
+  font-size: 11px;
+  opacity: 0.8;
+}

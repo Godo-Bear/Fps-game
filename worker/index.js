@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { PET_ITEM, cleanProfile, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { PET_ITEM, PET_MAX_LEVEL, addPetXp, cleanProfile, petLevel, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
@@ -267,8 +267,8 @@ export class GameDB extends DurableObject {
   }
 
   // what the wolf companion costs in real money (the admin sets it)
-  _wolfPrice() {
-    return this.sql.exec("SELECT value FROM config WHERE key = 'wolfPrice'").toArray()[0]?.value || '$1';
+  _wolfPrice(key = 'wolfPrice') {
+    return this.sql.exec('SELECT value FROM config WHERE key = ?', key).toArray()[0]?.value || (key === 'wolfPrice' ? '$1' : '50c');
   }
 
   _badges(u) {
@@ -421,6 +421,7 @@ export class GameDB extends DurableObject {
       ...this._adminRow(u), xp: u.xp, created: u.created, bestWave: u.best_wave, bestScore: u.best_score, kills: u.kills, headshots: u.headshots,
       pvpKills: u.pvp_kills, pvpWins: u.pvp_wins, games: u.games, badges: this._badges(u).length, items: Object.keys(this._items(u)).length,
       wolf: !!this._items(u)[PET_ITEM],
+      wolfLevel: petLevel(this._items(u)),
     };
   }
 
@@ -519,6 +520,7 @@ export class GameDB extends DurableObject {
         months: this.env.PAY_MONTHS === undefined ? 6 : Number(this.env.PAY_MONTHS) || 0, // 0 = pay once, yours forever
         payNote: this.env.PAY_NOTE || 'paid cash in hand to the site owner',
         wolfPrice: this._wolfPrice(),
+        wolfLevelPrice: this._wolfPrice('wolfLevelPrice'),
       });
     }
 
@@ -702,6 +704,13 @@ export class GameDB extends DurableObject {
       const won = pvp && body.won === true ? 1 : 0;
       const xp = xpForRun({ wave: pvp ? 0 : wave, score: pvp ? kills * 100 + won * 500 : score, kills });
       const coins = coinsForRun({ mode: pvp ? 'pvp' : 'solo', wave, kills, headshots, won: !!won });
+      // the wolf's kills level it up
+      const petKills = Math.min(kills, int(body.petKills, 300));
+      const items = this._items(me);
+      if (petKills && items[PET_ITEM]) {
+        addPetXp(items, petKills);
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), me.id);
+      }
       this.sql.exec(
         `UPDATE users SET live_at = 0, xp = xp + ?, coins = coins + ?, games = games + 1, kills = kills + ?, headshots = headshots + ?,
           best_wave = MAX(best_wave, ?), best_score = MAX(best_score, ?), pvp_kills = pvp_kills + ?, pvp_wins = pvp_wins + ?, last_progress = ?
@@ -916,7 +925,7 @@ export class GameDB extends DurableObject {
       const u = typeof body.username === 'string' ? this._byName(body.username) : null;
       if (!u) return err('No player with that name', 404);
       const action = String(body.action);
-      if (u.id === me.id && !['give', 'wolf'].includes(action)) return err("You can't do that to yourself");
+      if (u.id === me.id && !['give', 'wolf', 'wolflevel'].includes(action)) return err("You can't do that to yourself");
       if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
       let note = '';
       if (action === 'kick') {
@@ -958,9 +967,21 @@ export class GameDB extends DurableObject {
         } catch {
           /* a broken profile starts fresh */
         }
-        if (body.on) profile.pet = 'wolf';
+        // out by their side straight away, or put away when it's taken
+        profile.pet = body.on ? 'wolf' : 'none';
         this.sql.exec('UPDATE users SET items = ?, profile = ? WHERE id = ?', JSON.stringify(items), JSON.stringify(profile), u.id);
         note = body.on ? `${u.username} now owns the 🐺 wolf. They pick its colour in Profile.` : `Took the 🐺 wolf from ${u.username}.`;
+      } else if (action === 'wolflevel') {
+        // they paid for wolf levels (a minus number takes levels away)
+        const items = this._items(u);
+        if (!items[PET_ITEM]) return err(`${u.username} doesn't have the wolf yet: give it to them first`);
+        const n = Math.max(-PET_MAX_LEVEL, Math.min(PET_MAX_LEVEL, Math.floor(Number(body.levels) || 0)));
+        if (!n) return err('How many levels?');
+        const before = petLevel(items);
+        items.pet_lvl = Math.max(1, Math.min(PET_MAX_LEVEL, before + n));
+        if (items.pet_lvl >= PET_MAX_LEVEL) items.pet_xp = 0;
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
+        note = items.pet_lvl === before ? `${u.username}'s wolf is already level ${before}.` : `${u.username}'s 🐺 wolf is now level ${items.pet_lvl}.`;
       } else return err('Unknown action');
       const after = this._byName(u.username);
       const user = after.id === me.id ? this._publicUser(after, true) : undefined;
@@ -970,8 +991,9 @@ export class GameDB extends DurableObject {
       if (!me.admin) return err('Admins only', 403);
       const price = String(body.price || '').trim().slice(0, 20);
       if (!price) return err('Type a price, like $2');
-      this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('wolfPrice', ?)", price);
-      return json({ note: `The wolf now costs ${price}.`, price });
+      const level = body.kind === 'level';
+      this.sql.exec('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', level ? 'wolfLevelPrice' : 'wolfPrice', price);
+      return json({ note: level ? `A wolf level now costs ${price}.` : `The wolf now costs ${price}.`, price });
     }
     // admin: an announcement every player sees (in any room, or on the menu) until they press OK
     if (path === '/admin/announce' && method === 'POST') {
@@ -1458,7 +1480,7 @@ export class Room extends DurableObject {
     this._report();
     return {
       t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set, open: !!this.open, bots: this.botFill,
-      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
+      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
     };
   }
 
@@ -1551,6 +1573,8 @@ export class Room extends DurableObject {
             p.avatar = user.profile.avatar;
             p.color = user.profile.color;
             p.pet = user.profile.pet === 'wolf' ? user.profile.petColor : null; // their wolf's colour
+            p.petSpot = user.profile.petSpot;
+            p.petLvl = petLevel(user.items || {});
             p.items = user.items || {};
           }
         } catch {
