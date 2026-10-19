@@ -90,7 +90,7 @@ export const SUPPLY_REACH = 3.2;
 
 export const MATCH_SECONDS = 8 * 60;
 export const RESPAWN_SECONDS = 4;
-export const MAX_PLAYERS = 8;
+export const MAX_PLAYERS = 16;
 export const MAX_HP = 100;
 
 export const TEAM_SPAWNS = {

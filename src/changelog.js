@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.27', date: '19 Oct 2026', title: 'Bigger matches',
+    items: [
+      'Multiplayer rooms now hold up to 16 players (was 8), events included.',
+    ],
+  },
+  {
     v: '5.26', date: '19 Oct 2026', title: '🤖 Pick your bots',
     items: [
       'When you make a room, choose exactly how many AI bots play: from none up to 7 (in Match settings, at the top).',
