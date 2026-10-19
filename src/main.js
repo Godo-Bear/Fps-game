@@ -15,7 +15,7 @@ import { DefendPoints } from './defend.js';
 import { Structures } from './structures.js';
 import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
 import { Effects } from './effects.js';
-import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, randomMutation, rollGun } from './guns.js';
+import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, setArmLook, randomMutation, rollGun } from './guns.js';
 import { Minimap } from './minimap.js';
 import { Multiplayer } from './multiplayer.js';
 import { NavGrid } from './navgrid.js';
@@ -2424,6 +2424,7 @@ function lock() {
 
 function applyProfile() {
   const p = account.profile;
+  setArmLook(p.look);
   document.documentElement.style.setProperty('--xh', p.crosshair);
   const fin = FINISHES.find((f) => f[0] === p.finish);
   weapon.setFinish(fin && fin[0] !== 'standard' ? fin[3] : null);

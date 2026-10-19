@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { PET_ITEM, PET_MAX_LEVEL, addPetXp, cleanProfile, petLevel, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { PET_ITEM, PET_MAX_LEVEL, addPetXp, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
@@ -925,7 +925,7 @@ export class GameDB extends DurableObject {
       const u = typeof body.username === 'string' ? this._byName(body.username) : null;
       if (!u) return err('No player with that name', 404);
       const action = String(body.action);
-      if (u.id === me.id && !['give', 'wolf', 'wolflevel'].includes(action)) return err("You can't do that to yourself");
+      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook'].includes(action)) return err("You can't do that to yourself");
       if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
       let note = '';
       if (action === 'kick') {
@@ -971,6 +971,17 @@ export class GameDB extends DurableObject {
         profile.pet = body.on ? 'wolf' : 'none';
         this.sql.exec('UPDATE users SET items = ?, profile = ? WHERE id = ?', JSON.stringify(items), JSON.stringify(profile), u.id);
         note = body.on ? `${u.username} now owns the 🐺 wolf. They pick its colour in Profile.` : `Took the 🐺 wolf from ${u.username}.`;
+      } else if (action === 'resetlook') {
+        // their character back to the default look
+        let profile = {};
+        try {
+          profile = JSON.parse(u.profile || '{}') || {};
+        } catch {
+          /* a broken profile starts fresh */
+        }
+        delete profile.look;
+        this.sql.exec('UPDATE users SET profile = ? WHERE id = ?', JSON.stringify(profile), u.id);
+        note = `${u.username}'s character is back to the default look.`;
       } else if (action === 'wolflevel') {
         // they paid for wolf levels (a minus number takes levels away)
         const items = this._items(u);
@@ -1480,7 +1491,7 @@ export class Room extends DurableObject {
     this._report();
     return {
       t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set, open: !!this.open, bots: this.botFill,
-      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
+      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, look: p.look, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
     };
   }
 
@@ -1505,7 +1516,7 @@ export class Room extends DurableObject {
       const [avatar, color] = BOT_LOOKS[Math.floor(Math.random() * BOT_LOOKS.length)];
       const counts = this._teamCounts();
       const b = {
-        id: this.nextId++, ws: NOWS, bot: true, joined: true, name, avatar, color, account: false, team: counts.red <= counts.blue ? 'red' : 'blue',
+        id: this.nextId++, ws: NOWS, bot: true, joined: true, name, avatar, color, look: randomLook(), account: false, team: counts.red <= counts.blue ? 'red' : 'blue',
         alive: false, hp: MAX_HP, pos: [0, 0, 0], rot: [0, 0], gun: 'rifle', flags: 0, kills: 0, deaths: 0, score: 0, respawnAt: 0, protectUntil: 0,
         hits: [0, 0], msgs: [0, 0], level: 0, ip: 'bot', username: null,
       };
@@ -1574,6 +1585,7 @@ export class Room extends DurableObject {
             p.color = user.profile.color;
             p.pet = user.profile.pet === 'wolf' ? user.profile.petColor : null; // their wolf's colour
             p.petSpot = user.profile.petSpot;
+            p.look = user.profile.look; // their character
             p.petLvl = petLevel(user.items || {});
             p.items = user.items || {};
           }

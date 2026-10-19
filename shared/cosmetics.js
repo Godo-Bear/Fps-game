@@ -70,7 +70,36 @@ export const petHas = (level, id) => PET_MASTERIES.some((m) => m.id === id && le
 // where it walks: [id, label]
 export const PET_SPOTS = [['right', 'On my right'], ['left', 'On my left'], ['front', 'In front'], ['behind', 'Behind']];
 
-export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', finish: 'standard', pet: 'none', petColor: '#8a8f96', petSpot: 'right' };
+// Your character: free to change. Colours are any hex; the rest pick from these lists. [id, label]
+export const LOOK_SKIN = ['#f3d6c2', '#e8c4a8', '#d8a882', '#c89a78', '#a8754f', '#8d5a3b', '#6a4128', '#4a2c1a'];
+export const LOOK_HAIR_COLORS = ['#141210', '#3a2616', '#6a4224', '#a0603a', '#d8b46a', '#e8e0d0', '#8a8a8a', '#b02a2a', '#2a6ad0', '#3ab04a'];
+export const LOOK_CLOTH = ['#3d4234', '#55603e', '#6a5a3a', '#2a3450', '#1c2a4a', '#3a4a7a', '#222222', '#555555', '#e8e8e8', '#8a2a24', '#c86a20', '#e8c020', '#3a9a8a', '#6a3a8a'];
+export const LOOK_HAIR = [['short', 'Short'], ['buzz', 'Buzz cut'], ['mohawk', 'Mohawk'], ['long', 'Long'], ['spiky', 'Spiky'], ['bald', 'Bald']];
+export const LOOK_FACE = [['none', 'Clean'], ['stubble', 'Stubble'], ['beard', 'Beard'], ['moustache', 'Moustache']];
+export const LOOK_HAT = [['helmet', 'Helmet'], ['cap', 'Cap'], ['beanie', 'Beanie'], ['bandana', 'Bandana'], ['beret', 'Beret'], ['none', 'Nothing']];
+export const LOOK_TOP = [['jacket', 'Jacket'], ['tshirt', 'T-shirt'], ['tank', 'Tank top'], ['hoodie', 'Hoodie']];
+export const DEFAULT_LOOK = { skin: '#c89a78', hair: 'short', hairColor: '#3a2616', face: 'none', hat: 'helmet', hatColor: '#4a5236', top: 'jacket', topColor: '#3d4234', pants: '#3d4234' };
+const HEX = /^#[0-9a-f]{6}$/i;
+// a random look (AI bots)
+export function randomLook() {
+  const r = (a) => a[Math.floor(Math.random() * a.length)];
+  return cleanLook({ skin: r(LOOK_SKIN), hair: r(LOOK_HAIR)[0], hairColor: r(LOOK_HAIR_COLORS.slice(0, 7)), face: r(LOOK_FACE)[0], hat: r(LOOK_HAT)[0], hatColor: r(LOOK_CLOTH), top: r(LOOK_TOP)[0], topColor: r(LOOK_CLOTH), pants: r(LOOK_CLOTH) });
+}
+export function cleanLook(input) {
+  const out = { ...DEFAULT_LOOK };
+  if (!input || typeof input !== 'object') return out;
+  for (const k of ['skin', 'hairColor', 'hatColor', 'topColor', 'pants']) if (typeof input[k] === 'string' && HEX.test(input[k])) out[k] = input[k].toLowerCase();
+  const pick = (k, list) => {
+    if (list.some(([id]) => id === input[k])) out[k] = input[k];
+  };
+  pick('hair', LOOK_HAIR);
+  pick('face', LOOK_FACE);
+  pick('hat', LOOK_HAT);
+  pick('top', LOOK_TOP);
+  return out;
+}
+
+export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', finish: 'standard', pet: 'none', petColor: '#8a8f96', petSpot: 'right', look: DEFAULT_LOOK };
 
 const LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
 
@@ -90,6 +119,7 @@ export function cleanProfile(input, level, items = {}) {
     if (input.pet === 'wolf' && ownsWolf(level, items)) out.pet = 'wolf';
     if (typeof input.petColor === 'string' && /^#[0-9a-f]{6}$/i.test(input.petColor)) out.petColor = input.petColor.toLowerCase();
     if (PET_SPOTS.some(([id]) => id === input.petSpot)) out.petSpot = input.petSpot;
+    out.look = cleanLook(input.look);
   }
   return out;
 }

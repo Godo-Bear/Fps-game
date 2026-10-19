@@ -3,6 +3,7 @@ import { GUN_LADDERS, INFECTED, MAPS, MODES, MODE_SETTINGS, MP_MAPS, FLAG_BASES,
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 import { Wolf } from './pet.js';
+import { buildCharacter } from './character.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -71,58 +72,28 @@ function nameSprite(text, color) {
 
 // Another player's soldier in the world.
 class Avatar {
-  constructor(info, teamColor) {
+  constructor(info, teamColor, teamVest = false) {
     this.id = info.id;
     this.info = info;
     this.root = new THREE.Group();
     this.parts = [];
-    const vest = new THREE.MeshStandardMaterial({ color: teamColor, roughness: 0.8 });
-    const cloth = new THREE.MeshStandardMaterial({ color: 0x3d4234, roughness: 1 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0xc89a78, roughness: 0.9 });
-    const helmet = new THREE.MeshStandardMaterial({ color: 0x4a5236, roughness: 0.7 });
-    this.mats = [vest, cloth, skin, helmet];
-    const part = (geo, mat, kind, parent, x, y, z) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      m.castShadow = true;
-      m.userData.player = this.id;
-      m.userData.kind = kind;
-      parent.add(m);
-      this.parts.push(m);
-      return m;
-    };
-    this.body = new THREE.Group();
-    this.root.add(this.body);
-    this.legL = new THREE.Group();
-    this.legR = new THREE.Group();
-    this.legL.position.set(-0.13, 0.9, 0);
-    this.legR.position.set(0.13, 0.9, 0);
-    const legGeo = new THREE.BoxGeometry(0.22, 0.9, 0.24);
-    legGeo.translate(0, -0.45, 0);
-    part(legGeo, cloth, 'body', this.legL, 0, 0, 0);
-    part(legGeo, cloth, 'body', this.legR, 0, 0, 0);
-    this.body.add(this.legL, this.legR);
-    this.upper = new THREE.Group();
-    this.upper.position.y = 0.9;
-    this.body.add(this.upper);
-    part(new THREE.BoxGeometry(0.54, 0.7, 0.32), vest, 'body', this.upper, 0, 0.35, 0);
-    this.head = new THREE.Group();
-    this.head.position.y = 0.88;
-    this.upper.add(this.head);
-    part(new THREE.BoxGeometry(0.32, 0.34, 0.32), skin, 'head', this.head, 0, 0, 0);
-    part(new THREE.BoxGeometry(0.38, 0.14, 0.38), helmet, 'head', this.head, 0, 0.17, 0);
-    // arms hold the gun forward
-    const armGeo = new THREE.BoxGeometry(0.14, 0.6, 0.14);
-    armGeo.translate(0, -0.3, 0);
-    this.armR = new THREE.Group();
-    this.armR.position.set(0.32, 0.62, 0);
-    this.armR.rotation.x = -1.2;
-    part(armGeo, vest, 'body', this.armR, 0, 0, 0);
-    this.armL = new THREE.Group();
-    this.armL.position.set(-0.32, 0.62, 0);
-    this.armL.rotation.set(-1.35, 0.5, 0);
-    part(armGeo, vest, 'body', this.armL, 0, 0, 0);
-    this.upper.add(this.armR, this.armL);
+    // their character (src/character.js): their own look, with a team-coloured vest in team modes
+    const ch = buildCharacter(info.look, {
+      vest: teamVest ? teamColor : null,
+      part: (m, kind) => {
+        m.userData.player = this.id;
+        m.userData.kind = kind;
+        this.parts.push(m);
+      },
+    });
+    this.mats = ch.mats;
+    this.body = ch.body;
+    this.root.add(ch.root);
+    [this.legL, this.legR] = ch.legs;
+    this.upper = ch.upper;
+    this.head = ch.head;
+    this.armR = ch.armR;
+    this.armL = ch.armL;
     this.gunHolder = new THREE.Group();
     this.gunHolder.position.set(0.12, 0.5, 0.35);
     this.gunHolder.rotation.y = Math.PI;
@@ -617,7 +588,7 @@ export class Multiplayer {
       if (!a) {
         if (!info) continue;
         const color = this.infection ? (info.team === INFECTED ? ZOMBIE_GREEN : TEAM_COLOR[SURVIVORS]) : this.teams ? TEAM_COLOR[info.team] : new THREE.Color(info.color || '#888888').getHex();
-        a = new Avatar(info, color);
+        a = new Avatar(info, color, !!(this.infection || this.teams));
         a.team = info.team;
         this.avatars.set(id, a);
         this.ctx.scene.add(a.root);

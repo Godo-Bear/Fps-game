@@ -420,6 +420,14 @@ const knuckle = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.7
 const sleeve = new THREE.MeshStandardMaterial({ color: 0x5b6450, roughness: 1 });
 const cuff = new THREE.MeshStandardMaterial({ color: 0x4a5242, roughness: 1 });
 const skin = new THREE.MeshStandardMaterial({ color: 0xc89a78, roughness: 0.8 });
+// your arms match your character: skin tone and the colour of your top (bare forearms in a t-shirt or tank top)
+export function setArmLook(look) {
+  if (!look) return;
+  skin.color.set(look.skin);
+  const bare = look.top === 'tshirt' || look.top === 'tank';
+  sleeve.color.set(bare ? look.skin : look.topColor);
+  cuff.color.set(bare ? look.skin : new THREE.Color(look.topColor).multiplyScalar(0.8));
+}
 const watch = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4, metalness: 0.5 });
 const CAP = (r, len) => new THREE.CapsuleGeometry(r, len, 4, 10);
 

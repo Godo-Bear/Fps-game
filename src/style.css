@@ -3481,3 +3481,42 @@ body.infected #game::after {
   font-size: 11px;
   opacity: 0.8;
 }
+
+/* ---- character */
+.look-box {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 10px;
+}
+.look-preview {
+  width: 200px;
+  height: 290px;
+  flex: none;
+  border-radius: 6px;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 211, 77, 0.12), rgba(0, 0, 0, 0.25));
+}
+.look-opts {
+  flex: 1;
+  min-width: 0;
+}
+.look-opts h5 {
+  margin: 8px 0 4px;
+}
+.look-opts h5:first-child {
+  margin-top: 0;
+}
+.pick.sw {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+}
+@media (max-width: 640px) {
+  .look-box {
+    flex-direction: column;
+    align-items: center;
+  }
+}

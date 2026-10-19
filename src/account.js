@@ -1,4 +1,5 @@
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { CharacterPreview } from './character.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, LOOK_CLOTH, LOOK_FACE, LOOK_HAIR, LOOK_HAIR_COLORS, LOOK_HAT, LOOK_SKIN, LOOK_TOP, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -1131,6 +1132,7 @@ export class AccountUI {
       </div>`;
     this.body.innerHTML = `
       <div class="preview">${nameTag({ username: a.name, profile: p })} <span class="ac-title">${esc(p.title)}</span></div>
+      ${this._lookPicker(p)}
       ${section('avatar', 'Avatar', AVATARS, (id) => `<span class="big">${id}</span>`)}
       ${section('color', 'Name colour', NAME_COLORS, (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
       ${section('title', 'Title', TITLES, (id) => esc(id))}
@@ -1155,6 +1157,7 @@ export class AccountUI {
       );
     });
     this._petEvents(p, (t) => (document.getElementById('profile-msg').textContent = t));
+    this._lookEvents(p, (t) => (document.getElementById('profile-msg').textContent = t));
     // achievements as badges
     const have = new Set(a.badges);
     this.body.insertAdjacentHTML(
@@ -1173,6 +1176,59 @@ export class AccountUI {
           document.getElementById('profile-msg').textContent = err.message;
         }
       });
+    });
+  }
+
+  // Your character: skin, hair, facial hair, headwear, top and trousers, with a spinning preview.
+  _lookPicker(p) {
+    // picks still being saved win over the last saved copy (quick clicks don't undo each other)
+    if (this.lookDraft) p.look = this.lookDraft;
+    const L = p.look;
+    const swatches = (key, list) =>
+      `<div class="pick-row look-sw">${list.map((c) => `<button class="pick sw ${L[key] === c ? 'on' : ''}" data-look="${key}" data-v="${c}" style="background:${c}" title="${c}"></button>`).join('')}
+        <label class="pick pet-custom" title="Any colour"><input type="color" value="${esc(L[key])}" data-lookc="${key}" /> Custom</label></div>`;
+    const choices = (key, list) => `<div class="pick-row">${list.map(([id, n]) => `<button class="pick ${L[key] === id ? 'on' : ''}" data-look="${key}" data-v="${id}">${n}</button>`).join('')}</div>`;
+    return `<h4>🧍 Character <span class="muted small">(free · other players see it online, and your arms match it)</span></h4>
+      <div class="look-box">
+        <canvas id="look-preview" class="look-preview"></canvas>
+        <div class="look-opts">
+          <h5>Skin</h5>${swatches('skin', LOOK_SKIN)}
+          <h5>Hair</h5>${choices('hair', LOOK_HAIR)}${swatches('hairColor', LOOK_HAIR_COLORS)}
+          <h5>Facial hair</h5>${choices('face', LOOK_FACE)}
+          <h5>Headwear</h5>${choices('hat', LOOK_HAT)}${L.hat === 'none' ? '' : swatches('hatColor', LOOK_CLOTH)}
+          <h5>Top</h5>${choices('top', LOOK_TOP)}${swatches('topColor', LOOK_CLOTH)}
+          <h5>Trousers</h5>${swatches('pants', LOOK_CLOTH)}
+        </div>
+      </div>`;
+  }
+  _lookEvents(p, msg) {
+    const canvas = document.getElementById('look-preview');
+    if (canvas) {
+      try {
+        this.lookPreview?.dispose();
+        this.lookPreview = new CharacterPreview(canvas);
+        this.lookPreview.show(p.look);
+      } catch {
+        canvas.remove(); // no WebGL for a second canvas: the pickers still work
+      }
+    }
+    const save = async (key, v) => {
+      const look = { ...(this.lookDraft || p.look), [key]: v };
+      this.lookDraft = look;
+      p.look = look;
+      this.lookPreview?.show(look);
+      try {
+        await this.account.saveProfile({ ...this.account.profile, look });
+      } catch (err) {
+        msg(err.message);
+      }
+      if (this.lookDraft === look) this.lookDraft = null;
+    };
+    this.body.querySelectorAll('[data-look]').forEach((b) => (b.onclick = (e) => (e.stopPropagation(), save(b.dataset.look, b.dataset.v))));
+    this.body.querySelectorAll('[data-lookc]').forEach((inp) => {
+      inp.onclick = (e) => e.stopPropagation();
+      inp.oninput = () => this.lookPreview?.show({ ...p.look, [inp.dataset.lookc]: inp.value });
+      inp.onchange = () => save(inp.dataset.lookc, inp.value);
     });
   }
 
@@ -1702,6 +1758,7 @@ export class AccountUI {
     const mins = [[5, '5 min'], [30, '30 min'], [60, '1 hour'], [1440, '1 day'], [10080, '1 week']];
     const mod = `<div class="manage-mod">
         <button type="button" data-mod="give100">+100 🪙</button>
+        <button type="button" data-mod="resetlook" title="Their character back to the default look">RESET LOOK</button>
         ${p.wolf ? `<button type="button" data-mod="wolf-up" class="hot" title="They paid you for a wolf level">+1 🐺 LEVEL (now ${p.wolfLevel})</button><button type="button" data-mod="wolf-off" title="Take their wolf companion away">TAKE 🐺 WOLF</button>` : '<button type="button" data-mod="wolf-on" class="hot" title="They paid you for the wolf companion">GIVE 🐺 WOLF</button>'}
         ${me || p.admin
           ? `<span class="muted small">${me ? "That's you" : 'Admins'}: no kick, timeout or ban</span>`
