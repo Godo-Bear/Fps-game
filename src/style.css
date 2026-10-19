@@ -3678,3 +3678,24 @@ body.infected #game::after {
   font-weight: 700;
   color: #8ee07a;
 }
+
+/* ---- the Join Event button (Multiplayer menu) */
+.event-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+}
+.event-btn:disabled {
+  opacity: 0.35;
+  filter: grayscale(1);
+  cursor: not-allowed;
+}
+.event-btn.live {
+  background: linear-gradient(135deg, #ffb020, #ff7a1a);
+  color: #120e0a;
+  box-shadow: 0 0 18px rgba(255, 176, 32, 0.55);
+  animation: ev-pulse 2.4s ease-in-out infinite;
+}
+#mp-event-info {
+  margin-top: 4px;
+}

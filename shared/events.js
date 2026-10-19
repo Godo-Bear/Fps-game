@@ -49,3 +49,5 @@ export const PIECE_MAX = 40;
 export const EVENT_POINTS = { player: 5, zombie: 1, special: 2, boss: 15 };
 export const EVENT_DURATIONS = [[30, '30 minutes'], [60, '1 hour'], [120, '2 hours'], [240, '4 hours'], [1440, '1 day'], [0, 'Until I end it']];
 export const DEFAULT_EVENT_NAME = 'Outfit Hunt';
+// Everyone plays in the one event room (its code comes with the event), so it holds more than a normal room.
+export const EVENT_MAX_PLAYERS = 40;

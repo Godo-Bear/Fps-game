@@ -4,7 +4,7 @@ export const CHANGELOG = [
   {
     v: '5.25', date: '19 Oct 2026', title: '🎉 Events',
     items: [
-      'Special limited-time events, hosted every now and then. When one is on, a JOIN EVENT card shows up on the home screen.',
+      'Special limited-time events, hosted every now and then. When one is on, the JOIN EVENT button in Multiplayer lights up and everyone plays together in one big match.',
       'Something new is waiting in them. Keep an eye out for the first one!',
       'Admin: a new Events tab to host an event (name, how long, drop rate), see how many are playing, and end it.',
     ],

@@ -2677,49 +2677,36 @@ function updateMyAvatar(dt) {
   a.root.visible = !player.dead || !!a.model;
 }
 
-// the event card on the home screen, and joining an event room (or starting one)
+// the Join Event button (Multiplayer, under the room code): lit up while the admin's event is on, greyed out otherwise
 function renderEventCard() {
-  const el = $('event-card');
+  const btn = $('mp-event');
+  const info = $('mp-event-info');
   const e = account.event;
-  el.classList.toggle('hidden', !e);
-  if (!e) return;
+  btn.disabled = !e;
+  btn.classList.toggle('live', !!e);
+  if (!e) {
+    btn.textContent = '🎉 JOIN EVENT';
+    info.textContent = 'No event on right now. Keep an eye out!';
+    return;
+  }
   const left = e.endsAt ? Math.max(0, e.endsAt - Date.now()) : 0;
   const h = Math.floor(left / 3600000);
   const m = Math.ceil((left % 3600000) / 60000);
-  el.innerHTML = `<div class="ev-live">🎉 EVENT LIVE</div><div class="ev-name">${esc(e.name)}</div>
-    <div class="ev-sub">Red vs Blue vs the zombies · collect 🧩 pieces to unlock new characters${e.boost > 1 ? ` · <b>${e.boost}× drops!</b>` : ''}</div>
-    <div class="ev-meta">${e.endsAt ? `Ends in ${h ? `${h}h ` : ''}${m}m · ` : ''}Your pieces: <b>${totalPieces(account.items)}/${PIECE_COUNT}</b></div>
-    <button class="btn" id="event-join">JOIN EVENT</button><span id="event-err" class="muted small"></span>`;
-  $('event-join').onclick = joinEvent;
+  btn.textContent = `🎉 JOIN EVENT: ${e.name}`;
+  info.innerHTML = `Everyone's in one match: Red vs Blue vs the zombies · 🧩 pieces unlock new characters${e.boost > 1 ? ` · <b>${e.boost}× drops!</b>` : ''}<br/>${e.endsAt ? `Ends in ${h ? `${h}h ` : ''}${m}m · ` : ''}Your pieces: <b>${totalPieces(account.items)}/${PIECE_COUNT}</b>`;
 }
 async function joinEvent() {
+  const e = account.event;
+  if (!e?.room) return;
   if (!account.loggedIn) return accountUI.open('login');
-  $('event-err').textContent = ' Finding a match…';
-  let code = null;
-  try {
-    code = (await (await fetch('/api/quickplay?mode=event')).json()).code;
-  } catch {
-    /* offline */
-  }
-  game.mode = 'mp';
-  showOnly('mp-menu');
-  game.state = 'mpmenu';
-  let err = code ? await mp.join(code) : 'none';
-  if (err) {
-    // nobody's playing yet: a new event room, open to everyone, straight into a match
-    err = await mp.create();
-    if (!err) {
-      mp.send({ t: 'mode', mode: 'event' });
-      mp.send({ t: 'open', on: true });
-      mp.send({ t: 'start' });
-    }
-  }
+  $('mp-error').textContent = 'Joining the event…';
+  const err = await mp.joinEvent(e.room);
   $('mp-error').textContent = err || '';
 }
+$('mp-event').addEventListener('click', joinEvent);
 account.onChange(renderEventCard);
-setInterval(() => {
-  if (game.state === 'menu') renderEventCard();
-}, 30000);
+renderEventCard();
+setInterval(renderEventCard, 30000);
 
 // ---------------------------------------------------------------- saved games (solo)
 // You name a game when you start it. It's saved when it starts and after every wave (once you
@@ -4787,7 +4774,13 @@ function update(dt) {
 function worldTick(dt) {
   if (structures.list.length) updateTurrets(dt);
   if (isEvent()) {
-    // events: the host runs the zombies for everyone and keeps them coming
+    // events: there's no host to see, but one player's game moves the zombies for everyone. If they leave,
+    // the server picks someone else and their game carries on with the same zombies.
+    if (simHost() && !ev.wasSim) {
+      ev.wasSim = true;
+      for (const z of zombies.list) zombies.nextId = Math.max(zombies.nextId, z.id || 0);
+    }
+    if (!simHost()) ev.wasSim = false;
     if (simHost()) {
       if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, zombieTargets(), zombieHooks);
       eventDirector(dt);

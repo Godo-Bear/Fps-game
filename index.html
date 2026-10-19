@@ -105,8 +105,6 @@
       <aside id="home-quests" class="fn-quests"></aside>
 
       <div class="fn-play">
-        <!-- the admin's event (admin panel → Events), while it's on -->
-        <div id="event-card" class="fn-event hidden"></div>
         <div class="fn-modes">
           <button id="continue-btn" class="hidden" data-mode-pick="continue">CONTINUE</button>
           <button id="saves-btn" data-mode-pick="solo">SOLO</button>
@@ -198,6 +196,9 @@
           <input id="mp-code" placeholder="ROOM CODE" maxlength="5" autocomplete="off" spellcheck="false" />
           <button class="btn small">JOIN</button>
         </form>
+        <!-- the admin's event (admin panel → Events): everyone plays in one room; greyed out when there's no event -->
+        <button id="mp-event" class="btn event-btn" disabled>🎉 JOIN EVENT</button>
+        <div id="mp-event-info" class="muted small"></div>
         <div id="mp-error" class="msg"></div>
         <p class="muted small">Quick play drops you into an open room (or makes one). Modes: Co-op Survival, Defend the Points, Extraction, Free-for-all, Team Deathmatch, Capture Point, Capture the Flag, Gun Game, Infection, One in the Chamber, Juggernaut. Up to 8 players.</p>
         <button id="mp-back" class="btn ghost">BACK</button>

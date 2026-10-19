@@ -310,6 +310,15 @@ export class Multiplayer {
     }
     return 'Could not create a room, try again';
   }
+  // the event room: everyone in the game plays in this one room. The first one in opens it.
+  async joinEvent(code) {
+    let err = await this.join(code);
+    if (err && /not found/i.test(err)) {
+      err = await this._connect(code, true, true);
+      if (err === 'taken') err = await this.join(code); // someone opened it at the same moment
+    }
+    return err;
+  }
   join(code) {
     code = String(code || '').trim().toUpperCase();
     if (!/^[A-Z0-9]{5}$/.test(code)) return Promise.resolve('Room codes are 5 letters/numbers');
@@ -317,13 +326,13 @@ export class Multiplayer {
   }
 
   // Resolves with null on success or an error message.
-  _connect(code, create) {
+  _connect(code, create, event = false) {
     this.leave(true);
     return new Promise((resolve) => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       let ws;
       try {
-        ws = new WebSocket(`${proto}://${location.host}/api/room/${code}/ws${create ? '?create=1' : ''}`);
+        ws = new WebSocket(`${proto}://${location.host}/api/room/${code}/ws${create ? `?create=1${event ? '&event=1' : ''}` : ''}`);
       } catch {
         resolve("Can't connect to the server");
         return;
@@ -1025,14 +1034,15 @@ export class Multiplayer {
   _renderLobby() {
     const l = this.lobby;
     if (!l) return;
-    const host = this.isHost();
     const mode = MODES[l.mode];
+    // nobody hosts the event room: no settings, start button or kicking (except admins)
+    const host = this.isHost() && !mode.event;
     const canKick = host || this.me?.admin;
     const admin = !!this.me?.admin;
     // admins can move anyone between teams
     const mover = (p) => (admin && mode.teams ? ['red', 'blue'].filter((t) => t !== p.team).map((t) => `<button class="kick tmove ${t}" data-moveteam="${t}" data-pid="${p.id}" title="Move to ${t}">→${t === 'red' ? 'R' : 'B'}</button>`).join('') : '');
     const player = (p) =>
-      `<div class="lp ${p.id === this.myId ? 'me' : ''}"><span>${esc(p.avatar)}</span><b style="color:${esc(p.color)}">${esc(p.name)}</b>${p.admin ? '<i class="admin">⭐ADMIN</i>' : ''}${p.id === l.host ? '<i>HOST</i>' : ''}${p.account ? '' : '<em>guest</em>'}${mover(p)}${canKick && p.id !== this.myId ? `<button class="kick" data-kick="${p.id}" title="Kick">✕</button>` : ''}</div>`;
+      `<div class="lp ${p.id === this.myId ? 'me' : ''}"><span>${esc(p.avatar)}</span><b style="color:${esc(p.color)}">${esc(p.name)}</b>${p.admin ? '<i class="admin">⭐ADMIN</i>' : ''}${p.id === l.host && !mode.event ? '<i>HOST</i>' : ''}${p.account ? '' : '<em>guest</em>'}${mover(p)}${canKick && p.id !== this.myId ? `<button class="kick" data-kick="${p.id}" title="Kick">✕</button>` : ''}</div>`;
     let roster;
     if (mode.teams && !mode.autoTeams) {
       roster = ['red', 'blue']

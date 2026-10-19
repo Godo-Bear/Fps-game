@@ -1,14 +1,14 @@
 import { DurableObject } from 'cloudflare:workers';
 import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
-import { DEFAULT_EVENT_NAME, DROP_BOOSTS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
+import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
 import { ACHIEVEMENT_IDS } from '../shared/achievements.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery } from '../shared/mastery.js';
 import {
-  cleanQuick, cleanQuickText, cleanSettings, limitFor, refundOldEmotes, DEFEND_POINTS, FFA_SPAWNS, FLAG_BASES, GUN_LADDERS, INFECT_DELAY, INFECTED, JUGG_HP, MAPS, MODE_SETTINGS, MP_MAPS,
+  cleanQuick, cleanQuickText, cleanSettings, limitFor, makeRoomCode, refundOldEmotes, DEFEND_POINTS, FFA_SPAWNS, FLAG_BASES, GUN_LADDERS, INFECT_DELAY, INFECTED, JUGG_HP, MAPS, MODE_SETTINGS, MP_MAPS,
   MATCH_SECONDS, MAX_HP, MAX_PLAYERS, MODES, POINT, RESPAWN_SECONDS, SUPPLY_EVERY, SUPPLY_FALL, SUPPLY_FIRST, SUPPLY_GUNS, SUPPLY_LAST, SUPPLY_MAX, SUPPLY_REACH, SURVIVORS, TEAM_SPAWNS,
 } from '../shared/modes.js';
 import { cleanWords, filterText, makeFilter, nameBlocked } from '../shared/filter.js';
@@ -1071,11 +1071,12 @@ export class GameDB extends DurableObject {
         const minutes = Math.max(0, Math.min(10080, Math.floor(Number(body.minutes) || 0)));
         const boost = DROP_BOOSTS.some(([v]) => v === Number(body.boost)) ? Number(body.boost) : 1;
         const now = Date.now();
-        const ev = { id: now, name, by: me.username, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, boost, pieces: 0, announced: body.announce !== false };
+        // one room for everyone: its code goes out with the event, and the first person in opens it
+        const ev = { id: now, name, by: me.username, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, boost, pieces: 0, announced: body.announce !== false, room: makeRoomCode() };
         this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
         if (ev.announced) {
           // everyone gets told (until they press OK), on the menu or in a match
-          const a = { id: now, text: `🎉 ${name} is LIVE! Press JOIN EVENT on the home screen: Red vs Blue vs the zombies, and kills drop puzzle pieces of new characters.`, from: me.username, at: now };
+          const a = { id: now, text: `🎉 ${name} is LIVE! Go to Multiplayer and press JOIN EVENT: everyone's in one match, Red vs Blue vs the zombies, and kills drop puzzle pieces of new characters.`, from: me.username, at: now };
           this.sql.exec("INSERT INTO config (key, value) VALUES ('announce', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify(a));
         }
         return json({ note: `${name} is live${minutes ? ` for ${minutes >= 60 ? `${minutes / 60} hour(s)` : `${minutes} minutes`}` : ' until you end it'}.`, event: ev });
@@ -1520,6 +1521,11 @@ export class Room extends DurableObject {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a websocket', { status: 426 });
     this.code = url.pathname.split('/')[3];
     const create = url.searchParams.get('create') === '1';
+    // the event room: no host, open to everyone, and bigger than a normal room
+    if (create && url.searchParams.get('event') === '1' && this._humans().length === 0) {
+      this.mode = 'event';
+      this.open = true;
+    }
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     server.accept();
@@ -1531,7 +1537,7 @@ export class Room extends DurableObject {
     const humans = this._humans().length + [...this.players.values()].filter((o) => !o.bot && !o.joined).length;
     if (create && humans > 0) return fail('taken');
     if (!create && humans === 0) return fail('Room not found. Check the code.');
-    if (humans >= MAX_PLAYERS) return fail('Room is full');
+    if (humans >= (this.mode === 'event' ? EVENT_MAX_PLAYERS : MAX_PLAYERS)) return fail('Room is full');
 
     const p = {
       id: this.nextId++, ws: server, joined: false, name: 'Player', avatar: '🧟', color: '#e9d9b8', account: false,
@@ -1703,25 +1709,27 @@ export class Room extends DurableObject {
           this._send(p, this._matchStart());
           this._spawn(p);
           this._fillBots(); // a bot makes room for a real player
-        }
+        } else if (this.mode === 'event' && this.phase === 'lobby') this._startMatch(); // events start as soon as someone's in
         this._broadcast({ t: 'msg', text: `${p.name} joined` }, p);
         break;
       }
       case 'mode':
+        // nobody hosts the event room: it stays an event, and normal rooms can't become one
+        if (this.mode === 'event' || MODES[m.mode]?.event) return;
         if (p.id === this.hostId && this.phase === 'lobby' && MODES[m.mode]) {
           this.mode = m.mode;
           this._broadcast(this._lobby());
         }
         break;
       case 'map':
-        if (p.id === this.hostId && this.phase === 'lobby' && MP_MAPS.includes(m.map)) {
+        if (p.id === this.hostId && this.phase === 'lobby' && MP_MAPS.includes(m.map) && this.mode !== 'event') {
           this.map = m.map;
           this._broadcast(this._lobby());
         }
         break;
       case 'set': {
         // the host's custom settings for the current mode
-        if (p.id !== this.hostId || this.phase !== 'lobby') return;
+        if (p.id !== this.hostId || this.phase !== 'lobby' || this.mode === 'event') return;
         const def = (MODE_SETTINGS[this.mode] || []).find((o) => o.key === m.key);
         if (!def || !def.options.some(([v]) => v === m.value)) return;
         this.settings[this.mode] = { ...this._set, [m.key]: m.value };
@@ -1729,7 +1737,7 @@ export class Room extends DurableObject {
         break;
       }
       case 'team':
-        if (this.phase === 'lobby' && TEAMS.includes(m.team) && !MODES[this.mode].autoTeams) {
+        if (this.phase === 'lobby' && TEAMS.includes(m.team) && !MODES[this.mode].autoTeams && this.mode !== 'event') {
           p.team = m.team;
           this._broadcast(this._lobby());
         }
@@ -1781,7 +1789,7 @@ export class Room extends DurableObject {
       case 'kick': {
         // the host (or an admin) can remove someone from the room
         const target = this.players.get(m.id);
-        if (!target || target === p || !(p.id === this.hostId || p.admin)) return;
+        if (!target || target === p || !((p.id === this.hostId && this.mode !== 'event') || p.admin)) return;
         this._send(target, { t: 'error', msg: `You were removed from the room by ${p.name}` });
         try {
           target.ws.close(1000, 'kicked');
@@ -1792,7 +1800,7 @@ export class Room extends DurableObject {
         break;
       }
       case 'start':
-        if (p.id === this.hostId && this.phase === 'lobby') this._startMatch();
+        if (p.id === this.hostId && this.phase === 'lobby' && this.mode !== 'event') this._startMatch();
         break;
       case 's': // player state
         if (this.phase !== 'playing' || !p.alive) return;
@@ -2059,7 +2067,7 @@ export class Room extends DurableObject {
       }
       case 'open':
         // the host lets quick play drop strangers into this room (or not)
-        if (p.id !== this.hostId) return;
+        if (p.id !== this.hostId || this.mode === 'event') return;
         this.open = !!m.on;
         this._broadcast(this._lobby());
         this._report();
