@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.30', date: '19 Oct 2026', title: 'Smoother bots, no more Longshot lag',
+    items: [
+      'Matches with AI bots run much lighter: bots look round for targets a few times a second instead of every frame, and share their routes round the map.',
+      'Bots move smoothly: no more lagging behind and jumping, for the player whose game runs them and for everyone else.',
+      'Fixed: the Longshot lagged after every shot (and the Hand Cannon, SMG and Longshot when reloading) since they got their new 3D models.',
+    ],
+  },
+  {
     v: '5.29', date: '19 Oct 2026', title: '⚔️ Now called War Grounds',
     items: [
       'The game has a new name: War Grounds. Same game, same accounts: your progress, coins, guns, wolf and pieces are all still yours.',

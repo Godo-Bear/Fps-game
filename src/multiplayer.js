@@ -644,9 +644,14 @@ export class Multiplayer {
         this.ctx.scene.add(a.root);
         this._rebuildParts();
       }
-      a.target.set(x, y, z);
-      a.targetYaw = yaw;
-      a.pitch = pitch;
+      // bots this game moves itself are already where they should be (the server's copy is a little behind)
+      if (a.localBot && !this.isHost()) a.localBot = false;
+      // (but where they respawn comes from the server)
+      if (!a.localBot || !alive || !a.alive) {
+        a.target.set(x, y, z);
+        a.targetYaw = yaw;
+        a.pitch = pitch;
+      }
       a.flags = flags;
       a.hp = hp;
       if (alive && !a.alive) {

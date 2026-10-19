@@ -116,6 +116,13 @@ function modelGun(g, out, id) {
       out.mag = holder;
     }
   }
+  // the reload and bolt animations move a magazine and a bolt/cylinder: models without them as separate
+  // parts get empty stand-ins, so the animations have something to move
+  for (const k of ['mag', 'extra']) {
+    if (out[k]) continue;
+    out[k] = new THREE.Group();
+    g.add(out[k]);
+  }
 }
 
 // Every gun in the game. The rifle is what you start with; the rest are found around the map.

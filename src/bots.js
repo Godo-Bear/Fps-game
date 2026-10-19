@@ -13,6 +13,9 @@ const SIGHT = 60; // metres they can spot you from
 const REACT = 0.55; // seconds after spotting you before they shoot
 const KEEP_AWAY = 9; // stop walking in and strafe when this close
 const DMG = 15;
+const THINK = 0.2; // seconds between a bot looking round for who to go for (line-of-sight checks are the slow part)
+const MAX_LOOKS = 4; // walls checked per look: the nearest few enemies only
+const PATH_EVERY = 1.5; // seconds between route refreshes, shared by every bot after the same person
 
 const ray = new THREE.Raycaster();
 const _from = new THREE.Vector3();
@@ -26,10 +29,12 @@ export class Bots {
     this.nav = null;
     this.navMap = null;
     this.sendT = 0;
+    this.paths = new Map(); // target id -> { dist, t }: one route flood per person being chased, shared by the bots after them
   }
 
   reset() {
     this.state.clear();
+    this.paths.clear();
   }
 
   // line of sight between two eye points (no walls in the way)
@@ -59,6 +64,7 @@ export class Bots {
       this.nav = new NavGrid(world.colliders, { cell: 1, radius: RADIUS });
       this.navMap = world;
       this.state.clear();
+      this.paths.clear();
     }
     const teamOf = (id) => mp.lobby.players.find((p) => p.id === id)?.team;
     // everyone a bot could shoot: me, other people and other bots
@@ -75,7 +81,8 @@ export class Bots {
       const av = mp.avatars.get(info.id);
       let b = this.state.get(info.id);
       if (!b) {
-        b = { pos: new THREE.Vector3(), yaw: 0, alive: false, target: null, seenFor: 0, nextShot: 0, burst: 0, strafe: 1, strafeT: 0, pathT: 0, dist: null, lastTarget: -1 };
+        // thinkT starts at a random point so the bots don't all look round on the same frame
+        b = { pos: new THREE.Vector3(), yaw: 0, alive: false, target: null, seenFor: 0, nextShot: 0, burst: 0, strafe: 1, strafeT: 0, thinkT: Math.random() * THINK, seen: false, lastTarget: -1 };
         this.state.set(info.id, b);
       }
       if (!av || !av.alive) {
@@ -89,22 +96,32 @@ export class Bots {
         b.target = null;
         b.seenFor = 0;
       }
-      // who to go for: the closest enemy we can see, or else the closest one at all
+      // who to go for: the closest enemy we can see, or else the closest one at all.
+      // Looking round is the expensive bit, so it happens a few times a second, not every frame.
       const enemies = people.filter((o) => o.id !== info.id && (!mp.teams || o.team !== info.team));
-      _from.set(b.pos.x, b.pos.y + EYE, b.pos.z);
-      let best = null;
-      let bestScore = Infinity;
-      for (const o of enemies) {
-        const d = Math.hypot(o.pos.x - b.pos.x, o.pos.z - b.pos.z);
-        _to.set(o.pos.x, o.pos.y + 1.2, o.pos.z);
-        const seen = d < SIGHT && this._see(world, _from, _to);
-        const score = d - (seen ? 1000 : 0) - (o.id === b.lastTarget ? 8 : 0);
-        if (score < bestScore) {
-          bestScore = score;
-          best = { ...o, d, seen };
+      b.thinkT -= dt;
+      if (b.thinkT <= 0 || !enemies.some((o) => o.id === b.lastTarget)) {
+        b.thinkT = THINK;
+        _from.set(b.pos.x, b.pos.y + EYE, b.pos.z);
+        const byDist = enemies.map((o) => ({ o, d: Math.hypot(o.pos.x - b.pos.x, o.pos.z - b.pos.z) })).sort((x, y) => x.d - y.d);
+        let pick = null;
+        let looks = 0;
+        // the nearest one we can see
+        for (const { o, d } of byDist) {
+          if (d > SIGHT || looks >= MAX_LOOKS) break;
+          looks++;
+          _to.set(o.pos.x, o.pos.y + 1.2, o.pos.z);
+          if (this._see(world, _from, _to)) {
+            pick = { id: o.id, d, seen: true };
+            break;
+          }
         }
+        if (!pick && byDist.length) pick = { id: byDist[0].o.id, d: byDist[0].d, seen: false };
+        b.target = pick ? pick.id : null;
+        b.seen = !!pick?.seen;
       }
-      const t = best;
+      const tp = b.target !== null ? enemies.find((o) => o.id === b.target) : null;
+      const t = tp ? { ...tp, d: Math.hypot(tp.pos.x - b.pos.x, tp.pos.z - b.pos.z), seen: b.seen } : null;
       if (t && t.id !== b.lastTarget) b.seenFor = 0;
       b.lastTarget = t ? t.id : -1;
       if (t?.seen) b.seenFor += dt;
@@ -135,16 +152,17 @@ export class Bots {
           mx = (t.pos.x - b.pos.x) / (t.d || 1);
           mz = (t.pos.z - b.pos.z) / (t.d || 1);
         } else {
-          // round the walls: our own flood from where they are, refreshed now and then
-          b.pathT -= dt;
-          if (!b.dist || b.pathT <= 0) {
-            b.dist = b.dist || new Uint16Array(this.nav.dist.length);
-            this.nav.dist = b.dist;
+          // round the walls: a flood from where they are, refreshed now and then and shared by every bot after them
+          let path = this.paths.get(t.id);
+          if (!path || now - path.t > PATH_EVERY) {
+            path = path || { dist: new Uint16Array(this.nav.dist.length), t: 0 };
+            this.nav.dist = path.dist;
             this.nav.target = -1;
             this.nav.update([t.pos]);
-            b.pathT = 0.8 + Math.random() * 0.4;
+            path.t = now;
+            this.paths.set(t.id, path);
           }
-          this.nav.dist = b.dist;
+          this.nav.dist = path.dist;
           if (this.nav.direction(b.pos.x, b.pos.z, _step)) {
             mx = _step.x;
             mz = _step.z;
@@ -199,11 +217,16 @@ export class Bots {
           }
         }
       }
+      // this game moves them, so show them right where they are (not where the server last heard they were)
+      av.localBot = true;
+      av.target.copy(b.pos);
+      av.targetYaw = b.yaw;
+      av.pitch = pitch;
       rows.push([info.id, +b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2), +b.yaw.toFixed(3), +pitch.toFixed(3), knifeOnly ? 'knife' : gun, 0]);
     }
     this.sendT -= dt;
     if (rows.length && this.sendT <= 0) {
-      this.sendT = 0.1;
+      this.sendT = 1 / 15; // as often as real players send theirs, so they move as smoothly for everyone else
       mp.send({ t: 'bs', b: rows });
     }
   }
