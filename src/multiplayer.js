@@ -4,7 +4,6 @@ import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 import { Wolf } from './pet.js';
 import { buildCharacter, buildModelCharacter, loadCharacterModel } from './character.js';
-import { CHARACTERS_LIVE } from '../shared/cosmetics.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -72,14 +71,14 @@ function nameSprite(text, color) {
 }
 
 // Another player's soldier in the world.
-class Avatar {
+export class Avatar {
   constructor(info, teamColor, teamVest = false) {
     this.id = info.id;
     this.info = info;
     this.root = new THREE.Group();
     this.parts = [];
     // their character (src/character.js): their own look, with a team-coloured vest in team modes
-    const ch = buildCharacter(CHARACTERS_LIVE ? info.look : null, {
+    const ch = buildCharacter(info.look || null, {
       vest: teamVest ? teamColor : null,
       part: (m, kind) => {
         m.userData.player = this.id;
@@ -88,11 +87,12 @@ class Avatar {
       },
     });
     this.mats = ch.mats;
+    this.teamColor = teamVest ? teamColor : null;
     this.body = ch.body;
     this.root.add(ch.root);
     this.blocks = ch.root;
     // a 3D character: shown over the blocks, which stay (invisible) so hits and headshots work the same
-    const look = CHARACTERS_LIVE ? info.look : null;
+    const look = info.look || null; // the room only sends it when characters are shown (event matches, or after the launch)
     if (look?.model && look.model !== 'blocky') loadCharacterModel(look.model).then(() => this._useModel(look));
     [this.legL, this.legR] = ch.legs;
     this.upper = ch.upper;
@@ -124,12 +124,22 @@ class Avatar {
     const m = buildModelCharacter(look);
     if (!m) return;
     this.model = m;
+    if (this.teamColor !== null) {
+      // a 3D character has no vest: a ring in their team colour round their feet instead
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.55, 28), new THREE.MeshBasicMaterial({ color: this.teamColor, transparent: true, opacity: 0.75, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.04;
+      m.root.add(ring);
+      m.mats.push(ring.material);
+    }
     this.blocks.traverse((o) => {
       if (o.isMesh) o.visible = false;
     });
     this.gunHolder.traverse((o) => {
       if (o.isMesh) o.visible = true; // their gun stays
     });
+    // held out on the right, where you can see it past the character
+    this.gunHolder.position.set(0.26, 0.42, 0.32);
     this.root.add(m.root);
   }
 
@@ -265,6 +275,10 @@ export class Multiplayer {
   // the custom settings of the match (or of the room, before it starts)
   get settings() {
     return (this.inMatch && this.matchSettings) || this.lobby?.settings || cleanSettings(this.mode, null);
+  }
+  // an event match: Red vs Blue vs the zombies
+  get event() {
+    return this.inMatch && !!MODES[this.mode]?.event;
   }
   get infection() {
     return !!MODES[this.mode]?.infection;
@@ -552,6 +566,7 @@ export class Multiplayer {
   }
 
   _name(id) {
+    if (id === 0) return '🧟 Zombies'; // events: the zombies got them
     const p = this.lobby?.players.find((x) => x.id === id);
     return p ? p.name : '???';
   }
@@ -570,7 +585,7 @@ export class Multiplayer {
     if (m.k === this.myId) {
       this.myStats.kills++;
       if (m.head) this.myStats.headshots++;
-      this.ctx.onKillConfirmed(victim, m.head);
+      this.ctx.onKillConfirmed(victim, m.head, m.v);
     }
     if (m.v === this.myId) {
       this.myStats.deaths++;
@@ -1033,6 +1048,7 @@ export class Multiplayer {
     if (admin && mode.teams) roster += `<div class="admin-teams"><span class="muted small">⭐ Admin teams:</span><button class="btn small ghost" data-teamop="shuffle">🔀 SHUFFLE</button><button class="btn small ghost" data-teamop="balance">⚖️ BALANCE</button><button class="btn small ghost" data-teamop="swap">⇄ SWAP SIDES</button></div>`;
     $('lobby-code').textContent = l.code;
     $('lobby-modes').innerHTML = Object.values(MODES)
+      .filter((m) => !m.hidden || m.id === l.mode)
       .map((m) => `<button data-mode="${m.id}" class="chipbtn ${m.id === l.mode ? 'on' : ''}" ${host ? '' : 'disabled'} title="${esc(m.desc)}">${m.name}</button>`)
       .join('');
     $('lobby-maps').innerHTML = MP_MAPS.map((id) => [id, MAPS[id]])

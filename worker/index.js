@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
+import { DEFAULT_EVENT_NAME, DROP_BOOSTS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
@@ -257,6 +258,18 @@ export class GameDB extends DurableObject {
     }
   }
 
+  // the event the admin is hosting (admin panel → Events), or null
+  _event() {
+    try {
+      const e = JSON.parse(this.sql.exec("SELECT value FROM config WHERE key = 'event'").toArray()[0]?.value || 'null');
+      if (!e || !e.id) return null;
+      if (e.endsAt && Date.now() > e.endsAt) return null; // its time ran out
+      return e;
+    } catch {
+      return null;
+    }
+  }
+
   _updates() {
     try {
       const u = JSON.parse(this.sql.exec("SELECT value FROM config WHERE key = 'updates'").toArray()[0]?.value || '{}');
@@ -422,6 +435,7 @@ export class GameDB extends DurableObject {
       pvpKills: u.pvp_kills, pvpWins: u.pvp_wins, games: u.games, badges: this._badges(u).length, items: Object.keys(this._items(u)).length,
       wolf: !!this._items(u)[PET_ITEM],
       wolfLevel: petLevel(this._items(u)),
+      pieces: totalPieces(this._items(u)),
     };
   }
 
@@ -521,6 +535,7 @@ export class GameDB extends DurableObject {
         payNote: this.env.PAY_NOTE || 'paid cash in hand to the site owner',
         wolfPrice: this._wolfPrice(),
         wolfLevelPrice: this._wolfPrice('wolfLevelPrice'),
+        event: this._event(),
       });
     }
 
@@ -612,7 +627,9 @@ export class GameDB extends DurableObject {
     // quick play: an open room with space, busiest first (or none: the game makes a new open room)
     if (path === '/quickplay' && method === 'GET') {
       const now = Date.now();
-      const list = [...this.rooms.values()].filter((r) => r.open && r.players < MAX_PLAYERS && now - r.at < 90000 && r.phase !== 'ended');
+      // ?mode=event: an event room; otherwise any room that isn't one
+      const want = url.searchParams.get('mode') === 'event' ? 'event' : null;
+      const list = [...this.rooms.values()].filter((r) => r.open && r.players < MAX_PLAYERS && now - r.at < 90000 && r.phase !== 'ended' && (want ? r.mode === want : r.mode !== 'event'));
       list.sort((a, b) => (a.phase === 'lobby' ? 0 : 1) - (b.phase === 'lobby' ? 0 : 1) || b.players - a.players);
       return json({ code: list[0]?.code || null });
     }
@@ -925,7 +942,7 @@ export class GameDB extends DurableObject {
       const u = typeof body.username === 'string' ? this._byName(body.username) : null;
       if (!u) return err('No player with that name', 404);
       const action = String(body.action);
-      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook'].includes(action)) return err("You can't do that to yourself");
+      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces'].includes(action)) return err("You can't do that to yourself");
       if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
       let note = '';
       if (action === 'kick') {
@@ -971,6 +988,15 @@ export class GameDB extends DurableObject {
         profile.pet = body.on ? 'wolf' : 'none';
         this.sql.exec('UPDATE users SET items = ?, profile = ? WHERE id = ?', JSON.stringify(items), JSON.stringify(profile), u.id);
         note = body.on ? `${u.username} now owns the 🐺 wolf. They pick its colour in Profile.` : `Took the 🐺 wolf from ${u.username}.`;
+      } else if (action === 'pieces') {
+        // every character piece (they can wear any character), or none
+        const items = this._items(u);
+        for (const s of PIECE_SETS) for (let n = 0; n < 4; n++) {
+          if (body.mode === 'all') items[pieceId(s.char, n)] = 1;
+          else delete items[pieceId(s.char, n)];
+        }
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
+        note = body.mode === 'all' ? `${u.username} has every character piece (${totalPieces(items)}).` : `${u.username}'s character pieces are gone.`;
       } else if (action === 'resetlook') {
         // their character back to the default look
         let profile = {};
@@ -1005,6 +1031,58 @@ export class GameDB extends DurableObject {
       const level = body.kind === 'level';
       this.sql.exec('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', level ? 'wolfLevelPrice' : 'wolfPrice', price);
       return json({ note: level ? `A wolf level now costs ${price}.` : `The wolf now costs ${price}.`, price });
+    }
+    // ---- events
+    // a puzzle piece picked up in an event match: the server picks which one
+    if (path === '/event/piece' && method === 'POST') {
+      const ev = this._event();
+      if (!ev) return err('No event is on right now');
+      const room = me.room ? this.rooms.get(me.room) : null;
+      if (!room || room.mode !== 'event') return err('Pieces only come from event matches');
+      const items = this._items(me);
+      const now = Date.now();
+      const got = items.ev_id === ev.id ? items.ev_n || 0 : 0;
+      if (items.ev_id === ev.id && now - (items.ev_at || 0) < PIECE_COOLDOWN) return err('Too fast', 429);
+      if (got >= PIECE_MAX) return err("You've found all the pieces you can this event");
+      items.ev_id = ev.id;
+      items.ev_n = got + 1;
+      items.ev_at = now;
+      const piece = rollPiece(items);
+      let coins = me.coins || 0;
+      if (piece) items[pieceId(piece.char, piece.n)] = 1;
+      else coins += DUPLICATE_COINS; // every piece found already: coins instead
+      this.sql.exec('UPDATE users SET items = ?, coins = ? WHERE id = ?', JSON.stringify(items), coins, me.id);
+      ev.pieces = (ev.pieces || 0) + 1;
+      this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ piece, coins: piece ? 0 : DUPLICATE_COINS, user: this._publicUser(user, true) });
+    }
+    // admin: host an event (every server: players join from the menu), or end it
+    if (path === '/admin/event' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      if (body.action === 'stop') {
+        const ev = this._event();
+        this.sql.exec("DELETE FROM config WHERE key = 'event'");
+        if (ev?.announced) this.sql.exec("DELETE FROM config WHERE key = 'announce'");
+        return json({ note: ev ? `${ev.name} has ended.` : 'No event was on.', event: null });
+      }
+      if (body.action === 'start') {
+        const name = String(body.name || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 40) || DEFAULT_EVENT_NAME;
+        const minutes = Math.max(0, Math.min(10080, Math.floor(Number(body.minutes) || 0)));
+        const boost = DROP_BOOSTS.some(([v]) => v === Number(body.boost)) ? Number(body.boost) : 1;
+        const now = Date.now();
+        const ev = { id: now, name, by: me.username, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, boost, pieces: 0, announced: body.announce !== false };
+        this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
+        if (ev.announced) {
+          // everyone gets told (until they press OK), on the menu or in a match
+          const a = { id: now, text: `🎉 ${name} is LIVE! Press JOIN EVENT on the home screen: Red vs Blue vs the zombies, and kills drop puzzle pieces of new characters.`, from: me.username, at: now };
+          this.sql.exec("INSERT INTO config (key, value) VALUES ('announce', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify(a));
+        }
+        return json({ note: `${name} is live${minutes ? ` for ${minutes >= 60 ? `${minutes / 60} hour(s)` : `${minutes} minutes`}` : ' until you end it'}.`, event: ev });
+      }
+      // how it's going: event rooms and the players in them
+      const rooms = [...this.rooms.values()].filter((r) => r.mode === 'event' && Date.now() - r.at < 90000);
+      return json({ event: this._event(), rooms: rooms.length, players: rooms.reduce((n, r) => n + r.players, 0) });
     }
     // admin: an announcement every player sees (in any room, or on the menu) until they press OK
     if (path === '/admin/announce' && method === 'POST') {
@@ -1211,7 +1289,7 @@ export class GameDB extends DurableObject {
       const groupUnread = this.sql
         .exec('SELECT COUNT(*) AS n FROM group_messages g JOIN chat_members c ON c.grp = g.grp WHERE c.user = ? AND g.id > c.last_read AND g.sender != ?', me.id, me.id)
         .one().n;
-      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce() });
+      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce(), event: this._event() });
     }
     if (path === '/messages' && (method === 'GET' || method === 'POST')) {
       const name = method === 'GET' ? url.searchParams.get('with') : body.to;
@@ -1377,7 +1455,7 @@ const NAME = /^[A-Za-z0-9_ ]{1,40}$/;
 const BOT_FILLS = [0, 2, 4, 6, 8];
 const BOT_NAMES = ['Viper', 'Rex', 'Ghost', 'Blaze', 'Nova', 'Tank', 'Raven', 'Spike', 'Echo', 'Fang', 'Jinx', 'Bolt', 'Shade', 'Duke'];
 const BOT_LOOKS = [['🤖', '#7fd4ff'], ['👾', '#ff8a5c'], ['💀', '#d9d9d9'], ['🦾', '#c9ff5d'], ['🎯', '#ff5d8f'], ['🛰️', '#b48cff']];
-const botsAllowed = (mode) => !!MODES[mode] && !MODES[mode].coop && !MODES[mode].infection;
+const botsAllowed = (mode) => !!MODES[mode] && !MODES[mode].coop && !MODES[mode].infection && !MODES[mode].event;
 const NOWS = { send() {}, close() {} };
 
 export class Room extends DurableObject {
@@ -1491,7 +1569,7 @@ export class Room extends DurableObject {
     this._report();
     return {
       t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set, open: !!this.open, bots: this.botFill,
-      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, look: p.look, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
+      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, look: CHARACTERS_LIVE || MODES[this.mode]?.event ? p.look || null : null, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
     };
   }
 
@@ -1585,7 +1663,7 @@ export class Room extends DurableObject {
             p.color = user.profile.color;
             p.pet = user.profile.pet === 'wolf' ? user.profile.petColor : null; // their wolf's colour
             p.petSpot = user.profile.petSpot;
-            p.look = CHARACTERS_LIVE ? user.profile.look : null; // their character (once the creator launches)
+            p.look = user.profile.look; // their character (shown once the creator launches, and in event matches)
             p.petLvl = petLevel(user.items || {});
             p.items = user.items || {};
           }
@@ -1735,6 +1813,38 @@ export class Room extends DurableObject {
       case 'hit':
         this._hit(p, m);
         break;
+      case 'zhurt': {
+        // event: a zombie got you (the host's game runs the zombies; your health is kept here)
+        if (this.phase !== 'playing' || !MODES[this.mode].event || !p.alive) return;
+        const dmg = Number(m.dmg);
+        if (!Number.isFinite(dmg) || dmg <= 0 || dmg > 80) return;
+        const now = Date.now();
+        if (now - p.hits[1] > 1000) p.hits = [0, now];
+        if (++p.hits[0] > 30) return;
+        if (now < p.protectUntil || now < (p.shieldUntil || 0) || p.god) return;
+        p.hp -= dmg;
+        p.lastHurt = now;
+        this._send(p, { t: 'hurt', by: 0, dmg, from: p.pos, hp: Math.max(0, p.hp) });
+        if (p.hp > 0) return;
+        p.alive = false;
+        p.deaths++;
+        p.respawnAt = now + (this.match.set.respawn || RESPAWN_SECONDS) * 1000;
+        this._broadcast({ t: 'kill', k: 0, v: p.id, head: false, g: 'zombie', mel: true });
+        break;
+      }
+      case 'zkill': {
+        // event: you took down a zombie: points for you and your team
+        if (this.phase !== 'playing' || !MODES[this.mode].event) return;
+        const now = Date.now();
+        if (now - (p.zk?.[1] || 0) > 1000) p.zk = [0, now];
+        if (++p.zk[0] > 12) return; // more than any gun (or explosion) can do
+        const pts = EVENT_POINTS[m.kind] ? EVENT_POINTS[m.kind] : EVENT_POINTS.zombie;
+        p.score += pts * 20;
+        p.kills++;
+        this.match.scores[p.team] = (this.match.scores[p.team] || 0) + pts;
+        this._checkWin();
+        break;
+      }
       case 'heal': {
         // health packs on the map: at most one every 8 seconds, up to 50 HP
         if (this.phase !== 'playing' || !p.alive || this._coop) return;
@@ -1853,7 +1963,7 @@ export class Room extends DurableObject {
       }
       // ---- co-op: the server just passes messages between the host and the others
       case 'relay': {
-        if (this.phase !== 'playing' || !this._coop || !m.d || typeof m.d !== 'object') return;
+        if (this.phase !== 'playing' || !this._zombies || !m.d || typeof m.d !== 'object') return;
         const msg = JSON.stringify({ t: 'relay', from: p.id, d: m.d });
         if (msg.length > 16384) return;
         if (m.to === 'host') {
@@ -2017,6 +2127,10 @@ export class Room extends DurableObject {
   // co-op modes (everyone vs the zombies): the host runs the zombies, the server passes messages along
   get _coop() {
     return !!MODES[this.mode]?.coop;
+  }
+  // modes with zombies run by the host's game: co-op, and events (zombies and PvP together)
+  get _zombies() {
+    return this._coop || !!MODES[this.mode]?.event;
   }
 
   _stopTimer() {
@@ -2235,6 +2349,7 @@ export class Room extends DurableObject {
     p.kills++;
     p.score += 100;
     if (this.mode === 'tdm') this.match.scores[p.team]++;
+    if (mode.event) this.match.scores[p.team] = (this.match.scores[p.team] || 0) + EVENT_POINTS.player;
     this._dropFlag(target);
     this._broadcast({ t: 'kill', k: p.id, v: target.id, head: !!m.head, g: p.gun, mel: !!m.melee });
     // one in the chamber: a kill gives you another bullet
@@ -2506,6 +2621,11 @@ export class Room extends DurableObject {
       this._removeBots();
       for (const p of this.players.values()) p.alive = false;
       this._broadcast(this._lobby());
+      // events keep going: the next match starts by itself
+      if (MODES[this.mode]?.event)
+        setTimeout(() => {
+          if (this.phase === 'lobby' && MODES[this.mode]?.event && this._humans().length) this._startMatch();
+        }, 4000);
     }, 12000);
   }
 }

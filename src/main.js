@@ -17,7 +17,9 @@ import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../sha
 import { Effects } from './effects.js';
 import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, setArmLook, randomMutation, rollGun } from './guns.js';
 import { Minimap } from './minimap.js';
-import { Multiplayer } from './multiplayer.js';
+import { Avatar, Multiplayer } from './multiplayer.js';
+import { DROP_CHANCE, PIECE_COUNT, totalPieces } from '../shared/events.js';
+import { showPiece } from './puzzle.js';
 import { NavGrid } from './navgrid.js';
 import { GunPickups } from './pickups.js';
 import { SupplyDrops } from './supply.js';
@@ -776,11 +778,14 @@ const isCoop = () => game.mode === 'mp' && mp.inMatch && !!MODES[mp.mode]?.coop;
 // Defend the Points: a co-op run where the squad also has to hold points A, B and C
 const isDefend = () => isCoop() && mp.mode === 'defend';
 const zombieGame = () => game.mode === 'solo' || isCoop();
-const simHost = () => game.mode === 'solo' || (isCoop() && mp.isHost());
+// an event match: Red vs Blue vs the zombies (the host's game runs the zombies, the server keeps everyone's health)
+const isEvent = () => game.mode === 'mp' && mp.inMatch && !!MODES[mp.mode]?.event;
+const zombiesOn = () => zombieGame() || isEvent();
+const simHost = () => game.mode === 'solo' || ((isCoop() || isEvent()) && mp.isHost());
 const coop = { remaining: 0, ready: new Set(), pickT: 0, snapT: 0, scoreT: 0 };
 const defend = new DefendPoints(scene);
 
-const targets = () => (zombieGame() ? zombies.parts : mp.parts).concat(world.solids, structures.meshes);
+const targets = () => (zombieGame() ? zombies.parts : isEvent() ? zombies.parts.concat(mp.parts) : mp.parts).concat(world.solids, structures.meshes);
 
 function fireShot(moving, speed) {
   const def = weapon.def;
@@ -793,6 +798,11 @@ function fireShot(moving, speed) {
   _up.setFromMatrixColumn(camera.matrixWorld, 1);
   camera.getWorldPosition(_origin);
   weapon.muzzleWorld(_muzzle);
+  if (ev.tp.dist) {
+    // third person: shots start level with you (not behind you at the camera) and come out of your character's gun
+    _origin.addScaledVector(_dir, ev.tp.dist);
+    if (ev.myAvatar) ev.myAvatar.gunHolder.getWorldPosition(_muzzle).addScaledVector(_dir, 0.7);
+  }
   const aimed = weapon.ads;
   const gunSpread = def.hipSpread !== undefined ? def.hipSpread + (def.spread - def.hipSpread) * aimed : def.spread * (def.pellets > 1 ? 1 : 1 - aimed * 0.6);
   const moveSpread = (moving ? 0.006 + speed * 0.0012 : 0) * (1 - aimed * 0.5) + (player.onGround ? 0 : 0.02);
@@ -985,12 +995,12 @@ function explodeAt(point, radius, dmg, { color = null, hurtsPlayer = false, src 
     audio.explosion(point);
     explosionSoundT = 0.09;
   }
-  if (hurtsPlayer && zombieGame()) {
+  if (hurtsPlayer && zombiesOn()) {
     const d = point.distanceTo(new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z));
     if (d < radius) onPlayerHit(null, 30 * (1 - (d / radius) * 0.6), 'blast');
-    if (isCoop() && simHost()) mp.relay('all', { k: 'boom', x: point.x, y: point.y, z: point.z, r: radius });
+    if ((isCoop() || isEvent()) && simHost()) mp.relay('all', { k: 'boom', x: point.x, y: point.y, z: point.z, r: radius });
   }
-  if (!zombieGame() || dmg <= 0) return;
+  if (!zombiesOn() || dmg <= 0) return;
   if (hurtsPlayer && simHost()) {
     for (const st of [...structures.list]) {
       const d = st.pos.distanceTo(point);
@@ -1117,7 +1127,7 @@ function updateMapProps(dt) {
     giveGrenades(1);
     ammoCd.set(near, AMMO_CD);
     near.lamp.material.color.setHex(0xff3a2a);
-    audio.pickup?.();
+    audio.pickup();
     subBanner('🔫 Ammo refilled · +1 grenade', 1.6);
   }
   ammoKeyWas = key;
@@ -1743,6 +1753,12 @@ function onKill(z, head, src = null) {
 }
 function rewardKill({ type, mut, head, src = null, x, y, z, bounty = false }) {
   const T = ZOMBIE_TYPES[type] || ZOMBIE_TYPES.walker;
+  if (isEvent()) {
+    // points for you and your team, and maybe a puzzle piece
+    const kind = type === 'boss' ? 'boss' : mut || ['brute', 'bloater', 'spitter'].includes(type) ? 'special' : 'zombie';
+    mp.send({ t: 'zkill', kind });
+    eventDropChance(kind, x, z);
+  }
   game.kills++;
   if (src === 'wolf') game.petKills = (game.petKills || 0) + 1;
   achieve('first_kill');
@@ -1868,6 +1884,13 @@ function clearShields() {
 }
 
 function onPlayerHit(z, dmg, kind) {
+  if (isEvent()) {
+    // events: the server keeps your health (it sends the hurt back)
+    if (player.dead || dmg <= 0) return;
+    wolfGuard(z);
+    mp.send({ t: 'zhurt', dmg: Math.min(80, Math.round(dmg)) });
+    return;
+  }
   if (!zombieGame() || player.dead) return;
   wolfGuard(z);
   if (shieldUp()) return; // the force field takes it
@@ -1961,7 +1984,7 @@ const zombieHooks = {
 // Everyone the zombies can go after (co-op host: every living player).
 function zombieTargets() {
   const list = player.dead ? [] : [{ id: 'me', pos: player.pos }];
-  if (isCoop()) for (const a of mp.avatars.values()) if (a.alive) list.push({ id: a.id, pos: a.pos });
+  if (isCoop() || isEvent()) for (const a of mp.avatars.values()) if (a.alive) list.push({ id: a.id, pos: a.pos });
   if (isDefend()) list.push(...defend.targets()); // and the points they're trying to take
   return list;
 }
@@ -2393,7 +2416,7 @@ function updateHud(dt) {
   if (evac.on) marks.push({ x: evac.x, z: evac.z, color: '#ffd34d', r: 5 });
   if (zombieGame()) for (const sh of world.shops || []) marks.push({ x: sh.x, z: sh.z, color: sh.kind === 'perk' ? '#ff6ad5' : '#e8c27a', r: 2.4, shape: 'diamond' });
   for (const c of world.ammoCrates || []) marks.push({ x: c.x, z: c.z, color: (ammoCd.get(c) || 0) > 0 ? '#6a6a5a' : '#a8d65a', r: 2.2, shape: 'diamond' });
-  if (zombieGame()) {
+  if (zombiesOn()) {
     for (const z of zombies.list) {
       if (!z.alive) continue;
       marks.push({ x: z.root.position.x, z: z.root.position.z, color: z.typeId === 'boss' ? '#c86bff' : z.mutated ? '#6dff2a' : '#ff4a3a', r: z.typeId === 'boss' ? 4 : 2.2 });
@@ -2513,6 +2536,191 @@ function wolfGuard(z) {
   wolfHunt.prey = z;
   wolfHunt.pounce = true;
 }
+// ---------------------------------------------------------------- events (admin panel → Events)
+// Red vs Blue vs the zombies, seen from behind your character. The host's game keeps zombies coming; kills
+// can drop a puzzle piece (only you see your drops) and picking one up asks the server which piece it is.
+const ev = { t: 0, spawnT: 0, bossT: 150, drops: [], myAvatar: null, avatarKey: '', tp: { on: false, dist: 0 } };
+function eventDirector(dt) {
+  ev.t += dt;
+  ev.spawnT -= dt;
+  const level = Math.min(15, 1 + Math.floor(ev.t / 60)); // gets tougher every minute
+  const people = 1 + mp.avatars.size;
+  const want = Math.min(32, 6 + people * 3);
+  if (ev.spawnT <= 0 && zombies.aliveCount < want) {
+    ev.spawnT = 1.2;
+    zombies.spawn(pickType(level), level, spawnAnchor(), Math.random() < mutatedChance(level));
+  }
+  // a boss every few minutes
+  ev.bossT -= dt;
+  if (ev.bossT <= 0 && !zombies.list.some((z) => z.alive && z.typeId === 'boss')) {
+    ev.bossT = 180;
+    zombies.spawn('boss', level, spawnAnchor(), level >= 8);
+    banner('👹 A BOSS IS COMING', 'Worth 15 points, and it always drops a piece', 'red', 2.2);
+  }
+}
+
+const PIECE_SHAPE = (() => {
+  // a jigsaw piece: a square with a knob on top and right, a dent on the left
+  const s = new THREE.Shape();
+  const h = 0.22;
+  s.moveTo(-h, -h);
+  s.lineTo(h, -h);
+  s.lineTo(h, -0.06);
+  s.absarc(h + 0.05, 0, 0.07, Math.PI, -Math.PI, true);
+  s.lineTo(h, h);
+  s.lineTo(0.06, h);
+  s.absarc(0, h + 0.05, 0.07, 0, Math.PI, false);
+  s.lineTo(-h, h);
+  s.lineTo(-h, 0.06);
+  s.absarc(-h + 0.05, 0, 0.07, Math.PI / 2, -Math.PI / 2, true);
+  s.lineTo(-h, -h);
+  return new THREE.ExtrudeGeometry(s, { depth: 0.08, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 2 });
+})();
+const pieceMat = new THREE.MeshStandardMaterial({ color: 0xffd34d, emissive: 0xffa000, emissiveIntensity: 0.9, roughness: 0.3, metalness: 0.4 });
+const beamMat = new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.35, depthWrite: false });
+// a kill might drop a piece (rarer for plain zombies, always for a boss), boosted by the admin's drop rate
+function eventDropChance(kind, x, z) {
+  const boost = account.event?.boost || 1;
+  if (Math.random() > Math.min(1, (DROP_CHANCE[kind] || 0) * boost)) return;
+  if (ev.drops.length >= 4) return;
+  const g = new THREE.Group();
+  const piece = new THREE.Mesh(PIECE_SHAPE, pieceMat);
+  piece.position.z = -0.05;
+  g.add(piece);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.3, 14, 10, 1, true), beamMat);
+  beam.position.y = 7;
+  g.add(beam);
+  const y = Math.max(heightAt(x, z), world.colliders.floorAt(x, z, 0.2, 50)) + 0.9;
+  g.position.set(x, y, z);
+  scene.add(g);
+  ev.drops.push({ g, piece, y, t: 45 });
+  subBanner('🧩 A puzzle piece dropped! Grab it', 1.6);
+  audio.pickup?.();
+}
+let claiming = false;
+function updateEventDrops(dt) {
+  for (let i = ev.drops.length - 1; i >= 0; i--) {
+    const d = ev.drops[i];
+    d.t -= dt;
+    d.piece.rotation.y += dt * 2;
+    d.g.position.y = d.y + Math.sin(time * 3) * 0.12;
+    const near = isEvent() && !player.dead && Math.hypot(player.pos.x - d.g.position.x, player.pos.z - d.g.position.z) < 1.8 && Math.abs(player.pos.y + 0.9 - d.g.position.y) < 2.5;
+    if (d.t > 0 && !near && isEvent()) continue;
+    scene.remove(d.g);
+    ev.drops.splice(i, 1);
+    if (near && !claiming) claimPiece();
+  }
+}
+async function claimPiece() {
+  claiming = true;
+  try {
+    const r = await account.claimPiece();
+    showPiece(r, account.items);
+  } catch (e) {
+    subBanner(e.message, 2);
+  }
+  claiming = false;
+}
+
+// third person in events: your own character in front of the camera, which sits over your right shoulder
+const _tpDir = new THREE.Vector3();
+const _tpRight = new THREE.Vector3();
+const _tpWant = new THREE.Vector3();
+const tpRay = new THREE.Raycaster();
+const thirdPerson = () => isEvent() && !player.dead && !spectate.on;
+function tpCamera() {
+  ev.tp.dist = 0;
+  if (!thirdPerson()) return;
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(_tpDir);
+  _tpRight.setFromMatrixColumn(camera.matrixWorld, 0);
+  const eye = camera.position;
+  let back = 3.1;
+  _tpWant.copy(eye).addScaledVector(_tpRight, 0.6).add(new THREE.Vector3(0, 0.3, 0));
+  // don't go through walls behind you
+  const away = _tpWant.clone().addScaledVector(_tpDir, -back).sub(eye);
+  const len = away.length();
+  tpRay.set(eye, away.normalize());
+  tpRay.far = len;
+  const hit = tpRay.intersectObjects(world.solids, false)[0];
+  if (hit) back = Math.max(0.6, back * (hit.distance / len) - 0.25);
+  _tpWant.addScaledVector(_tpDir, -back);
+  _tpWant.y = Math.max(_tpWant.y, heightAt(_tpWant.x, _tpWant.z) + 0.35);
+  ev.tp.dist = _tpWant.distanceTo(eye);
+  camera.position.copy(_tpWant);
+}
+// your own character (the same one other players see), shown in events
+function updateMyAvatar(dt) {
+  const show = isEvent() && ['playing', 'paused', 'choosing'].includes(game.state);
+  const look = account.profile.look;
+  const key = show ? `${mp.myTeam}|${JSON.stringify(look)}` : '';
+  if (ev.myAvatar && ev.avatarKey !== key) {
+    scene.remove(ev.myAvatar.root);
+    ev.myAvatar.dispose();
+    ev.myAvatar = null;
+  }
+  ev.avatarKey = key;
+  if (!show) return;
+  if (!ev.myAvatar) {
+    ev.myAvatar = new Avatar({ id: -1, name: account.name, look }, mp.myTeam === 'blue' ? 0x2f6fd0 : 0xc0392b, true);
+    ev.myAvatar.fresh = true;
+    scene.add(ev.myAvatar.root);
+  }
+  const a = ev.myAvatar;
+  a.target.copy(player.pos);
+  a.targetYaw = player.yaw;
+  a.pitch = player.pitch;
+  a.alive = !player.dead;
+  a.setGun(weapon.def.id);
+  a.update(dt, 0);
+  a.label.visible = false;
+  a.root.visible = !player.dead || !!a.model;
+}
+
+// the event card on the home screen, and joining an event room (or starting one)
+function renderEventCard() {
+  const el = $('event-card');
+  const e = account.event;
+  el.classList.toggle('hidden', !e);
+  if (!e) return;
+  const left = e.endsAt ? Math.max(0, e.endsAt - Date.now()) : 0;
+  const h = Math.floor(left / 3600000);
+  const m = Math.ceil((left % 3600000) / 60000);
+  el.innerHTML = `<div class="ev-live">🎉 EVENT LIVE</div><div class="ev-name">${esc(e.name)}</div>
+    <div class="ev-sub">Red vs Blue vs the zombies · collect 🧩 pieces to unlock new characters${e.boost > 1 ? ` · <b>${e.boost}× drops!</b>` : ''}</div>
+    <div class="ev-meta">${e.endsAt ? `Ends in ${h ? `${h}h ` : ''}${m}m · ` : ''}Your pieces: <b>${totalPieces(account.items)}/${PIECE_COUNT}</b></div>
+    <button class="btn" id="event-join">JOIN EVENT</button><span id="event-err" class="muted small"></span>`;
+  $('event-join').onclick = joinEvent;
+}
+async function joinEvent() {
+  if (!account.loggedIn) return accountUI.open('login');
+  $('event-err').textContent = ' Finding a match…';
+  let code = null;
+  try {
+    code = (await (await fetch('/api/quickplay?mode=event')).json()).code;
+  } catch {
+    /* offline */
+  }
+  game.mode = 'mp';
+  showOnly('mp-menu');
+  game.state = 'mpmenu';
+  let err = code ? await mp.join(code) : 'none';
+  if (err) {
+    // nobody's playing yet: a new event room, open to everyone, straight into a match
+    err = await mp.create();
+    if (!err) {
+      mp.send({ t: 'mode', mode: 'event' });
+      mp.send({ t: 'open', on: true });
+      mp.send({ t: 'start' });
+    }
+  }
+  $('mp-error').textContent = err || '';
+}
+account.onChange(renderEventCard);
+setInterval(() => {
+  if (game.state === 'menu') renderEventCard();
+}, 30000);
+
 // ---------------------------------------------------------------- saved games (solo)
 // You name a game when you start it. It's saved when it starts and after every wave (once you
 // pick a power-up); continuing starts the next wave. Saves are kept in this browser and, when
@@ -2984,6 +3192,12 @@ const mp = new Multiplayer({
     $('subbanner').className = '';
     spectate.id = null;
     coop.remaining = 0;
+    // events: a fresh horde, and no drops left over
+    ev.t = 0;
+    ev.spawnT = 4;
+    ev.bossT = 150;
+    for (const d of ev.drops) scene.remove(d.g);
+    ev.drops.length = 0;
     if (mode === 'defend') defend.start();
     else defend.stop();
     if (MODES[mode].coop) {
@@ -3105,7 +3319,10 @@ const mp = new Multiplayer({
   onChat(name, text, color, admin) {
     addChat(name, text, color, admin);
   },
-  onKillConfirmed(victim, head) {
+  onKillConfirmed(victim, head, victimId) {
+    // events: an enemy can drop a puzzle piece where they fell
+    const va = mp.avatars.get(victimId);
+    if (isEvent() && va) eventDropChance('player', va.pos.x, va.pos.z);
     questAdd('pvpKills');
     masteryKill(weapon.def.id);
     game.scrap = Math.min(999, game.scrap + SCRAP_PER_PVP_KILL);
@@ -4537,6 +4754,7 @@ function update(dt) {
   const flying = cheatsOn() && cheats.fly;
   const speedMul = cheatsOn() && cheats.speed ? 2 : 1;
   const hSpeed = flying ? flyUpdate(dt) : player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul * speedMul * weatherMove(), world.ladders);
+  tpCamera(); // events: over the shoulder
   hitSoundPlayed = false;
   const shots = player.dead
     ? 0
@@ -4560,7 +4778,7 @@ function update(dt) {
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
   updateSupply(dt);
   updateLive(dt);
-  if (!isCoop()) worldTick(dt);
+  if (!isCoop() && !isEvent()) worldTick(dt);
   else updateMedkits(dt); // co-op runs worldTick from the frame loop, even while paused
   explosionSoundT -= dt;
 }
@@ -4568,6 +4786,20 @@ function update(dt) {
 // Zombies, waves, medkits and hazards. In co-op this keeps running while you're in a menu.
 function worldTick(dt) {
   if (structures.list.length) updateTurrets(dt);
+  if (isEvent()) {
+    // events: the host runs the zombies for everyone and keeps them coming
+    if (simHost()) {
+      if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, zombieTargets(), zombieHooks);
+      eventDirector(dt);
+      coop.snapT -= dt;
+      if (coop.snapT <= 0) {
+        coop.snapT = 0.1;
+        mp.relay('all', { k: 'zs', ev: 1, z: zombies.snapshot() });
+      }
+    } else zombies.updatePuppets(dt);
+    updateMedkits(dt);
+    return;
+  }
   if (zombieGame()) {
     if (simHost()) {
       if (!(cheatsOn() && cheats.freeze && simHost())) zombies.update(dt, isCoop() ? zombieTargets() : player, zombieHooks);
@@ -4611,6 +4843,7 @@ function onCoopRelay(from, d) {
   switch (d.k) {
     case 'zs': // zombie snapshot from the host
       if (mp.isHost()) return;
+      if (d.ev) return zombies.applySnapshot(d.z || []); // events: just the zombies
       zombies.applySnapshot(d.z || []);
       setNight(!!d.n, true);
       if (isDefend()) defend.apply(d.pt);
@@ -4744,8 +4977,9 @@ function frame(now) {
   else if (game.mode === 'mp' && game.state === 'paused' && mp.inMatch) {
     // the match keeps running while the menu is up
     player.update(dt, world.colliders, stats, false, audio, 1, world.ladders);
+    tpCamera();
   }
-  if (isCoop() && ['playing', 'paused', 'choosing'].includes(game.state)) worldTick(dt);
+  if ((isCoop() || isEvent()) && ['playing', 'paused', 'choosing'].includes(game.state)) worldTick(dt);
   if (game.mode === 'mp') {
     mp.update(dt, time);
     // AI bots: the host's game moves them
@@ -4769,6 +5003,8 @@ function frame(now) {
   updateZombieMarkers();
   defend.update(dt, time);
   updatePets(dt);
+  updateMyAvatar(dt);
+  updateEventDrops(dt);
   structures.update(dt, effects);
   updateChat();
 
@@ -4778,7 +5014,7 @@ function frame(now) {
 
   renderer.clear();
   renderer.render(scene, camera);
-  if (!menuish && !player.dead && !weapon.scoped && !spectate.on) weapon.render(renderer);
+  if (!menuish && !player.dead && !weapon.scoped && !spectate.on && !thirdPerson()) weapon.render(renderer);
 }
 
 loadMap(game.map);
@@ -4879,7 +5115,7 @@ if (import.meta.env.DEV) {
       return savedGames;
     },
     bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio }); },
-    get wolf() { return myWolf; }, wolfHunt,
+    get wolf() { return myWolf; }, wolfHunt, ev, worldTick, isEvent,
     game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

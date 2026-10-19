@@ -11,6 +11,8 @@ export const MODES = {
   oitc: { id: 'oitc', name: 'One in the Chamber', short: '1IC', teams: false, oitc: true, killLimit: 10, desc: 'One bullet in your revolver and a knife. Every bullet kills; every kill gives you another bullet. First to 10 kills.' },
   jugg: { id: 'jugg', name: 'Juggernaut', short: 'JUG', teams: false, jugg: true, scoreLimit: 20, desc: 'One player is the Juggernaut: triple health and a machine gun. Kill the Juggernaut to become it. Points for kills as the Juggernaut and for taking it down.' },
   extract: { id: 'extract', name: 'Extraction', short: 'EVAC', teams: false, coop: true, extract: true, desc: 'Co-op vs the zombies with a way out: survive until the helicopter comes, then the whole squad has to hold the landing zone until it can take off.' },
+  // only while the admin is hosting an event (admin panel → Events); not in the normal list of modes
+  event: { id: 'event', name: 'Event', short: 'EVENT', teams: true, event: true, hidden: true, scoreLimit: 400, desc: 'Red vs Blue vs the zombies, seen from behind your character. Points for every zombie and every enemy you take down, and kills can drop puzzle pieces of new characters.' },
   infect: { id: 'infect', name: 'Infection', short: 'INF', teams: true, infection: true, autoTeams: true, desc: "After 10 seconds someone turns into a zombie. Anyone a zombie kills joins them. Survivors win if anyone is still standing when time runs out." },
 };
 
@@ -60,6 +62,7 @@ export const MODE_SETTINGS = {
     HP, DROPS,
   ],
 };
+MODE_SETTINGS.event = [LIMIT('🏆 Points to win', [200, 400, 600, 1000], 400), TIME(10, [5, 8, 10, 15]), HP, RESPAWN, DROPS, PICKUPS];
 MODE_SETTINGS.defend = MODE_SETTINGS.coop;
 MODE_SETTINGS.extract = [{ key: 'evac', label: '🚁 Helicopter comes after wave', options: opt([3, 5, 8, 10, 15], (v) => `Wave ${v}`), def: 5 }, ...MODE_SETTINGS.coop];
 export const EVAC_HOLD = 30; // seconds the squad must hold the landing zone

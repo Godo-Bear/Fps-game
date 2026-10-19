@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.25', date: '19 Oct 2026', title: '🎉 Events',
+    items: [
+      'Special limited-time events, hosted every now and then. When one is on, a JOIN EVENT card shows up on the home screen.',
+      'Something new is waiting in them. Keep an eye out for the first one!',
+      'Admin: a new Events tab to host an event (name, how long, drop rate), see how many are playing, and end it.',
+    ],
+  },
+  {
     v: '5.24', date: '19 Oct 2026', title: '🔦 Hollow Ground is now Last Light',
     items: [
       'The game has a new name: Last Light. Same game, same accounts, and all your progress, coins, guns and wolf are still yours.',

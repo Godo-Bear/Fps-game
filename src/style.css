@@ -3531,3 +3531,150 @@ body.infected #game::after {
   font-size: 13px;
   color: #ffd34d;
 }
+
+/* ---- events: the home screen card */
+.fn-event {
+  background: linear-gradient(135deg, rgba(60, 38, 8, 0.94), rgba(40, 18, 60, 0.94));
+  border: 1px solid rgba(255, 211, 77, 0.6);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 0 24px rgba(255, 176, 32, 0.25);
+  animation: ev-pulse 2.4s ease-in-out infinite;
+}
+@keyframes ev-pulse {
+  50% {
+    box-shadow: 0 0 34px rgba(255, 176, 32, 0.45);
+  }
+}
+.fn-event .ev-live {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #ff5d4d;
+}
+.fn-event .ev-name {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 24px;
+  color: #ffd34d;
+  line-height: 1.1;
+}
+.fn-event .ev-sub,
+.fn-event .ev-meta {
+  font-size: 13px;
+  margin: 3px 0;
+}
+.fn-event .btn {
+  margin-top: 6px;
+}
+
+/* ---- events: the puzzle you see when you pick up a piece */
+#puzzle {
+  position: fixed;
+  left: 50%;
+  top: 12%;
+  transform: translate(-50%, -20px) scale(0.9);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 60;
+  transition: opacity 0.35s, transform 0.35s;
+}
+#puzzle.show {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+.pz-card {
+  background: rgba(14, 11, 8, 0.92);
+  border: 2px solid var(--pz, #ffd34d);
+  border-radius: 12px;
+  padding: 12px 18px 14px;
+  text-align: center;
+  box-shadow: 0 0 40px color-mix(in srgb, var(--pz, #ffd34d) 40%, transparent);
+  color: #e9d9b8;
+  min-width: 240px;
+}
+.pz-head {
+  font-family: 'Black Ops One', sans-serif;
+  letter-spacing: 2px;
+  color: #ffd34d;
+  margin-bottom: 8px;
+}
+.pz-board {
+  display: block;
+  margin: 0 auto;
+  overflow: visible;
+}
+.pz-bg {
+  fill: rgba(255, 255, 255, 0.04);
+  stroke: rgba(255, 255, 255, 0.12);
+}
+.pz-p .pz-edge {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 2;
+}
+.pz-p.miss .pz-edge {
+  fill: rgba(0, 0, 0, 0.45);
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-dasharray: 5 4;
+}
+.pz-p text {
+  fill: rgba(255, 255, 255, 0.3);
+  font: 700 26px sans-serif;
+}
+.pz-p.new {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: translate(0, 230px) rotate(-28deg) scale(1.5);
+  opacity: 0;
+  transition: transform 0.95s cubic-bezier(0.2, 1.35, 0.4, 1), opacity 0.3s;
+}
+.pz-p.new.in {
+  transform: none;
+  opacity: 1;
+}
+.pz-p.snap .pz-edge {
+  animation: pz-snap 0.7s ease-out;
+}
+@keyframes pz-snap {
+  0% {
+    stroke: #fff;
+    stroke-width: 6;
+    filter: drop-shadow(0 0 8px #ffd34d);
+  }
+  100% {
+    stroke-width: 2;
+  }
+}
+.pz-board.glow .pz-edge {
+  transition: stroke 1s;
+  stroke: transparent;
+}
+.pz-board.glow {
+  animation: pz-glow 1.2s ease-in-out 2;
+}
+@keyframes pz-glow {
+  50% {
+    filter: drop-shadow(0 0 18px var(--pz, #ffd34d));
+  }
+}
+.pz-name {
+  margin-top: 8px;
+  font-size: 18px;
+}
+.pz-rar {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--pz, #ffd34d);
+  text-transform: uppercase;
+}
+.pz-piece {
+  font-size: 13px;
+  opacity: 0.85;
+}
+.pz-done {
+  margin-top: 6px;
+  font-weight: 700;
+  color: #8ee07a;
+}

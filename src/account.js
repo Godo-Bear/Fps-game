@@ -1,4 +1,5 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
+import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_DURATIONS, EVENT_POINTS, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
@@ -465,7 +466,8 @@ export class Account {
       return this._setUnread({});
     }
     try {
-      const { unread, requests, timeoutMins, groupUnread, announce } = await this._api('/messages/unread');
+      const { unread, requests, timeoutMins, groupUnread, announce, event } = await this._api('/messages/unread');
+      this._setEvent(event || null);
       this.timeoutMins = timeoutMins || 0;
       this._setAnnounce(announce || null);
       this.groupUnread = groupUnread || 0;
@@ -538,6 +540,29 @@ export class Account {
     this._saveGuest();
   }
   // your quick chat wheel (8 phrases)
+  // the event the admin is hosting (or null): from the server config, then kept fresh with the unread check
+  get event() {
+    const e = this.liveEvent !== undefined ? this.liveEvent : this.cfg?.event || null;
+    return e && (!e.endsAt || e.endsAt > Date.now()) ? e : null;
+  }
+  _setEvent(e) {
+    if (JSON.stringify(e) === JSON.stringify(this.liveEvent)) return;
+    this.liveEvent = e;
+    this._changed();
+  }
+  // a puzzle piece picked up in an event: the server says which one it was
+  async claimPiece() {
+    const r = await this._api('/event/piece', { method: 'POST', body: {} });
+    this.user = r.user;
+    this._changed();
+    return r;
+  }
+  async adminEvent(body) {
+    const r = await this._api('/admin/event', { method: 'POST', body });
+    if ('event' in r && body.action !== 'status') this._setEvent(r.event);
+    return r;
+  }
+
   async setQuickChat(list) {
     if (this.user) {
       const { user } = await this._api('/shop/loadout', { method: 'POST', body: { quick: list } });
@@ -1182,7 +1207,8 @@ export class AccountUI {
   // Your character: skin, hair, facial hair, headwear, top and trousers, with a spinning preview.
   _lookPicker(p) {
     // picks still being saved win over the last saved copy (quick clicks don't undo each other)
-    if (!CHARACTERS_LIVE && !this.account.admin) return '';
+    // before the big launch: admins, and anyone who's found a piece in an event
+    if (!CHARACTERS_LIVE && !this.account.admin && !anyPieces(this.account.items)) return '';
     if (this.lookDraft) p.look = this.lookDraft;
     const L = p.look;
     const swatches = (key, list) =>
@@ -1191,12 +1217,19 @@ export class AccountUI {
     // what each character's gear is, and whether it can come off
     const gearName = { man: 'Socks', adventurer: 'Backpack', swat: 'Kit', king: 'Armour and crown' }[L.model] || 'Gear';
     const gearToggle = L.model === 'adventurer' || L.model === 'king' ? `<div class="pick-row"><button class="pick ${L.hat !== 'none' ? 'on' : ''}" data-look="hat" data-v="helmet">${L.model === 'king' ? 'Crown on' : 'Wearing it'}</button><button class="pick ${L.hat === 'none' ? 'on' : ''}" data-look="hat" data-v="none">${L.model === 'king' ? 'No crown' : 'Off'}</button></div>` : '';
-    const note = CHARACTERS_LIVE ? 'free · other players see it online, and your arms match it' : 'ADMIN PREVIEW: hidden from players until the big update';
+    const note = CHARACTERS_LIVE || !this.account.admin ? 'other players see it online, and your arms match it · 🧩 unlock more in events' : 'ADMIN PREVIEW: players only see it once they find a piece in an event';
     return `<h4>🧍 Character <span class="muted small">(${note})</span></h4>
       <div class="look-box">
         <div class="look-wrap"><canvas id="look-preview" class="look-preview"></canvas><div id="look-loading" class="look-loading hidden">Loading…</div></div>
         <div class="look-opts">
-          <h5>Character</h5><div class="pick-row">${LOOK_MODELS.map(([id, n]) => `<button class="pick ${L.model === id ? 'on' : ''}" data-look="model" data-v="${id}">${n}</button>`).join('')}</div>
+          <h5>Character</h5><div class="pick-row">${LOOK_MODELS.map(([id, n]) => {
+            // locked ones: how many of their 4 puzzle pieces you have (they come from events)
+            const open = charUnlocked(this.account.items, id, this.account.admin);
+            const set = PIECE_SETS.find((s) => s.char === id);
+            return open
+              ? `<button class="pick ${L.model === id ? 'on' : ''}" data-look="model" data-v="${id}">${n}</button>`
+              : `<button class="pick locked" disabled title="Collect all 4 puzzle pieces in an event to unlock">🔒 ${n} <i>🧩 ${piecesOf(this.account.items, id).length}/4${set ? ` · ${set.rarity}` : ''}</i></button>`;
+          }).join('')}</div>
           <h5>Skin</h5>${swatches('skin', LOOK_SKIN)}
           ${L.model === 'swat' ? '' : `<h5>Hair</h5>${swatches('hairColor', LOOK_HAIR_COLORS)}`}
           <h5>Top</h5>${swatches('topColor', LOOK_CLOTH)}
@@ -1401,7 +1434,7 @@ export class AccountUI {
     const solo = act && act.inSolo();
     const mp = act && act.inMP();
     const sec = this.adminSec || 'players';
-    const tabs = [['players', '👥 Players'], ['game', '🎮 Game'], ['mp', '🌐 Multiplayer'], ['me', '🛠️ Account & server']];
+    const tabs = [['players', '👥 Players'], ['game', '🎮 Game'], ['mp', '🌐 Multiplayer'], ['events', '🎉 Events'], ['me', '🛠️ Account & server']];
     this.body.innerHTML = `
       <div class="asubtabs">${tabs.map(([id, n]) => `<button class="chipbtn ${id === sec ? 'on' : ''}" data-asec="${id}">${n}</button>`).join('')}</div>
       <div id="admin-msg" class="msg admin-msg"></div>
@@ -1516,6 +1549,33 @@ export class AccountUI {
       <div id="admin-teams" class="admin-players"></div>
       </div>
     </section>
+    <section class="asec" data-sec="events">
+      <div class="acard"><h4>🎉 Event <span class="muted small">(every server: players join it from the home screen)</span></h4>
+        <div id="admin-event-status" class="muted">Checking…</div>
+      </div>
+      <div class="acard"><h4>▶ Host an event</h4>
+        <form class="auth inline admin-row" id="admin-event-start">
+          <input name="name" maxlength="40" placeholder="Name (${esc(DEFAULT_EVENT_NAME)})" />
+          <select name="minutes">${EVENT_DURATIONS.map(([v, n]) => `<option value="${v}" ${v === 60 ? 'selected' : ''}>${n}</option>`).join('')}</select>
+          <select name="boost">${DROP_BOOSTS.map(([v, n]) => `<option value="${v}">${n} drops</option>`).join('')}</select>
+          <label class="small"><input type="checkbox" name="announce" checked /> Announce it to everyone</label>
+          <button class="btn small">🎉 START EVENT</button>
+        </form>
+        <div class="admin-grid"><button class="btn small ghost" id="admin-event-stop">⏹ END THE EVENT NOW</button></div>
+      </div>
+      <div class="acard"><h4>How it works</h4>
+        <p class="muted small">While it's on, everyone gets a <b>JOIN EVENT</b> card on the home screen. It puts them in an event match (or starts one): <b>Red vs Blue vs the zombies</b>, seen from behind their character, starting as the <b>Survivor</b>.
+        Teams score ${EVENT_POINTS.player} points for an enemy, ${EVENT_POINTS.zombie} for a zombie, ${EVENT_POINTS.special} for a big or mutated one and ${EVENT_POINTS.boss} for a boss (one comes every 3 minutes). A new match starts by itself after each one.
+        Kills can drop a glowing 🧩 <b>puzzle piece</b> (only the killer sees it); walking over it reveals which piece it is. 4 pieces unlock a character: ${PIECE_SETS.map((s) => `${s.name} (${s.rarity})`).join(', ')}. ${PIECE_COUNT} pieces in all; after that, pieces turn into coins.</p>
+      </div>
+      <div class="acard"><h4>🧪 Testing</h4>
+        <div class="admin-grid">
+          <button class="btn small" data-mypieces="all">🧩 GIVE ME EVERY PIECE</button>
+          <button class="btn small ghost" data-mypieces="none">RESET MY PIECES</button>
+        </div>
+        <p class="muted small">You have ${totalPieces(a.items)}/${PIECE_COUNT} pieces. For a player: MANAGE in the Players tab.</p>
+      </div>
+    </section>
     <section class="asec" data-sec="me">
       <div class="acard"><h4>My account</h4>
       <form class="auth inline admin-row" data-act="level"><input name="v" type="number" min="1" max="200" placeholder="Set level (1-200)" /><button class="btn small">SET LEVEL</button></form>
@@ -1617,6 +1677,50 @@ export class AccountUI {
         msg(err.message);
       }
     });
+    // events
+    const evStatus = async () => {
+      const el = document.getElementById('admin-event-status');
+      if (!el) return;
+      try {
+        const r = await a.adminEvent({ action: 'status' });
+        const e = r.event;
+        el.innerHTML = e
+          ? `<b class="hot">🟢 LIVE: ${esc(e.name)}</b> · started by ${esc(e.by)} · ${e.endsAt ? `ends ${esc(new Date(e.endsAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}` : 'until you end it'} · ${e.boost}× drops<br/>${r.rooms} event match(es) · <b>${r.players}</b> player(s) in them · ${e.pieces || 0} piece(s) found`
+          : 'No event is on. Start one below.';
+      } catch (err) {
+        el.textContent = err.message;
+      }
+    };
+    evStatus();
+    document.getElementById('admin-event-start').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      if (a.event && !confirm(`${a.event.name} is already on. Replace it with a new event?`)) return;
+      try {
+        msg((await a.adminEvent({ action: 'start', name: f.get('name'), minutes: Number(f.get('minutes')), boost: Number(f.get('boost')), announce: f.get('announce') === 'on' })).note);
+        evStatus();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    document.getElementById('admin-event-stop').onclick = async () => {
+      if (!a.event || !confirm(`End ${a.event.name} for everyone now?`)) return;
+      try {
+        msg((await a.adminEvent({ action: 'stop' })).note);
+        evStatus();
+      } catch (err) {
+        msg(err.message);
+      }
+    };
+    this.body.querySelectorAll('[data-mypieces]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          msg((await a.adminPlayer(a.name, 'pieces', { mode: b.dataset.mypieces })).note);
+        } catch (err) {
+          msg(err.message);
+        }
+      }),
+    );
     const words = document.getElementById('admin-words');
     a.adminWords().then(
       (r) => {
@@ -1773,6 +1877,7 @@ export class AccountUI {
     const mins = [[5, '5 min'], [30, '30 min'], [60, '1 hour'], [1440, '1 day'], [10080, '1 week']];
     const mod = `<div class="manage-mod">
         <button type="button" data-mod="give100">+100 🪙</button>
+        <button type="button" data-mod="pieces-all" title="Every character piece: they can wear any character">🧩 ALL PIECES (${p.pieces || 0})</button>${p.pieces ? '<button type="button" data-mod="pieces-none">TAKE PIECES</button>' : ''}
         ${CHARACTERS_LIVE ? '<button type="button" data-mod="resetlook" title="Their character back to the default look">RESET LOOK</button>' : ''}
         ${p.wolf ? `<button type="button" data-mod="wolf-up" class="hot" title="They paid you for a wolf level">+1 🐺 LEVEL (now ${p.wolfLevel})</button><button type="button" data-mod="wolf-off" title="Take their wolf companion away">TAKE 🐺 WOLF</button>` : '<button type="button" data-mod="wolf-on" class="hot" title="They paid you for the wolf companion">GIVE 🐺 WOLF</button>'}
         ${me || p.admin
@@ -1821,6 +1926,10 @@ export class AccountUI {
         if (action === 'give100') {
           action = 'give';
           extra.coins = 100;
+        }
+        if (action === 'pieces-all' || action === 'pieces-none') {
+          extra.mode = action === 'pieces-all' ? 'all' : 'none';
+          action = 'pieces';
         }
         if (action === 'wolf-up') {
           action = 'wolflevel';
