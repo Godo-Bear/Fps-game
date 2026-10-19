@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.23', date: '19 Oct 2026', title: 'New LMG sight',
+    items: [
+      'The Mule LMG has a proper holographic sight: a slim hooded frame with tinted glass and a glowing red ring-and-dot reticle that lines up exactly when you aim.',
+    ],
+  },
+  {
     v: '5.22', date: '19 Oct 2026', title: 'Real gun models',
     items: [
       'Every gun has a proper 3D model now: an AK-style AR-7 Rifle, a compact Viper SMG, a pump Boomstick, a pistol Hand Cannon, a scoped Marksman DMR and an AWP-style Longshot (plus the MK14 Mule LMG).',

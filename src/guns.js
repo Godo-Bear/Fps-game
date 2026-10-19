@@ -59,6 +59,45 @@ export function loadGunModels() {
 }
 export const hasGunModel = (id) => !!gunModels[id];
 
+// A holographic sight on a rail at z: slim mount, housing with buttons, a hooded window with tinted glass and a
+// glowing ring-and-dot reticle, centred on the LMG's sight line (y 0.145).
+const holoMats = {
+  body: new THREE.MeshStandardMaterial({ color: 0x26282b, roughness: 0.55, metalness: 0.35 }),
+  edge: new THREE.MeshStandardMaterial({ color: 0x3a3d41, roughness: 0.45, metalness: 0.4 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0x7fd0ff, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }),
+  reticle: new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.95, depthWrite: false }),
+  button: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }),
+};
+function holoSight(g, z) {
+  const m = holoMats;
+  const y = 0.145;
+  // rail clamp and base
+  part(g, B(0.04, 0.012, 0.11), m.body, 0, 0.064, z);
+  part(g, C(0.006, 0.006, 0.05, 8), m.edge, 0.022, 0.066, z + 0.03, 0, 0, H); // clamp screw
+  // housing under the window (battery and electronics), sloped at the front
+  part(g, B(0.052, 0.03, 0.1), m.body, 0, 0.085, z + 0.005);
+  part(g, B(0.052, 0.022, 0.03), m.body, 0, 0.09, z - 0.055, -0.5);
+  for (const bx of [-0.012, 0.012]) part(g, B(0.01, 0.004, 0.012), m.button, bx, 0.101, z + 0.035); // buttons
+  part(g, C(0.009, 0.009, 0.012, 10), m.edge, 0.031, 0.086, z + 0.01, 0, 0, H); // battery cap
+  // the hood: two thin side walls and a top, open front and back
+  for (const sx of [-1, 1]) part(g, B(0.006, 0.052, 0.07), m.body, sx * 0.03, y - 0.006, z - 0.01);
+  part(g, B(0.066, 0.007, 0.075), m.body, 0, y + 0.024, z - 0.01);
+  part(g, B(0.066, 0.004, 0.006), m.edge, 0, y + 0.024, z - 0.047); // front lip
+  // glass and the reticle on it
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.054, 0.044), m.glass);
+  glass.position.set(0, y, z - 0.02);
+  glass.renderOrder = 2;
+  g.add(glass);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.0085, 0.0098, 32), m.reticle);
+  ring.position.set(0, y, z - 0.019);
+  ring.renderOrder = 3;
+  g.add(ring);
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0016, 12), m.reticle);
+  dot.position.set(0, y, z - 0.019);
+  dot.renderOrder = 3;
+  g.add(dot);
+}
+
 // a copy of the model, with its magazine pulled out as its own part so reloads can move it
 function modelGun(g, out, id) {
   const { scene, def } = gunModels[id];
@@ -318,11 +357,7 @@ function buildGunBase(id) {
       if (gunModels.lmg) {
         // the MK14, with the holographic sight on its top rail
         modelGun(g, out, 'lmg');
-        part(g, B(0.05, 0.06, 0.07), M.dark, 0, 0.085, 0.02);
-        part(g, B(0.07, 0.012, 0.08), M.dark, 0, 0.115, 0.02);
-        part(g, B(0.012, 0.06, 0.08), M.dark, 0.03, 0.145, 0.02);
-        part(g, B(0.012, 0.06, 0.08), M.dark, -0.03, 0.145, 0.02);
-        part(g, B(0.07, 0.012, 0.08), M.dark, 0, 0.178, 0.02);
+        holoSight(g, -0.08);
         break;
       }
       part(g, B(0.1, 0.13, 0.5), M.dark, 0, 0, -0.02);
