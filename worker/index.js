@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { PET_ITEM, PET_MAX_LEVEL, addPetXp, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
@@ -1516,7 +1516,7 @@ export class Room extends DurableObject {
       const [avatar, color] = BOT_LOOKS[Math.floor(Math.random() * BOT_LOOKS.length)];
       const counts = this._teamCounts();
       const b = {
-        id: this.nextId++, ws: NOWS, bot: true, joined: true, name, avatar, color, look: randomLook(), account: false, team: counts.red <= counts.blue ? 'red' : 'blue',
+        id: this.nextId++, ws: NOWS, bot: true, joined: true, name, avatar, color, look: CHARACTERS_LIVE ? randomLook() : null, account: false, team: counts.red <= counts.blue ? 'red' : 'blue',
         alive: false, hp: MAX_HP, pos: [0, 0, 0], rot: [0, 0], gun: 'rifle', flags: 0, kills: 0, deaths: 0, score: 0, respawnAt: 0, protectUntil: 0,
         hits: [0, 0], msgs: [0, 0], level: 0, ip: 'bot', username: null,
       };
@@ -1585,7 +1585,7 @@ export class Room extends DurableObject {
             p.color = user.profile.color;
             p.pet = user.profile.pet === 'wolf' ? user.profile.petColor : null; // their wolf's colour
             p.petSpot = user.profile.petSpot;
-            p.look = user.profile.look; // their character
+            p.look = CHARACTERS_LIVE ? user.profile.look : null; // their character (once the creator launches)
             p.petLvl = petLevel(user.items || {});
             p.items = user.items || {};
           }

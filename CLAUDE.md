@@ -25,4 +25,7 @@ Before your next push after an upload: `git fetch origin main` and merge it so t
 ## Plans
 - The "Coming soon" tab lists planned updates (`UPCOMING` in `src/changelog.js`, no dates). When one ships, move it into
   `CHANGELOG`. The Story Campaign is meant to ship together with the new modes as one big update.
-- The owner has downloaded a wolf companion model for the pets update (not uploaded yet). Vehicles only in certain rounds.
+- The wolf companion is live (paid in hand; levels 50c). Vehicles only in certain rounds.
+- The Character Creator (src/character.js, Locker section) is built but hidden for a big launch: `CHARACTERS_LIVE = false`
+  in shared/cosmetics.js (admins see a preview). Don't launch it until the owner says; then flip it, move the
+  "Character Creator" entry from UPCOMING into CHANGELOG. Better rigged character models (SWAT etc.) may come first.

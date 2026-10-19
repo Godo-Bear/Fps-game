@@ -70,6 +70,10 @@ export const petHas = (level, id) => PET_MASTERIES.some((m) => m.id === id && le
 // where it walks: [id, label]
 export const PET_SPOTS = [['right', 'On my right'], ['left', 'On my left'], ['front', 'In front'], ['behind', 'Behind']];
 
+// The character creator is saved for a big update: until CHARACTERS_LIVE is true, only admins see it
+// (as a preview) and everyone looks the default. Flip it to launch.
+export const CHARACTERS_LIVE = false;
+
 // Your character: free to change. Colours are any hex; the rest pick from these lists. [id, label]
 export const LOOK_SKIN = ['#f3d6c2', '#e8c4a8', '#d8a882', '#c89a78', '#a8754f', '#8d5a3b', '#6a4128', '#4a2c1a'];
 export const LOOK_HAIR_COLORS = ['#141210', '#3a2616', '#6a4224', '#a0603a', '#d8b46a', '#e8e0d0', '#8a8a8a', '#b02a2a', '#2a6ad0', '#3ab04a'];

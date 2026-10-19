@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FINISHES, levelFromXp, petHas, petLevel } from '../shared/cosmetics.js';
+import { CHARACTERS_LIVE, FINISHES, levelFromXp, petHas, petLevel } from '../shared/cosmetics.js';
 import { EVAC_HOLD, INFECTED, JUGG_HP, MAPS, MODES, SOLO_MAP, SURVIVORS, quickWheel } from '../shared/modes.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../shared/achievements.js';
 import { termsHtml } from '../shared/terms.js';
@@ -2424,7 +2424,7 @@ function lock() {
 
 function applyProfile() {
   const p = account.profile;
-  setArmLook(p.look);
+  if (CHARACTERS_LIVE || account.admin) setArmLook(p.look);
   document.documentElement.style.setProperty('--xh', p.crosshair);
   const fin = FINISHES.find((f) => f[0] === p.finish);
   weapon.setFinish(fin && fin[0] !== 'standard' ? fin[3] : null);

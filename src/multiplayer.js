@@ -4,6 +4,7 @@ import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 import { Wolf } from './pet.js';
 import { buildCharacter } from './character.js';
+import { CHARACTERS_LIVE } from '../shared/cosmetics.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -78,7 +79,7 @@ class Avatar {
     this.root = new THREE.Group();
     this.parts = [];
     // their character (src/character.js): their own look, with a team-coloured vest in team modes
-    const ch = buildCharacter(info.look, {
+    const ch = buildCharacter(CHARACTERS_LIVE ? info.look : null, {
       vest: teamVest ? teamColor : null,
       part: (m, kind) => {
         m.userData.player = this.id;

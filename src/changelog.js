@@ -2,16 +2,6 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
-    v: '5.23', date: '19 Oct 2026', title: '🧍 Make your character',
-    items: [
-      'A new Character section in the Locker: pick your skin tone, hair style and colour, facial hair, headwear, top and trousers, with a spinning preview.',
-      'Every colour has a Custom option for any colour you like. It\'s all free.',
-      'Other players see your character in online games (with a team-coloured vest in team modes), and AI bots get their own random looks.',
-      'Your arms in first person match your character: your skin tone and the colour of your top.',
-      'Admin: RESET LOOK on a player (in MANAGE) puts their character back to the default.',
-    ],
-  },
-  {
     v: '5.22', date: '19 Oct 2026', title: 'Real gun models',
     items: [
       'Every gun has a proper 3D model now: an AK-style AR-7 Rifle, a compact Viper SMG, a pump Boomstick, a pistol Hand Cannon, a scoped Marksman DMR and an AWP-style Longshot (plus the MK14 Mule LMG).',
@@ -499,6 +489,13 @@ export const UPCOMING = [
   {
     v: 'soon-ranked', title: '🏆 Ranked PvP',
     items: ['Ranked matches from Bronze to Diamond, with your rank shown next to your name and a ranked leaderboard.'],
+  },
+  {
+    v: 'soon-characters', title: '🧍 Character Creator',
+    items: [
+      'Make your own character: skin tone, hairstyles, facial hair, hats, helmets and outfits, in any colour you like.',
+      'Everyone sees your character in online games, and your arms in first person match it.',
+    ],
   },
   {
     v: 'soon-pets', title: '🐾 More Pets with Powers',
