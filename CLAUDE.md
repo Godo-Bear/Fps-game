@@ -28,4 +28,5 @@ Before your next push after an upload: `git fetch origin main` and merge it so t
 - The wolf companion is live (paid in hand; levels 50c). Vehicles only in certain rounds.
 - The Character Creator (src/character.js, Locker section) is built but hidden for a big launch: `CHARACTERS_LIVE = false`
   in shared/cosmetics.js (admins see a preview). Don't launch it until the owner says; then flip it, move the
-  "Character Creator" entry from UPCOMING into CHANGELOG. Better rigged character models (SWAT etc.) may come first.
+  "Character Creator" entry from UPCOMING into CHANGELOG. The 3D characters (Man/Survivor, Adventurer, SWAT, King: Quaternius, rigged) are in it
+  (CHARACTER_MODELS in src/character.js); online their gun position on the model may need tuning at launch.

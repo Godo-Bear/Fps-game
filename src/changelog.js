@@ -499,7 +499,8 @@ export const UPCOMING = [
   {
     v: 'soon-characters', title: '🧍 Character Creator',
     items: [
-      'Make your own character: skin tone, hairstyles, facial hair, hats, helmets and outfits, in any colour you like.',
+      'Pick your character: Survivor, Adventurer, SWAT, King or the classic blocky soldier, fully animated.',
+      'Make it yours: skin tone, hair, outfits and gear in any colour you like.',
       'Everyone sees your character in online games, and your arms in first person match it.',
     ],
   },

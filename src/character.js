@@ -1,5 +1,126 @@
 import * as THREE from 'three';
-import { DEFAULT_LOOK, cleanLook } from '../shared/cosmetics.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { DEFAULT_LOOK, MODEL_COLORS, cleanLook } from '../shared/cosmetics.js';
+
+// ---- the owner's 3D characters (public/models): rigged and animated, recoloured by the look.
+// slots: which of the look's colours each material takes (by material name, or `mesh/material`).
+// gear: meshes that come off when headwear/gear is 'none'. clips: animation names for idle, run and death.
+const CHARACTER_MODELS = {
+  man: {
+    url: '/models/Man by Quaternius - HMnuH5geEG.glb',
+    slots: { Skin: 'skin', Hair: 'hairColor', Shirt: 'topColor', Pants: 'pants', Socks: 'hatColor' },
+    clips: { idle: 'Man_Idle', run: 'Man_Run', walk: 'Man_Walk', die: 'Man_Death' },
+  },
+  adventurer: {
+    url: '/models/Adventurer by Quaternius - 5EGWBMpuXq.glb',
+    slots: { Skin: 'skin', Hair: 'hairColor', Eyebrows: 'hairColor', 'Body/Green': 'topColor', 'Body/LightGreen': 'topColor', 'Legs/Brown2': 'pants', 'Legs/Brown': 'pants', 'Backpack/*': 'hatColor' },
+    gear: ['Backpack'],
+    clips: { idle: 'Idle_Gun', run: 'Run_Shoot', walk: 'Walk', die: 'Death' },
+  },
+  swat: {
+    url: '/models/SWAT by Quaternius - Btfn3G5Xv4.glb',
+    slots: { Skin: 'skin', 'Body/Swat': 'topColor', 'Head/Swat': 'topColor', 'Legs/Swat': 'pants', Swat_Black: 'hatColor' },
+    clips: { idle: 'Idle_Gun', run: 'Run_Shoot', walk: 'Walk', die: 'Death' },
+  },
+  king: {
+    url: '/models/King by Quaternius - I1gTjmuK2m.glb',
+    slots: { Skin: 'skin', Hair_White: 'hairColor', Blue: 'topColor', DarkBrown: 'pants', Metal: 'hatColor', Metal_Dark: 'hatColor' },
+    gear: ['King_Head_4'], // the crown
+    clips: { idle: 'Idle_Gun', run: 'Run_Shoot', walk: 'Walk', die: 'Death' },
+  },
+};
+const HEIGHT = 1.8;
+const templates = {};
+const loading = {};
+// Loads one character (only when someone needs it: they're a few MB each).
+export function loadCharacterModel(id) {
+  const def = CHARACTER_MODELS[id];
+  if (!def) return Promise.resolve(false);
+  if (!loading[id])
+    loading[id] = new Promise((resolve) =>
+      new GLTFLoader().load(
+        encodeURI(def.url),
+        (gltf) => {
+          const scene = gltf.scene;
+          scene.updateMatrixWorld(true);
+          const box = new THREE.Box3().setFromObject(scene, true);
+          const clips = {};
+          for (const c of gltf.animations) clips[c.name.replace(/^.*\|/, '')] = c;
+          scene.traverse((o) => {
+            if (o.isMesh) {
+              o.castShadow = true;
+              o.frustumCulled = false;
+            }
+          });
+          templates[id] = { def, scene, clips, scale: HEIGHT / (box.max.y - box.min.y || 1) };
+          resolve(true);
+        },
+        undefined,
+        () => resolve(false),
+      ),
+    );
+  return loading[id];
+}
+export const characterModelReady = (id) => !!templates[id];
+
+const lum = (c) => c.r * 0.3 + c.g * 0.59 + c.b * 0.11 || 0.01;
+// A copy of a 3D character in the look's colours, with its animations. Faces +z, feet at 0.
+// Returns null if that character hasn't loaded yet.
+export function buildModelCharacter(lookIn) {
+  const look = cleanLook(lookIn);
+  const t = templates[look.model];
+  if (!t) return null;
+  const { def } = t;
+  const model = cloneSkinned(t.scene);
+  model.scale.setScalar(t.scale);
+  const root = new THREE.Group();
+  root.add(model);
+  const mats = [];
+  const base = MODEL_COLORS[look.model];
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    const part = (def.gear || []).find((g) => o.name.startsWith(g));
+    if (part && look.hat === 'none') o.visible = false;
+    o.material = [].concat(o.material).map((m0) => {
+      const m = m0.clone();
+      m.metalness = Math.min(m.metalness ?? 0, 0.2);
+      mats.push(m);
+      const meshKind = ['Body', 'Legs', 'Head', 'Feet', 'Backpack'].find((k) => o.name.includes(k)) || '';
+      const slot = def.slots[`${meshKind}/${m.name}`] || def.slots[`${meshKind}/*`] || def.slots[m.name];
+      if (slot) {
+        // keep each material's shade relative to the character's own colour for that slot
+        const want = new THREE.Color(look[slot]);
+        const ratio = lum(m0.color) / lum(new THREE.Color(base[slot]));
+        m.color.copy(want).multiplyScalar(Math.min(1.6, ratio));
+      }
+      return m;
+    });
+    if (o.material.length === 1) o.material = o.material[0];
+  });
+  const mixer = new THREE.AnimationMixer(model);
+  const actions = {};
+  for (const [k, name] of Object.entries(def.clips)) if (t.clips[name]) actions[k] = mixer.clipAction(t.clips[name]);
+  if (actions.die) {
+    actions.die.setLoop(THREE.LoopOnce, 1);
+    actions.die.clampWhenFinished = true;
+  }
+  let hand = null;
+  model.traverse((o) => {
+    if (!hand && o.isBone && /^(WristR|PalmR)$/.test(o.name)) hand = o;
+  });
+  let playing = null;
+  const play = (k, fade = 0.2) => {
+    const a = actions[k] || actions.idle;
+    if (!a || a === playing) return;
+    a.reset().play();
+    if (playing) playing.crossFadeTo(a, fade, false);
+    playing = a;
+  };
+  play('idle', 0);
+  return { root, model, mixer, actions, play, mats, hand, look };
+}
+
 
 // A player's character, built from their look (shared/cosmetics.js): skin, hair, facial hair, headwear,
 // top and trousers. Used for other players online and the preview in your Locker.
@@ -183,6 +304,7 @@ export class CharacterPreview {
       if (!canvas.isConnected) return this.dispose();
       this.spin += 0.012;
       if (this.char) this.char.root.rotation.y = this.spin;
+      this.char?.mixer?.update(1 / 60);
       this.renderer.render(this.scene, this.camera);
       requestAnimationFrame(loop);
     };
@@ -190,9 +312,21 @@ export class CharacterPreview {
   }
 
   show(look) {
+    this.look = look;
+    const model = look?.model && look.model !== 'blocky';
+    if (model && !characterModelReady(look.model)) {
+      // load it, then show it (if it's still the one picked)
+      loadCharacterModel(look.model).then(() => this.look === look && characterModelReady(look.model) && this.show(look));
+    }
     if (this.char) {
       this.scene.remove(this.char.root);
       for (const m of this.char.mats) m.dispose();
+    }
+    if (model && characterModelReady(look.model)) {
+      this.char = buildModelCharacter(look);
+      this.char.play('idle', 0);
+      this.scene.add(this.char.root);
+      return;
     }
     this.char = buildCharacter(look);
     // arms down by its sides for the preview

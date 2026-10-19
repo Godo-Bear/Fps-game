@@ -3,7 +3,7 @@ import { GUN_LADDERS, INFECTED, MAPS, MODES, MODE_SETTINGS, MP_MAPS, FLAG_BASES,
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 import { Wolf } from './pet.js';
-import { buildCharacter } from './character.js';
+import { buildCharacter, buildModelCharacter, loadCharacterModel } from './character.js';
 import { CHARACTERS_LIVE } from '../shared/cosmetics.js';
 
 const $ = (id) => document.getElementById(id);
@@ -90,6 +90,10 @@ class Avatar {
     this.mats = ch.mats;
     this.body = ch.body;
     this.root.add(ch.root);
+    this.blocks = ch.root;
+    // a 3D character: shown over the blocks, which stay (invisible) so hits and headshots work the same
+    const look = CHARACTERS_LIVE ? info.look : null;
+    if (look?.model && look.model !== 'blocky') loadCharacterModel(look.model).then(() => this._useModel(look));
     [this.legL, this.legR] = ch.legs;
     this.upper = ch.upper;
     this.head = ch.head;
@@ -113,6 +117,20 @@ class Avatar {
     this.deadT = 0;
     this.lastShot = -99;
     this.fresh = true;
+  }
+
+  _useModel(look) {
+    if (this.gone) return;
+    const m = buildModelCharacter(look);
+    if (!m) return;
+    this.model = m;
+    this.blocks.traverse((o) => {
+      if (o.isMesh) o.visible = false;
+    });
+    this.gunHolder.traverse((o) => {
+      if (o.isMesh) o.visible = true; // their gun stays
+    });
+    this.root.add(m.root);
   }
 
   setGun(id) {
@@ -151,6 +169,11 @@ class Avatar {
     // our yaw convention looks down -z; the model faces +z
     this.root.rotation.y = this.yaw + Math.PI;
     const speed = before.distanceTo(this.pos) / Math.max(dt, 1e-3);
+    if (this.model) {
+      // the 3D character's own animations: idle, run, and falling down when they die
+      this.model.play(!this.alive ? 'die' : speed > 0.5 ? 'run' : 'idle');
+      this.model.mixer.update(dt);
+    }
     if (this.alive) {
       this.body.rotation.x = 0;
       this.phase += dt * speed * 2.2;
@@ -195,7 +218,9 @@ class Avatar {
   }
 
   dispose() {
+    this.gone = true;
     for (const m of this.mats) m.dispose();
+    if (this.model) for (const m of this.model.mats) m.dispose();
     this.label.material.map.dispose();
     this.label.material.dispose();
     this.wolf?.dispose();
