@@ -1,5 +1,5 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
-import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_DURATIONS, EVENT_POINTS, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
+import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_PRESETS, EVENT_POINTS, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
@@ -1555,12 +1555,14 @@ export class AccountUI {
       </div>
       <div class="acard"><h4>▶ Host an event</h4>
         <form class="auth inline admin-row" id="admin-event-start">
-          <input name="name" maxlength="40" placeholder="Name (${esc(DEFAULT_EVENT_NAME)})" />
-          <select name="minutes">${EVENT_DURATIONS.map(([v, n]) => `<option value="${v}" ${v === 60 ? 'selected' : ''}>${n}</option>`).join('')}</select>
-          <select name="boost">${DROP_BOOSTS.map(([v, n]) => `<option value="${v}">${n} drops</option>`).join('')}</select>
+          <select name="preset" id="admin-event-preset" title="Which event">${EVENT_PRESETS.map((p, i) => `<option value="${i}">🎉 ${esc(p.name)}</option>`).join('')}<option value="custom">✏️ My own name…</option></select>
+          <input name="name" maxlength="40" placeholder="Event name" class="hidden" id="admin-event-name" />
+          <select name="minutes">${EVENT_DURATIONS.map(([v, n]) => `<option value="${v}" ${v === EVENT_PRESETS[0].minutes ? 'selected' : ''}>${n}</option>`).join('')}</select>
+          <select name="boost">${DROP_BOOSTS.map(([v, n]) => `<option value="${v}" ${v === EVENT_PRESETS[0].boost ? 'selected' : ''}>${n} drops</option>`).join('')}</select>
           <label class="small"><input type="checkbox" name="announce" checked /> Announce it to everyone</label>
           <button class="btn small">🎉 START EVENT</button>
         </form>
+        <p class="muted small" id="admin-event-desc">${esc(EVENT_PRESETS[0].desc)}</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-event-stop">⏹ END THE EVENT NOW</button></div>
       </div>
       <div class="acard"><h4>How it works</h4>
@@ -1692,12 +1694,26 @@ export class AccountUI {
       }
     };
     evStatus();
-    document.getElementById('admin-event-start').addEventListener('submit', async (e) => {
+    // picking an event fills in its length and drop rate (you can still change them)
+    const evForm = document.getElementById('admin-event-start');
+    document.getElementById('admin-event-preset').addEventListener('change', (e) => {
+      const p = EVENT_PRESETS[e.target.value];
+      document.getElementById('admin-event-name').classList.toggle('hidden', !!p);
+      document.getElementById('admin-event-desc').textContent = p ? p.desc : 'Type a name; it plays like the others (Red vs Blue vs the zombies, pieces to collect). Pick its length and drop rate.';
+      if (p) {
+        evForm.minutes.value = String(p.minutes);
+        evForm.boost.value = String(p.boost);
+      }
+    });
+    evForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = new FormData(e.target);
+      const preset = EVENT_PRESETS[f.get('preset')];
+      const name = preset ? preset.name : String(f.get('name') || '').trim();
+      if (!name) return msg('Type a name for your event first.');
       if (a.event && !confirm(`${a.event.name} is already on. Replace it with a new event?`)) return;
       try {
-        msg((await a.adminEvent({ action: 'start', name: f.get('name'), minutes: Number(f.get('minutes')), boost: Number(f.get('boost')), announce: f.get('announce') === 'on' })).note);
+        msg((await a.adminEvent({ action: 'start', name, minutes: Number(f.get('minutes')), boost: Number(f.get('boost')), announce: f.get('announce') === 'on' })).note);
         evStatus();
       } catch (err) {
         msg(err.message);

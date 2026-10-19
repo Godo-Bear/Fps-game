@@ -49,5 +49,16 @@ export const PIECE_MAX = 40;
 export const EVENT_POINTS = { player: 5, zombie: 1, special: 2, boss: 15 };
 export const EVENT_DURATIONS = [[30, '30 minutes'], [60, '1 hour'], [120, '2 hours'], [240, '4 hours'], [1440, '1 day'], [0, 'Until I end it']];
 export const DEFAULT_EVENT_NAME = 'Outfit Hunt';
+// The events the admin can pick from (admin panel → Events). They're all the same match (Red vs Blue vs the zombies,
+// pieces to collect); each one has its own name, length and drop rate. [minutes 0 = until the admin ends it]
+export const EVENT_PRESETS = [
+  { name: 'Outfit Hunt', minutes: 60, boost: 1, desc: 'The classic: an hour of Red vs Blue vs the zombies, collecting pieces at the normal rate.' },
+  { name: 'Puzzle Rush', minutes: 30, boost: 3, desc: 'Short and wild: 30 minutes with triple piece drops.' },
+  { name: 'Double Drop Hour', minutes: 60, boost: 2, desc: 'An hour with double piece drops.' },
+  { name: 'Weekend Warfare', minutes: 1440, boost: 1, desc: 'A whole day for everyone to drop in when they can, normal drops.' },
+  { name: 'Night of the Horde', minutes: 120, boost: 2, desc: 'Two hours with double drops: a big evening event.' },
+  { name: 'Royal Hunt', minutes: 60, boost: 3, desc: 'Triple drops for an hour: the best chance at the King.' },
+  { name: 'Endless Event', minutes: 0, boost: 1, desc: 'Runs until you end it yourself, normal drops.' },
+];
 // Everyone plays in the one event room (its code comes with the event), so it holds more than a normal room.
 export const EVENT_MAX_PLAYERS = 40;
