@@ -2309,8 +2309,10 @@ export class Room extends DurableObject {
         }
       }
     }
-    const x = pick[0] + (Math.random() - 0.5) * 3;
-    const z = pick[1] + (Math.random() - 0.5) * 3;
+    // events can have a crowd: spread them out more around each spawn
+    const spread = mode.event ? 9 : 3;
+    const x = pick[0] + (Math.random() - 0.5) * spread;
+    const z = pick[1] + (Math.random() - 0.5) * spread;
     p.pos = [x, 0, z];
     p.hp = this._maxHp(p);
     p.alive = true;

@@ -31,7 +31,7 @@ Before your next push after an upload: `git fetch origin main` and merge it so t
   "Character Creator" entry from UPCOMING into CHANGELOG. The 3D characters (Man/Survivor, Adventurer, SWAT, King: Quaternius, rigged) are in it
   (CHARACTER_MODELS in src/character.js); online their gun position on the model may need tuning at launch.
 - Events (admin panel → 🎉 Events, shared/events.js): the admin starts/ends them; everyone joins ONE room (code in the
-  event, up to 16 players, no host controls; JOIN EVENT button in the Multiplayer menu); mode `event` = Red vs Blue vs zombies
+  event, no player limit (normal rooms 16), no host controls; JOIN EVENT button in the Multiplayer menu); mode `event` = Red vs Blue vs zombies
   in third person (host runs zombies, server keeps HP via `zhurt`/`zkill`). Kills drop puzzle pieces (src/puzzle.js);
   4 pieces unlock SWAT/Adventurer/King. Players see the Locker Character section once they own a piece.
   Never start an event yourself: the owner hosts them.

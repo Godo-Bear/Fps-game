@@ -4,7 +4,8 @@ export const CHANGELOG = [
   {
     v: '5.27', date: '19 Oct 2026', title: 'Bigger matches',
     items: [
-      'Multiplayer rooms now hold up to 16 players (was 8), events included.',
+      'Multiplayer rooms now hold up to 16 players (was 8).',
+      'Events have no limit: everyone who joins plays in the one big match.',
     ],
   },
   {

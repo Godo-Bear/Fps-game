@@ -1566,7 +1566,7 @@ export class AccountUI {
         <div class="admin-grid"><button class="btn small ghost" id="admin-event-stop">⏹ END THE EVENT NOW</button></div>
       </div>
       <div class="acard"><h4>How it works</h4>
-        <p class="muted small">While it's on, the <b>JOIN EVENT</b> button in Multiplayer (under the room code) lights up. Everyone plays in <b>one match</b> (up to 16 players, no host): <b>Red vs Blue vs the zombies</b>, seen from behind their character, starting as the <b>Survivor</b>.
+        <p class="muted small">While it's on, the <b>JOIN EVENT</b> button in Multiplayer (under the room code) lights up. Everyone plays in <b>one match</b> (no player limit, no host): <b>Red vs Blue vs the zombies</b>, seen from behind their character, starting as the <b>Survivor</b>.
         Teams score ${EVENT_POINTS.player} points for an enemy, ${EVENT_POINTS.zombie} for a zombie, ${EVENT_POINTS.special} for a big or mutated one and ${EVENT_POINTS.boss} for a boss (one comes every 3 minutes). A new match starts by itself after each one.
         Kills can drop a glowing 🧩 <b>puzzle piece</b> (only the killer sees it); walking over it reveals which piece it is. 4 pieces unlock a character: ${PIECE_SETS.map((s) => `${s.name} (${s.rarity})`).join(', ')}. ${PIECE_COUNT} pieces in all; after that, pieces turn into coins.</p>
       </div>
