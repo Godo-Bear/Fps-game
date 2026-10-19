@@ -1,5 +1,5 @@
 import { CharacterPreview } from './character.js';
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_FACE, LOOK_HAIR, LOOK_HAIR_COLORS, LOOK_HAT, LOOK_SKIN, LOOK_TOP, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -1188,24 +1188,21 @@ export class AccountUI {
     const swatches = (key, list) =>
       `<div class="pick-row look-sw">${list.map((c) => `<button class="pick sw ${L[key] === c ? 'on' : ''}" data-look="${key}" data-v="${c}" style="background:${c}" title="${c}"></button>`).join('')}
         <label class="pick pet-custom" title="Any colour"><input type="color" value="${esc(L[key])}" data-lookc="${key}" /> Custom</label></div>`;
-    const blocky = L.model === 'blocky';
-    // the 3D characters: what their gear is, and whether it can come off
+    // what each character's gear is, and whether it can come off
     const gearName = { man: 'Socks', adventurer: 'Backpack', swat: 'Kit', king: 'Armour and crown' }[L.model] || 'Gear';
     const gearToggle = L.model === 'adventurer' || L.model === 'king' ? `<div class="pick-row"><button class="pick ${L.hat !== 'none' ? 'on' : ''}" data-look="hat" data-v="helmet">${L.model === 'king' ? 'Crown on' : 'Wearing it'}</button><button class="pick ${L.hat === 'none' ? 'on' : ''}" data-look="hat" data-v="none">${L.model === 'king' ? 'No crown' : 'Off'}</button></div>` : '';
-    const choices = (key, list) => `<div class="pick-row">${list.map(([id, n]) => `<button class="pick ${L[key] === id ? 'on' : ''}" data-look="${key}" data-v="${id}">${n}</button>`).join('')}</div>`;
     const note = CHARACTERS_LIVE ? 'free · other players see it online, and your arms match it' : 'ADMIN PREVIEW: hidden from players until the big update';
     return `<h4>🧍 Character <span class="muted small">(${note})</span></h4>
       <div class="look-box">
         <canvas id="look-preview" class="look-preview"></canvas>
         <div class="look-opts">
-          <h5>Character</h5>${choices('model', LOOK_MODELS)}
+          <h5>Character</h5><div class="pick-row">${LOOK_MODELS.map(([id, n]) => `<button class="pick ${L.model === id ? 'on' : ''}" data-look="model" data-v="${id}">${n}</button>`).join('')}</div>
           <h5>Skin</h5>${swatches('skin', LOOK_SKIN)}
-          ${blocky ? `<h5>Hair</h5>${choices('hair', LOOK_HAIR)}${swatches('hairColor', LOOK_HAIR_COLORS)}` : L.model === 'swat' ? '' : `<h5>Hair</h5>${swatches('hairColor', LOOK_HAIR_COLORS)}`}
-          ${blocky ? `<h5>Facial hair</h5>${choices('face', LOOK_FACE)}` : ''}
-          ${blocky ? `<h5>Headwear</h5>${choices('hat', LOOK_HAT)}${L.hat === 'none' ? '' : swatches('hatColor', LOOK_CLOTH)}` : `<h5>${gearName}</h5>${gearToggle}${L.hat === 'none' && gearToggle ? '' : swatches('hatColor', LOOK_CLOTH)}`}
-          <h5>Top</h5>${blocky ? choices('top', LOOK_TOP) : ''}${swatches('topColor', LOOK_CLOTH)}
+          ${L.model === 'swat' ? '' : `<h5>Hair</h5>${swatches('hairColor', LOOK_HAIR_COLORS)}`}
+          <h5>Top</h5>${swatches('topColor', LOOK_CLOTH)}
           <h5>Trousers</h5>${swatches('pants', LOOK_CLOTH)}
-          ${blocky ? '' : '<p class="muted small">Start again from its own colours: pick the character again.</p>'}
+          <h5>${gearName}</h5>${gearToggle}${L.hat === 'none' && gearToggle ? '' : swatches('hatColor', LOOK_CLOTH)}
+          <p class="muted small">Back to its own colours: pick the character again.</p>
         </div>
       </div>`;
   }

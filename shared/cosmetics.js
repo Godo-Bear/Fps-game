@@ -82,9 +82,10 @@ export const LOOK_HAIR = [['short', 'Short'], ['buzz', 'Buzz cut'], ['mohawk', '
 export const LOOK_FACE = [['none', 'Clean'], ['stubble', 'Stubble'], ['beard', 'Beard'], ['moustache', 'Moustache']];
 export const LOOK_HAT = [['helmet', 'Helmet'], ['cap', 'Cap'], ['beanie', 'Beanie'], ['bandana', 'Bandana'], ['beret', 'Beret'], ['none', 'Nothing']];
 export const LOOK_TOP = [['jacket', 'Jacket'], ['tshirt', 'T-shirt'], ['tank', 'Tank top'], ['hoodie', 'Hoodie']];
-// Characters: the blocky soldier, or one of the owner's 3D characters (public/models), recoloured.
+// Characters: one of the owner's 3D characters (public/models), recoloured. (The blocky soldier is only a
+// stand-in while a character loads, and the look everyone has until the creator launches.)
 // For the 3D ones, hatColor is the colour of their gear (backpack, armour, SWAT kit) and hat 'none' takes it off.
-export const LOOK_MODELS = [['blocky', 'Blocky'], ['man', 'Survivor'], ['adventurer', 'Adventurer'], ['swat', 'SWAT'], ['king', 'King']];
+export const LOOK_MODELS = [['swat', 'SWAT'], ['man', 'Survivor'], ['adventurer', 'Adventurer'], ['king', 'King']];
 // each 3D character's own colours (what picking it starts from)
 export const MODEL_COLORS = {
   man: { skin: '#a98a66', hairColor: '#3a2f2f', topColor: '#657378', pants: '#3e3a3a', hatColor: '#ab9f9f' },
@@ -92,16 +93,18 @@ export const MODEL_COLORS = {
   swat: { skin: '#ba9c79', hairColor: '#2b2926', topColor: '#474a51', pants: '#474a51', hatColor: '#2b2926' },
   king: { skin: '#ba9c79', hairColor: '#afafaf', topColor: '#383f4f', pants: '#433730', hatColor: '#595a59' },
 };
-export const DEFAULT_LOOK = { skin: '#c89a78', hair: 'short', hairColor: '#3a2616', face: 'none', hat: 'helmet', hatColor: '#4a5236', top: 'jacket', topColor: '#3d4234', pants: '#3d4234', model: 'blocky' };
+export const DEFAULT_LOOK = { skin: '#c89a78', hair: 'short', hairColor: '#3a2616', face: 'none', hat: 'helmet', hatColor: '#4a5236', top: 'jacket', topColor: '#3d4234', pants: '#3d4234', model: 'swat', ...MODEL_COLORS.swat };
 const HEX = /^#[0-9a-f]{6}$/i;
 // a random look (AI bots)
 export function randomLook() {
   const r = (a) => a[Math.floor(Math.random() * a.length)];
-  return cleanLook({ skin: r(LOOK_SKIN), hair: r(LOOK_HAIR)[0], hairColor: r(LOOK_HAIR_COLORS.slice(0, 7)), face: r(LOOK_FACE)[0], hat: r(LOOK_HAT)[0], hatColor: r(LOOK_CLOTH), top: r(LOOK_TOP)[0], topColor: r(LOOK_CLOTH), pants: r(LOOK_CLOTH) });
+  return cleanLook({ model: r(LOOK_MODELS)[0], skin: r(LOOK_SKIN), hairColor: r(LOOK_HAIR_COLORS.slice(0, 7)), hat: Math.random() < 0.8 ? 'helmet' : 'none', hatColor: r(LOOK_CLOTH), topColor: r(LOOK_CLOTH), pants: r(LOOK_CLOTH) });
 }
 export function cleanLook(input) {
   const out = { ...DEFAULT_LOOK };
   if (!input || typeof input !== 'object') return out;
+  // a look from before there were only 3D characters starts from the default character's colours
+  if (!LOOK_MODELS.some(([id]) => id === input.model)) return out;
   for (const k of ['skin', 'hairColor', 'hatColor', 'topColor', 'pants']) if (typeof input[k] === 'string' && HEX.test(input[k])) out[k] = input[k].toLowerCase();
   const pick = (k, list) => {
     if (list.some(([id]) => id === input[k])) out[k] = input[k];

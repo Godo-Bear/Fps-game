@@ -328,6 +328,10 @@ export class CharacterPreview {
       this.scene.add(this.char.root);
       return;
     }
+    if (model) {
+      this.char = null; // shown once it has loaded
+      return;
+    }
     this.char = buildCharacter(look);
     // arms down by its sides for the preview
     this.char.armR.rotation.set(0, 0, 0.12);
