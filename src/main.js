@@ -3661,7 +3661,7 @@ $('mp-quick').addEventListener('click', async () => {
     err = await mp.create();
     if (!err) {
       mp.send({ t: 'open', on: true });
-      mp.send({ t: 'bots', n: 6 });
+      mp.send({ t: 'bots', n: 5 });
       mp.send({ t: 'start' });
     }
   }
@@ -4452,7 +4452,7 @@ accountUI.adminActions = {
   setBots(n) {
     if (game.mode !== 'mp' || !mp.lobby) return 'Join a room first.';
     mp.send({ t: 'bots', n });
-    return n ? `Bots fill this room up to ${n} players (in PvP modes).` : 'No bots in this room.';
+    return n ? `${n} bot${n > 1 ? 's' : ''} in this room (PvP modes; they leave to make room for people).` : 'No bots in this room.';
   },
   gunPresets: () => Object.entries(GUN_PRESETS).map(([id, p]) => [id, p[0]]),
   gunPreset: (id) => (setGunPreset(id) ? `Gun moved: ${GUN_PRESETS[id][0]}.` : 'Unknown spot.'),

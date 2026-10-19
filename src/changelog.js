@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.26', date: '19 Oct 2026', title: '🤖 Pick your bots',
+    items: [
+      'When you make a room, choose exactly how many AI bots play: from none up to 7 (in Match settings, at the top).',
+      'Bots play in the PvP modes, and step aside when real players need the space.',
+    ],
+  },
+  {
     v: '5.25', date: '19 Oct 2026', title: '🎉 Events',
     items: [
       'Special limited-time events, hosted every now and then. When one is on, the JOIN EVENT button in Multiplayer lights up and everyone plays together in one big match.',

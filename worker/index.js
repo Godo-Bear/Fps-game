@@ -1453,7 +1453,7 @@ const SPAWN_SHIELD_MS = 4000; // multiplayer spawn force field
 const MAX_HIT = 520; // biggest single hit (sniper headshot) with a little slack
 const NAME = /^[A-Za-z0-9_ ]{1,40}$/;
 // AI bots: fill empty spots in PvP matches (the host's game moves them; the server keeps score as usual)
-const BOT_FILLS = [0, 2, 4, 6, 8];
+const BOT_FILLS = [0, 1, 2, 3, 4, 5, 6, 7]; // how many bots the host can add
 const BOT_NAMES = ['Viper', 'Rex', 'Ghost', 'Blaze', 'Nova', 'Tank', 'Raven', 'Spike', 'Echo', 'Fang', 'Jinx', 'Bolt', 'Shade', 'Duke'];
 const BOT_LOOKS = [['🤖', '#7fd4ff'], ['👾', '#ff8a5c'], ['💀', '#d9d9d9'], ['🦾', '#c9ff5d'], ['🎯', '#ff5d8f'], ['🛰️', '#b48cff']];
 const botsAllowed = (mode) => !!MODES[mode] && !MODES[mode].coop && !MODES[mode].infection && !MODES[mode].event;
@@ -1471,7 +1471,7 @@ export class Room extends DurableObject {
     this.match = null;
     this.interval = null;
     this.settings = {}; // mode -> the host's custom match settings
-    this.botFill = 0; // AI bots fill the match up to this many players (0 = no bots)
+    this.botFill = 0; // how many AI bots play in the match (they give up their spot when the room fills with people)
     this.wordRe = null; // blocked words (from the database)
     this.wordList = [];
     this.wordsAt = 0;
@@ -1583,9 +1583,9 @@ export class Room extends DurableObject {
   _humans() {
     return [...this.players.values()].filter((p) => p.joined && !p.bot);
   }
-  // adds or removes bots so the match has botFill players (PvP modes only)
+  // adds or removes bots so the match has botFill of them (PvP modes only), as long as there's room
   _fillBots() {
-    const want = this.phase === 'playing' && botsAllowed(this.mode) ? Math.max(0, Math.min(this.botFill, MAX_PLAYERS) - this._humans().length) : 0;
+    const want = this.phase === 'playing' && botsAllowed(this.mode) ? Math.max(0, Math.min(this.botFill, MAX_PLAYERS - this._humans().length)) : 0;
     const bots = [...this.players.values()].filter((p) => p.bot);
     let changed = false;
     for (const b of bots.slice(want)) {
@@ -2027,7 +2027,7 @@ export class Room extends DurableObject {
         break;
       }
       case 'bots': {
-        // the host (or an admin): how many players AI bots fill the match up to
+        // the host (or an admin): how many AI bots play
         if ((p.id !== this.hostId && !p.admin) || !BOT_FILLS.includes(m.n)) return;
         this.botFill = m.n;
         if (this.phase === 'playing') this._fillBots();
