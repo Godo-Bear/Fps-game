@@ -1122,7 +1122,7 @@ export class Multiplayer {
     const list = MODE_SETTINGS[this.lobby.mode] || [];
     const set = this.lobby.settings || {};
     const el = $('lobby-settings');
-    const botsOk = !MODES[this.lobby.mode]?.coop && !MODES[this.lobby.mode]?.infection && !MODES[this.lobby.mode]?.event;
+    const botsOk = !MODES[this.lobby.mode]?.event; // every mode but the admin's event
     const key = JSON.stringify([this.lobby.mode, set, host, this.lobby.open, this.lobby.bots]);
     if (el.dataset.key === key) return;
     el.dataset.key = key;
@@ -1137,7 +1137,7 @@ export class Multiplayer {
           .join('')}</select></label>`,
       )
       .join('')}<label class="lset"><span>${this.lobby.open ? '🌍' : '🔒'} Who can join</span><select data-open ${host ? '' : 'disabled'}><option value="0" ${this.lobby.open ? '' : 'selected'}>🔒 Private: only people with the code</option><option value="1" ${this.lobby.open ? 'selected' : ''}>🌍 Public: quick join can put anyone here</option></select></label>
-</div>${botsOk ? '' : '<p class="muted small">🤖 Bots only play in the PvP modes.</p>'}${host ? '<button id="lobby-reset" class="btn small ghost">BACK TO NORMAL</button>' : ''}`;
+</div>${botsOk ? '' : '<p class="muted small">🤖 No bots in events.</p>'}${host ? '<button id="lobby-reset" class="btn small ghost">BACK TO NORMAL</button>' : ''}`;
     el.querySelector('select[data-open]').addEventListener('change', (e) => this.send({ t: 'open', on: e.target.value === '1' }));
     el.querySelector('select[data-bots]')?.addEventListener('change', (e) => this.send({ t: 'bots', n: Number(e.target.value) }));
     el.querySelectorAll('select[data-set]').forEach((sel) =>

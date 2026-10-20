@@ -2,6 +2,17 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.42', date: '20 Oct 2026', title: '🤖 Bots in every mode',
+    items: [
+      'Bots now play every multiplayer mode (set how many in the room lobby), not just the PvP ones:',
+      'Co-op, Defend the Points and Extraction: bot squadmates stick with you and shoot the zombies. The zombies can knock them down (they are back up in 20 s), and nobody has to wait for bots to ready up.',
+      'Infection: bot survivors fight back, and bot zombies hunt you down with their claws.',
+      'Hide and Seek: bot hiders find a hiding place and crouch down (and run if a seeker spots them); bot seekers count, then search the hiding places and chase anyone they can see.',
+      'Empty rooms now disappear from the server list as soon as the last person leaves, and rooms waiting in their lobby stay on it.',
+      'Admin: a Bots card in the Game tab adds bots to the room you host.',
+    ],
+  },
+  {
     v: '5.41', date: '20 Oct 2026', title: 'Clearer ads',
     items: [
       'The ads round the maps now have a sharp QR code and the link in big, bold letters, so you can read (and scan) them.',

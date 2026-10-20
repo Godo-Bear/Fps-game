@@ -423,7 +423,7 @@ function updateWave(dt) {
   // co-op: wait (up to 25s) for everyone to pick a power-up
   if (game.phase === 'picking') {
     coop.pickT -= dt;
-    const alive = [...mp.avatars.values()].filter((a) => a.alive).length + (player.dead ? 0 : 1);
+    const alive = [...mp.avatars.values()].filter((a) => a.alive && !isBotId(a.id)).length + (player.dead ? 0 : 1);
     if (coop.ready.size >= alive || coop.pickT <= 0) toPrep(5);
   }
 }
@@ -644,7 +644,7 @@ function updateEvac(dt) {
   }
   const squad = [];
   if (!player.dead) squad.push(player.pos);
-  for (const a of mp.avatars.values()) if (a.alive) squad.push(a.pos);
+  for (const a of mp.avatars.values()) if (a.alive && !isBotId(a.id)) squad.push(a.pos); // bots don't have to get in
   const inside = squad.length && squad.every((q) => Math.hypot(q.x - evac.x, q.z - evac.z) < EVAC_R);
   evac.hold = inside ? evac.hold + dt : Math.max(0, evac.hold - dt * 0.5);
   if (evac.hold >= EVAC_HOLD) {
@@ -684,10 +684,12 @@ function toPrep(autoSeconds = 5) {
     game.phase = 'prep';
   }
 }
+// bots in the zombie modes: they don't ready up or pick power-ups, so nobody waits for them
+const isBotId = (id) => !!mp.lobby?.players.find((p) => p.id === id)?.bot;
 function prepNeeded() {
   const ids = player.dead ? [] : ['me'];
-  if (isCoop()) for (const a of mp.avatars.values()) if (a.alive) ids.push(a.id);
-  if (!ids.length && isCoop()) for (const a of mp.avatars.values()) ids.push(a.id);
+  if (isCoop()) for (const a of mp.avatars.values()) if (a.alive && !isBotId(a.id)) ids.push(a.id);
+  if (!ids.length && isCoop()) for (const a of mp.avatars.values()) if (!isBotId(a.id)) ids.push(a.id);
   return ids;
 }
 function setReady() {
@@ -965,12 +967,14 @@ function applyZombieHit(z, dmg, { head = false, crit = false, mut = null, dir = 
   if (killed) killedBy(z, head, shooter, mut, src);
 }
 
+// a squadmate bot's bullet (zombie modes; the host's game runs the bots and the zombies)
+const botHitZombie = (z, dmg, point) => applyZombieHit(z, dmg, { point, shooter: 'bot' });
 // Who gets the kill: us, or (co-op) a guest whose bullet it was.
 // src: what did it ('melee', 'grenade', 'turret' or null for guns), for quests.
 function killedBy(z, head, shooter, mut, src = null) {
   worldKill(z, mut);
   if (shooter === 'me' || shooter === undefined) onKill(z, head, src);
-  else
+  else if (shooter !== 'bot') // a bot's kill (zombie modes) counts for the wave, but nobody's score
     mp.relay(shooter, {
       k: 'kill', type: z.typeId, mut: z.mutated ? 1 : 0, head: !!head, src, bounty: z.bounty ? 1 : 0,
       x: Math.round(z.root.position.x * 10) / 10, y: Math.round(z.root.position.y * 10) / 10, z: Math.round(z.root.position.z * 10) / 10,
@@ -2029,6 +2033,7 @@ const zombieHooks = {
   hitPlayer: (z, dmg, kind, target) => {
     if (target?.point) defend.hit(target.point, dmg);
     else if (!target || target.id === 'me') onPlayerHit(z, dmg, kind);
+    else if (isBotId(target.id)) bots.hurt(target.id, dmg, mp); // a squadmate bot (this game runs them)
     else mp.relay(target.id, { k: 'ouch', dmg: Math.round(dmg), kind: kind || 'melee' });
   },
   explode: (z) => {
@@ -4723,6 +4728,14 @@ accountUI.adminActions = {
     applySettings();
     return settings.zombieModels ? 'New zombies use the 3D model.' : 'New zombies use the old blocks.';
   },
+  // admin: bots in the room you host (any mode but events)
+  addBots(n) {
+    if (!mp.lobby) return 'Make or join a room first (you have to be its host).';
+    if (!mp.isHost()) return 'Only the host can add bots.';
+    if (MODES[mp.lobby.mode]?.event) return 'No bots in events.';
+    mp.send({ t: 'bots', n });
+    return n ? `${n} bots will play in this room${mp.inMatch ? '' : ' when the match starts'}.` : 'No more bots in this room.';
+  },
   // admin: a new Hide and Seek room on Hideaway Village, ready for people to join
   async hideSeekRoom() {
     if (mp.inMatch || mp.lobby) return 'Leave the room you are in first.';
@@ -5274,7 +5287,7 @@ function frame(now) {
   if (game.mode === 'mp') {
     mp.update(dt, time);
     // AI bots: the host's game moves them
-    bots.update(dt, { mp, world, player, effects, audio });
+    bots.update(dt, { mp, world, player, effects, audio, zombies, hitZombie: botHitZombie });
   }
   const fov = inMenu() ? 75 : settings.fov + (weapon.def.zoomFov - 75) * weapon.ads;
   if (Math.abs(camera.fov - fov) > 0.01) {
@@ -5408,7 +5421,7 @@ if (import.meta.env.DEV) {
     get savedGames() {
       return savedGames;
     },
-    bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio }); },
+    bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio, zombies, hitZombie: botHitZombie }); },
     get wolf() { return myWolf; }, wolfHunt, effects, ev, worldTick, isEvent, tank,
     game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };

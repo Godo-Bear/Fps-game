@@ -1482,6 +1482,8 @@ export class AccountUI {
       <div class="acard"><h4>🧟 Zombie look <span class="muted small">(yours; new zombies change)</span></h4>
         <div class="admin-grid"><button class="btn small ghost" data-run="lineup" ${solo || mp ? '' : 'disabled'}>👀 SPAWN ONE OF EVERY KIND</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-zmodel">${act?.zombieModels?.() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL'}</button></div></div>
+      <div class="acard"><h4>🤖 Bots <span class="muted small">(in the room you host: every mode except events)</span></h4>
+        <div class="admin-grid">${[0, 3, 5, 7].map((n) => `<button class="btn small ghost" data-addbots="${n}">${n ? `🤖 ${n} BOTS` : 'NO BOTS'}</button>`).join('')}</div></div>
       <div class="acard"><h4>🙈 Hide and Seek <span class="muted small">(a multiplayer mode on its own map, Hideaway Village)</span></h4>
         <div class="admin-grid"><button class="btn small" id="admin-hns">🙈 MAKE A HIDE AND SEEK ROOM</button></div></div>
       <div class="acard"><h4>📢 Ads in the maps <span class="muted small">(JINtelligence billboards, posters and warehouse signs: ${a.featureLive('adsOff') ? '<b>OFF</b>' : '<b>ON</b>'} for everyone, from the next map that loads)</span></h4>
@@ -1848,6 +1850,7 @@ export class AccountUI {
       msg(act.toggleView());
       vw.textContent = `VIEW: ${act.viewName()} · SWITCH`;
     };
+    for (const b of document.querySelectorAll('[data-addbots]')) b.onclick = () => msg(act.addBots(Number(b.dataset.addbots)));
     const hns = document.getElementById('admin-hns');
     if (hns) hns.onclick = async () => msg(await act.hideSeekRoom());
     const adb = document.getElementById('admin-ads');

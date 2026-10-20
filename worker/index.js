@@ -1535,7 +1535,8 @@ const NAME = /^[A-Za-z0-9_ ]{1,40}$/;
 const BOT_FILLS = [0, 1, 2, 3, 4, 5, 6, 7]; // how many bots the host can add
 const BOT_NAMES = ['Viper', 'Rex', 'Ghost', 'Blaze', 'Nova', 'Tank', 'Raven', 'Spike', 'Echo', 'Fang', 'Jinx', 'Bolt', 'Shade', 'Duke'];
 const BOT_LOOKS = [['🤖', '#7fd4ff'], ['👾', '#ff8a5c'], ['💀', '#d9d9d9'], ['🦾', '#c9ff5d'], ['🎯', '#ff5d8f'], ['🛰️', '#b48cff']];
-const botsAllowed = (mode) => !!MODES[mode] && !MODES[mode].coop && !MODES[mode].infection && !MODES[mode].event;
+// bots play every mode except the admin's event (everyone joins that one room)
+const botsAllowed = (mode) => !!MODES[mode] && !MODES[mode].event;
 const NOWS = { send() {}, close() {} };
 
 export class Room extends DurableObject {
@@ -1683,6 +1684,8 @@ export class Room extends DurableObject {
         alive: false, hp: MAX_HP, pos: [0, 0, 0], rot: [0, 0], gun: 'rifle', flags: 0, kills: 0, deaths: 0, score: 0, respawnAt: 0, protectUntil: 0,
         hits: [0, 0], msgs: [0, 0], level: 0, ip: 'bot', username: null,
       };
+      // infection / hide and seek: a bot joining late is on the side everyone ends up on, before that a survivor
+      if (MODES[this.mode].infection) b.team = this.match?.infected ? INFECTED : SURVIVORS;
       this.players.set(b.id, b);
       this._spawn(b);
       changed = true;
@@ -2070,7 +2073,7 @@ export class Room extends DurableObject {
         p.alive = false;
         p.deaths++;
         this._broadcast({ t: 'msg', text: `${p.name} is down!` });
-        if (![...this.players.values()].some((o) => o.joined && o.alive)) this._endCoop();
+        if (![...this.players.values()].some((o) => o.joined && o.alive && !o.bot)) this._endCoop(); // bots don't keep a run going
         break;
       case 'revive': {
         // co-op: a squadmate held E next to you for long enough
@@ -2126,6 +2129,16 @@ export class Room extends DurableObject {
           if (typeof row[6] === 'string' && row[6].length < 12) b.gun = row[6];
           b.flags = Number.isInteger(row[7]) ? row[7] & 0xff : 0;
         }
+        break;
+      }
+      // the zombie modes: the zombies got one of the bots (the host's game runs both); it's back in 20 s
+      case 'bdown': {
+        const b = this.players.get(m.b);
+        if (p.id !== this.hostId || !b?.bot || !b.alive || this.phase !== 'playing' || !this._coop) return;
+        b.alive = false;
+        b.deaths++;
+        b.respawnAt = Date.now() + 20000;
+        this._broadcast({ t: 'msg', text: `${b.name} is down! Back in 20 s` });
         break;
       }
       // a bot shoots (the tracer) or hits someone
@@ -2190,6 +2203,7 @@ export class Room extends DurableObject {
       this._stopTimer();
       this.phase = 'lobby';
       this.match = null;
+      this._report(); // nobody left: off the server list
       return;
     }
     this._broadcast({ t: 'left', id: p.id });
@@ -2204,7 +2218,7 @@ export class Room extends DurableObject {
     if (this._coop && this.phase === 'playing' && p.id === this.hostId) {
       this._broadcast({ t: 'msg', text: 'The host left, the run is over' });
       this._endCoop();
-    } else if (this._coop && this.phase === 'playing' && ![...this.players.values()].some((o) => o.joined && o.alive)) {
+    } else if (this._coop && this.phase === 'playing' && ![...this.players.values()].some((o) => o.joined && o.alive && !o.bot)) {
       this._endCoop();
     }
     this._broadcast({ t: 'msg', text: `${p.name} left` });
@@ -2672,6 +2686,13 @@ export class Room extends DurableObject {
       this._db
         .fetch('https://db/api/internal/room', { method: 'POST', headers: { 'x-internal': '1' }, body: JSON.stringify({ code: this.code, players, phase: this.phase, mode: this.mode, open: !!this.open, map: this.map, host: this.players.get(this.hostId)?.name || '' }) })
         .catch(() => {});
+      // while anyone's here, check in every 30 s so a room waiting in its lobby stays on the list
+      // (rooms that stop checking in drop off it after 90 s); an empty room stops
+      if (players && !this.beatT)
+        this.beatT = setTimeout(() => {
+          this.beatT = null;
+          this._report();
+        }, 30000);
     }, 1000);
   }
 

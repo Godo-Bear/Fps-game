@@ -98,6 +98,7 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
   const solids = []; // meshes that stop bullets
   const reserved = []; // circles kept clear of random clutter
   const lootSpots = []; // places weapons can spawn (some are on top of things, to reward climbing)
+  const hideSpots = []; // places a hide and seek bot can hide (in bushes, sheds and corn; inside houses too)
   const ladders = []; // { x, z, nx, nz, bottom, top } in world space; n points away from the wall
   const pendingLadders = [];
   const updaters = [];
@@ -560,6 +561,7 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
     }
     place(g, x, z, 0, 0.1);
     reserve(x, z, 1.3 * s);
+    hideSpots.push({ x, z });
     return g;
   }
   // a round orchard tree (solid trunk, a big leafy top)
@@ -659,6 +661,7 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
       root.add(m);
     }
     reserve(cx, cz, Math.hypot(w, d) / 2);
+    for (let i = 0; i < 6; i++) hideSpots.push({ x: cx + rand(-w / 2.5, w / 2.5), z: cz + rand(-d / 2.5, d / 2.5) });
     // a scarecrow keeping watch
     const sc = new THREE.Group();
     const pole = box(0.12, 2.6, 0.12, M.wood);
@@ -704,6 +707,7 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
     }
     place(g, x, z, rot, 0.05);
     reserve(x, z, Math.hypot(w, d) / 2 + 0.8);
+    hideSpots.push(toWorld(g, 0, -d / 4)); // just inside, at the back
     return g;
   }
   // a playground: a slide with a platform you can climb onto, a tunnel to crawl in, swings
@@ -2905,6 +2909,8 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
     colliders,
     solids,
     lootSpots,
+    // where bots hide: the hiding places, and the loot spots on the ground (in houses and by things)
+    hideSpots: [...hideSpots, ...lootSpots.filter((s) => !s.high && !s.roof)],
     ladders,
     hazards,
     explosives,
