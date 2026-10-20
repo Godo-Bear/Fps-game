@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { SPECIAL_GEAR, TANK_ARMOUR, TANK_FLAG } from '../shared/gear.js';
-import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
+import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_THEMES, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
@@ -1141,11 +1141,15 @@ export class GameDB extends DurableObject {
         const now = Date.now();
         // one room for everyone: its code goes out with the event, and the first person in opens it
         const first = makeRoomCode();
-        const ev = { id: now, name, by: me.username, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, boost, pieces: 0, announced: body.announce !== false, room: first, rooms: [first] };
+        const theme = EVENT_THEMES.includes(body.theme) ? body.theme : null; // e.g. halloween: how every map looks while it's on
+        const ev = { id: now, name, by: me.username, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, boost, pieces: 0, announced: body.announce !== false, room: first, rooms: [first], theme };
         this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
         if (ev.announced) {
           // everyone gets told (until they press OK), on the menu or in a match
-          const a = { id: now, text: `🎉 ${name} is LIVE! Go to Multiplayer and press JOIN EVENT: everyone's in one match, Red vs Blue vs the zombies, and kills drop puzzle pieces of new characters.`, from: me.username, at: now };
+          const text = theme === 'halloween'
+            ? `🎃 ${name} is LIVE! Every map has gone spooky. Go to Multiplayer and press JOIN EVENT: Red vs Blue vs the pumpkin-head zombies, with double puzzle-piece drops.`
+            : `🎉 ${name} is LIVE! Go to Multiplayer and press JOIN EVENT: everyone's in one match, Red vs Blue vs the zombies, and kills drop puzzle pieces of new characters.`;
+          const a = { id: now, text, from: me.username, at: now };
           this.sql.exec("INSERT INTO config (key, value) VALUES ('announce', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify(a));
         }
         return json({ note: `${name} is live${minutes ? ` for ${minutes >= 60 ? `${minutes / 60} hour(s)` : `${minutes} minutes`}` : ' until you end it'}.`, event: ev });

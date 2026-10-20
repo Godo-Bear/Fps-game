@@ -7,6 +7,7 @@ import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
+import { isHalloween, setHalloween } from './halloween.js';
 import { priceTag } from '../shared/terms.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
@@ -135,10 +136,11 @@ const barrelQueue = []; // { b, t, mine }
 const barrelsGone = []; // { b, t }
 const ammoCd = new Map(); // crate -> seconds left
 function loadMap(id) {
-  if (world && world.mapId === id) return resetMapProps();
+  if (world && world.mapId === id && world.halloween === wantHalloween()) return resetMapProps();
   if (world) world.dispose();
   if (weather) weather.dispose();
-  world = buildWorld(scene, id, { ads: !account.cfg?.features?.adsOff }); // the JINtelligence ads, unless an admin turned them off
+  syncHalloween();
+  world = buildWorld(scene, id, { ads: !account.cfg?.features?.adsOff, halloween: isHalloween() }); // the JINtelligence ads, unless an admin turned them off
   world.setEffects(effects);
   resetMapProps();
   if (!zombies) {
@@ -2873,6 +2875,23 @@ setInterval(() => {
 }, 2000);
 account.onChange(renderEventCard);
 renderEventCard();
+// Halloween: on while the admin's Halloween event is on (or an admin is previewing it). The map behind the
+// menu changes straight away; in a game, the next map that loads does.
+let halloweenPreview = false;
+try {
+  halloweenPreview = localStorage.getItem('deadplains.halloweenPreview') === '1';
+} catch {
+  /* private window */
+}
+const wantHalloween = () => account.event?.theme === 'halloween' || (account.admin && halloweenPreview);
+function syncHalloween() {
+  setHalloween(wantHalloween());
+}
+account.onChange(() => {
+  if (wantHalloween() === isHalloween()) return;
+  syncHalloween();
+  if (inMenu() && game.mode !== 'mp') loadMap(game.map);
+});
 setInterval(renderEventCard, 30000);
 
 // ---------------------------------------------------------------- the tank (special gear: H to get in and out)
@@ -4721,6 +4740,15 @@ accountUI.adminActions = {
     settings.view = wantThird() ? 'first' : 'third';
     applySettings();
     return wantThird() ? 'Third person (aiming still goes through your sights).' : 'First person.';
+  },
+  halloweenPreview: () => halloweenPreview,
+  toggleHalloweenPreview() {
+    halloweenPreview = !halloweenPreview;
+    savePref('deadplains.halloweenPreview', halloweenPreview ? '1' : '0');
+    syncHalloween();
+    const now = inMenu() && game.mode !== 'mp';
+    if (now) loadMap(game.map);
+    return `${halloweenPreview ? '👻 Halloween preview on (only you see it).' : 'Halloween preview off.'} ${now ? '' : 'It shows from the next game or map that loads.'}`;
   },
   zombieModels: () => settings.zombieModels,
   toggleZombieModels() {

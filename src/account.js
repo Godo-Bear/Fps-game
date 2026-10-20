@@ -1592,7 +1592,7 @@ export class AccountUI {
       </div>
       <div class="acard"><h4>▶ Host an event</h4>
         <form class="auth inline admin-row" id="admin-event-start">
-          <select name="preset" id="admin-event-preset" title="Which event">${EVENT_PRESETS.map((p, i) => `<option value="${i}">🎉 ${esc(p.name)}</option>`).join('')}</select>
+          <select name="preset" id="admin-event-preset" title="Which event">${EVENT_PRESETS.map((p, i) => `<option value="${i}">${p.theme === 'halloween' ? '🎃' : '🎉'} ${esc(p.name)}</option>`).join('')}</select>
           <input name="name" maxlength="40" placeholder="Event name" class="hidden" id="admin-event-name" />
           <select name="minutes">${EVENT_DURATIONS.map(([v, n]) => `<option value="${v}" ${v === EVENT_PRESETS[0].minutes ? 'selected' : ''}>${n}</option>`).join('')}</select>
           <select name="boost">${DROP_BOOSTS.map(([v, n]) => `<option value="${v}" ${v === EVENT_PRESETS[0].boost ? 'selected' : ''}>${n} drops</option>`).join('')}</select>
@@ -1602,6 +1602,9 @@ export class AccountUI {
         <p class="muted small" id="admin-event-desc">${esc(EVENT_PRESETS[0].desc)}</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-event-stop">⏹ END THE EVENT NOW</button></div>
       </div>
+      <div class="acard"><h4>🎃 Halloween <span class="muted small">(nobody sees it until you start the Halloween Night event above)</span></h4>
+        <p class="muted small">While it's on, every map (solo and online) turns into a foggy purple night with jack-o'-lanterns, little graveyards, bubbling cauldrons, pumpkin-head scarecrows, string lights, ghosts and bats, and the zombies wear pumpkin heads. Maps already loaded change when the next one loads.</p>
+        <div class="admin-grid"><button class="btn small ghost" id="admin-halloween-preview">${act?.halloweenPreview?.() ? '👻 PREVIEW ON (ONLY YOU) · TURN OFF' : '👻 PREVIEW IT (ONLY YOU)'}</button></div></div>
       <div class="acard"><h4>ℹ️ How it works</h4>
         <p class="muted small">While it's on, the <b>JOIN EVENT</b> button in Multiplayer (under the room code) lights up. Everyone plays in <b>one match</b> (${EVENT_MAX_PLAYERS} players a room: when one fills up, a new one opens; no host): <b>Red vs Blue vs the zombies</b>, seen from behind their character, starting as the <b>Survivor</b>.
         Teams score ${EVENT_POINTS.player} points for an enemy, ${EVENT_POINTS.zombie} for a zombie, ${EVENT_POINTS.special} for a big or mutated one and ${EVENT_POINTS.boss} for a boss (one comes every 3 minutes). A new match starts by itself after each one.
@@ -1757,6 +1760,11 @@ export class AccountUI {
     };
     evStatus();
     // picking an event fills in its length and drop rate (you can still change them)
+    const hp = document.getElementById('admin-halloween-preview');
+    if (hp) hp.onclick = () => {
+      msg(act.toggleHalloweenPreview());
+      hp.textContent = act.halloweenPreview() ? '👻 PREVIEW ON (ONLY YOU) · TURN OFF' : '👻 PREVIEW IT (ONLY YOU)';
+    };
     const evForm = document.getElementById('admin-event-start');
     document.getElementById('admin-event-preset').addEventListener('change', (e) => {
       const p = EVENT_PRESETS[e.target.value];
@@ -1775,7 +1783,7 @@ export class AccountUI {
       if (!name) return msg('Type a name for your event first.');
       if (a.event && !confirm(`${a.event.name} is already on. Replace it with a new event?`)) return;
       try {
-        msg((await a.adminEvent({ action: 'start', name, minutes: Number(f.get('minutes')), boost: Number(f.get('boost')), announce: f.get('announce') === 'on' })).note);
+        msg((await a.adminEvent({ action: 'start', name, theme: preset?.theme || null, minutes: Number(f.get('minutes')), boost: Number(f.get('boost')), announce: f.get('announce') === 'on' })).note);
         evStatus();
       } catch (err) {
         msg(err.message);

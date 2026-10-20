@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { bat, ghost, glowMat, jackOLantern, sharedMesh } from './halloween.js';
 import { DEFEND_POINTS, FFA_SPAWNS, FLAG_BASES, POINT, TEAM_SPAWNS } from '../shared/modes.js';
 import { ARENA_RADIUS, Colliders, heightAt, mulberry32, setTerrain } from './terrain.js';
 import { GROUND_PALETTES, grimeTexture, groundTexture, planksTexture, roadTexture, softDotTexture, textTexture } from './textures.js';
@@ -55,6 +56,8 @@ Object.assign(THEMES, {
 });
 export const MAP_IDS = Object.keys(THEMES);
 
+// Halloween shapes shared by every map (never disposed with a map)
+const HW = { bulb: new THREE.SphereGeometry(0.09, 6, 4), bubble: new THREE.SphereGeometry(0.08, 6, 4), brew: new THREE.CircleGeometry(0.68, 16) };
 // The owner's warehouse model (public/models), loaded once and shared by every map that has one.
 const WAREHOUSE_URL = '/models/Warehouse by Lavender Harmony - fsxbktzB1zo.glb';
 const WAREHOUSE_SCALE = 0.16; // the model is in big units: this makes it about 10 x 16 m and 8 m high
@@ -84,7 +87,7 @@ function loadWarehouse() {
 }
 
 // Builds a map: terrain, buildings, wrecks and clutter. Returns collision data and update/dispose hooks.
-export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
+export function buildWorld(scene, mapId = 'plains', { ads = true, halloween = false } = {}) {
   if (!THEMES[mapId]) mapId = 'plains';
   const theme = THEMES[mapId];
   setTerrain(mapId);
@@ -865,6 +868,156 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
     if (!ads) return;
     adSpots(3, 55, 95, 4.5, billboard);
     adSpots(6, 22, 85, 1.4, posterStand, 0.5); // in between the billboards' directions
+  }
+
+  // ---------------------------------------------------------------- Halloween (only while the event is on)
+  // Jack-o'-lanterns everywhere (some glowing), little graveyards, bubbling cauldrons, pumpkin-head scarecrows,
+  // string lights round the middle, ghosts drifting about and bats circling overhead.
+  function halloweenDecor() {
+    const at = (obj, x, z, rot = 0, y = 0) => {
+      obj.position.set(x, heightAt(x, z) + y, z);
+      obj.rotation.y = rot;
+      root.add(obj);
+      return obj;
+    };
+    // pumpkins: on the ground round the map, by the houses, a few glowing near the middle
+    let lit = 0;
+    scatter(46, 0.8, (x, z) => {
+      const p = jackOLantern(rand(0.45, 0.8), { light: Math.hypot(x, z) < 45 && lit++ < 3, carved: rng() < 0.75 }); // only a few real lights: each one costs
+      at(p, x, z, faceIn(x, z) + rand(-0.6, 0.6), 0.22);
+    }, 10, ARENA_RADIUS - 6);
+    for (const s of lootSpots.filter((o) => !o.high && !o.roof).slice(0, 14)) at(jackOLantern(0.5), s.x + rand(-1.5, 1.5), s.z + rand(-1.5, 1.5), rand(0, PI * 2), 0.18);
+    // a pile of pumpkins in the middle of the map
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * PI * 2;
+      at(jackOLantern(0.7, { light: i === 0 }), Math.cos(a) * 1.1 + 13, Math.sin(a) * 1.1, a + PI / 2, 0.26);
+    }
+    at(jackOLantern(0.9), 13, 0, -PI / 2, 0.85);
+    // little graveyards
+    let yards = 0;
+    scatter(3, 7, (x, z) => {
+      graveyard(x, z, rand(0, PI), 2, 4);
+      at(jackOLantern(0.6), x + 3, z + 3, rand(0, PI * 2), 0.22);
+      yards++;
+    }, 30, ARENA_RADIUS - 12);
+    // cauldrons bubbling green
+    scatter(2, 2.5, (x, z) => {
+      const g = new THREE.Group();
+      const pot = cyl(0.75, 0.55, 0.9, M.metalDark, 12);
+      pot.position.y = 0.45;
+      g.add(solid(pot));
+      const brew = sharedMesh(HW.brew, glowMat('green'));
+      brew.rotation.x = -PI / 2;
+      brew.position.y = 0.86;
+      g.add(brew);
+      const light = new THREE.PointLight(0x7dff3a, 2, 7, 2);
+      light.position.y = 1.4;
+      g.add(light);
+      const bubbles = [];
+      for (let i = 0; i < 5; i++) {
+        const b = sharedMesh(HW.bubble, glowMat('green'));
+        b.userData.off = rng();
+        g.add(b);
+        bubbles.push(b);
+      }
+      updaters.push((dt, t) => {
+        for (const b of bubbles) {
+          const k = (t * 0.6 + b.userData.off) % 1;
+          b.position.set(Math.sin(b.userData.off * 9) * 0.4, 0.9 + k * 0.6, Math.cos(b.userData.off * 7) * 0.4);
+          b.scale.setScalar(1 - k);
+        }
+      });
+      at(g, x, z);
+      reserve(x, z, 1.4);
+    }, 18, 70);
+    // pumpkin-head scarecrows
+    scatter(3, 1.5, (x, z) => {
+      const g = new THREE.Group();
+      const pole = box(0.12, 2.4, 0.12, M.wood);
+      pole.position.y = 1.2;
+      const arms = box(1.7, 0.1, 0.1, M.wood);
+      arms.position.y = 1.85;
+      const coat = box(0.65, 0.85, 0.32, M.darkWood);
+      coat.position.y = 1.65;
+      g.add(pole, arms, coat);
+      const head = jackOLantern(0.6);
+      head.position.y = 2.35;
+      g.add(head);
+      at(g, x, z, faceIn(x, z));
+      reserve(x, z, 1);
+    }, 20, 80);
+    // string lights round the middle: posts in a ring, orange and purple bulbs sagging between them
+    const N = 10;
+    const R = 17;
+    const wireMat = new THREE.LineBasicMaterial({ color: 0x1a1410 });
+    const posts = [];
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * PI * 2 + 0.15;
+      const x = Math.cos(a) * R;
+      const z = Math.sin(a) * R;
+      const post = cyl(0.06, 0.07, 3.2, M.darkWood, 6);
+      post.position.y = 1.6;
+      const g = new THREE.Group();
+      g.add(solid(post));
+      at(g, x, z);
+      posts.push([x, heightAt(x, z) + 3.1, z]);
+    }
+    for (let i = 0; i < N; i++) {
+      const [x0, y0, z0] = posts[i];
+      const [x1, y1, z1] = posts[(i + 1) % N];
+      const wire = [];
+      for (let k = 0; k <= 8; k++) {
+        const f = k / 8;
+        wire.push(new THREE.Vector3(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f - Math.sin(f * PI) * 0.6 + 0.08, z0 + (z1 - z0) * f));
+      }
+      root.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(wire), wireMat));
+      for (let k = 1; k < 8; k++) {
+        const f = k / 8;
+        const bulb = sharedMesh(HW.bulb, glowMat(k % 2 ? 'orange' : 'purple'));
+        bulb.position.set(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f - Math.sin(f * PI) * 0.6, z0 + (z1 - z0) * f);
+        root.add(bulb);
+      }
+    }
+    // ghosts drifting round slowly, bobbing up and down
+    const ghosts = [];
+    for (let i = 0; i < 7; i++) {
+      const g = ghost();
+      g.userData.a = rand(0, PI * 2);
+      g.userData.r = rand(15, 70);
+      g.userData.s = rand(0.03, 0.07) * (rng() < 0.5 ? -1 : 1);
+      root.add(g);
+      ghosts.push(g);
+    }
+    // bats circling overhead
+    const bats = [];
+    for (let i = 0; i < 16; i++) {
+      const b = bat();
+      b.userData.a = rand(0, PI * 2);
+      b.userData.r = rand(8, 40);
+      b.userData.cx = rand(-40, 40);
+      b.userData.cz = rand(-40, 40);
+      b.userData.h = rand(10, 22);
+      b.userData.s = rand(0.4, 0.9);
+      b.scale.setScalar(rand(1.2, 1.8));
+      root.add(b);
+      bats.push(b);
+    }
+    updaters.push((dt, t) => {
+      for (const g of ghosts) {
+        g.userData.a += g.userData.s * dt;
+        const x = Math.cos(g.userData.a) * g.userData.r;
+        const z = Math.sin(g.userData.a) * g.userData.r;
+        g.position.set(x, heightAt(x, z) + 0.5 + Math.sin(t * 1.3 + g.userData.r) * 0.35, z);
+        g.rotation.y = Math.atan2(-Math.sin(g.userData.a) * g.userData.s, Math.cos(g.userData.a) * g.userData.s);
+      }
+      for (const b of bats) {
+        b.userData.a += b.userData.s * dt;
+        b.position.set(b.userData.cx + Math.cos(b.userData.a) * b.userData.r, b.userData.h + Math.sin(t * 2 + b.userData.r) * 1.5, b.userData.cz + Math.sin(b.userData.a) * b.userData.r);
+        b.rotation.y = -b.userData.a;
+        b.userData.flap(t + b.userData.r);
+      }
+    });
+    return yards;
   }
 
   // ---------------------------------------------------------------- warehouse
@@ -2751,6 +2904,7 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
   };
   layouts[mapId]();
   adverts();
+  if (halloween) halloweenDecor();
 
   // Dry grass tufts
   {
@@ -2906,6 +3060,7 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
   });
 
   return {
+    halloween,
     colliders,
     solids,
     lootSpots,

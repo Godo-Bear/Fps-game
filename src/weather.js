@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isHalloween } from './halloween.js';
 
 // Weather presets. Everything blends smoothly when the weather changes.
 export const WEATHER = {
@@ -21,6 +22,11 @@ export const WEATHER = {
   storm: {
     name: 'Thunderstorm', fogNear: 10, fogFar: 110, fog: 0x5a6068, top: 0x30363e, horizon: 0x5a6068,
     sun: 0.25, hemi: 1.1, rain: 1, dust: 0, lightning: true, wind: 0.7,
+  },
+  // Halloween (while the event is on, every map is this)
+  halloween: {
+    name: 'Halloween night', fogNear: 12, fogFar: 125, fog: 0x2a1838, top: 0x0e0818, horizon: 0x5a2638,
+    sun: 0.35, hemi: 0.85, rain: 0, dust: 0, lightning: false, wind: 0.15,
   },
   // Hideaway Village
   sunny: {
@@ -164,6 +170,7 @@ export class Weather {
   }
 
   set(id, instant = false) {
+    if (isHalloween()) id = 'halloween'; // a foggy purple night on every map while the Halloween event is on
     if (!WEATHER[id]) return;
     this.id = id;
     this.snow.material.color.setHex(WEATHER[id].snowColor ?? 0xffffff); // snow, or grey ash

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ARENA_RADIUS, heightAt } from './terrain.js';
 import { animateZombieModel, attachZombieModel, decapitateZombieModel, hasDeathClip } from './zombieModel.js';
+import { isHalloween, jackOLantern } from './halloween.js';
 
 // Boss waves (every 5th) bring one of these. Each has its own trick.
 export const BOSSES = {
@@ -188,6 +189,12 @@ class Zombie {
     jaw.position.set(0, -0.12, 0.19);
     head.add(jaw);
     this.jaw = jaw;
+    // Halloween: some wear a jack-o'-lantern (every boss does)
+    if (isHalloween() && (variant || Math.random() < 0.4)) {
+      const p = jackOLantern(variant ? 0.75 : 0.55, { light: !!variant });
+      p.position.y = 0.05;
+      head.add(p);
+    }
 
     this.armL = new THREE.Group();
     this.armR = new THREE.Group();

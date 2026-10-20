@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.43', date: '20 Oct 2026', title: 'Admin: a new event is ready',
+    items: [
+      'Admin: a new seasonal event is ready in the Events tab (nothing changes for anyone until it is started), with a preview only the admin sees.',
+    ],
+  },
+  {
     v: '5.42', date: '20 Oct 2026', title: '🤖 Bots in every mode',
     items: [
       'Bots now play every multiplayer mode (set how many in the room lobby), not just the PvP ones:',

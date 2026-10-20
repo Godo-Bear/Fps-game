@@ -53,6 +53,9 @@ export const DEFAULT_EVENT_NAME = 'Outfit Hunt';
 // usual length and drop rate (the admin can change those). [minutes 0 = until the admin ends it]
 export const EVENT_PRESETS = [
   { name: 'Outfit Hunt', minutes: 60, boost: 1, desc: 'Red vs Blue vs the zombies: collect puzzle pieces to unlock SWAT, Adventurer and King.' },
+  // theme: how the whole game looks while it's on (every map, solo too)
+  { name: 'Halloween Night', minutes: 1440, boost: 2, theme: 'halloween', desc: 'Every map turns spooky while it\'s on (solo too): a foggy purple night, jack-o\'-lanterns, graveyards, cauldrons, ghosts and bats, and zombies in pumpkin heads (every boss has a big glowing one). Plays like Outfit Hunt, with double drops.' },
 ];
+export const EVENT_THEMES = ['halloween'];
 // Event rooms hold this many; when one fills up, the next player opens a new one (same event, same drops).
 export const EVENT_MAX_PLAYERS = 20;
