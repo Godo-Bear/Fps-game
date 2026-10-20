@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.44', date: '20 Oct 2026', title: 'New web address',
+    items: [
+      'War Grounds and JINtelligence have moved to a new address (godo-studios.workers.dev). The ads round the maps show the new link and QR code.',
+    ],
+  },
+  {
     v: '5.43', date: '20 Oct 2026', title: 'Admin: a new event is ready',
     items: [
       'Admin: a new seasonal event is ready in the Events tab (nothing changes for anyone until it is started), with a preview only the admin sees.',
