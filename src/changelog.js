@@ -4,7 +4,7 @@ export const CHANGELOG = [
   {
     v: '5.44', date: '20 Oct 2026', title: 'New web address',
     items: [
-      'War Grounds and JINtelligence have moved to a new address (godo-studios.workers.dev). The ads round the maps show the new link and QR code.',
+      'War Grounds and JINtelligence have moved to a new address (jn-studios.workers.dev). The ads round the maps show the new link and QR code.',
     ],
   },
   {
