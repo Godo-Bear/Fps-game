@@ -1482,6 +1482,8 @@ export class AccountUI {
       <div class="acard"><h4>🧟 Zombie look <span class="muted small">(yours; new zombies change)</span></h4>
         <div class="admin-grid"><button class="btn small ghost" data-run="lineup" ${solo || mp ? '' : 'disabled'}>👀 SPAWN ONE OF EVERY KIND</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-zmodel">${act?.zombieModels?.() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL'}</button></div></div>
+      <div class="acard"><h4>📢 Ads in the maps <span class="muted small">(JINtelligence billboards, posters and warehouse signs: ${a.featureLive('adsOff') ? '<b>OFF</b>' : '<b>ON</b>'} for everyone, from the next map that loads)</span></h4>
+        <div class="admin-grid">${a.featureLive('adsOff') ? '<button class="btn small" id="admin-ads" data-on="0">📢 TURN ADS ON</button>' : '<button class="btn small ghost" id="admin-ads" data-on="1">TURN ADS OFF</button>'}</div></div>
       <div class="acard"><h4>🎥 First / third person switch <span class="muted small">(saved for the big update: ${a.featureLive('view') ? '<b>DEPLOYED</b>, everyone has it' : '<b>HIDDEN</b>, only admins have it (a preview)'})</span></h4>
         <p class="muted small">P, the pause menu button and Settings → Camera. Events are third person either way.</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-view">${act?.viewName ? `MY VIEW: ${act.viewName()} · SWITCH` : 'SWITCH MY VIEW'}</button>
@@ -1844,6 +1846,11 @@ export class AccountUI {
       msg(act.toggleView());
       vw.textContent = `VIEW: ${act.viewName()} · SWITCH`;
     };
+    const adb = document.getElementById('admin-ads');
+    if (adb) adb.onclick = () => a.adminFeature('adsOff', adb.dataset.on === '1').then((r) => {
+      msg(adb.dataset.on === '1' ? 'Ads turned off: maps load without them from now on.' : 'Ads back on: maps load with them from now on.');
+      this.render?.();
+    }, (err) => msg(err.message));
     const dv = document.getElementById('admin-deploy-view');
     if (dv) dv.onclick = () => {
       const on = dv.dataset.on === '1';

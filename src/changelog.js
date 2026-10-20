@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.39', date: '20 Oct 2026', title: '📢 JINtelligence ads around the maps',
+    items: [
+      'Every map now has JINtelligence ads: big billboards round the edge, poster stands around the middle, banners down the warehouse walls and posters on some house walls.',
+      'Admin: an Ads in the maps card in the Game tab turns them off (or back on) for everyone.',
+    ],
+  },
+  {
     v: '5.38', date: '20 Oct 2026', title: '🏭 Warehouses',
     items: [
       'A big new warehouse on every map, replacing an old building: the farm barn on Dead Plains, a supply building at Frostbite Outpost, a cabin in Blackwood Hollow, two warehouses at Rustwater Docks and a shack in Ember Canyon.',

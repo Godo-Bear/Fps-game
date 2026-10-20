@@ -1067,7 +1067,7 @@ export class GameDB extends DurableObject {
     if (path === '/admin/feature' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);
       const id = String(body.id || '');
-      if (!['view'].includes(id)) return err('Unknown feature');
+      if (!['view', 'adsOff'].includes(id)) return err('Unknown feature');
       const f = this._features();
       if (body.on) f[id] = true;
       else delete f[id];

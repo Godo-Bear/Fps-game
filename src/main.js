@@ -138,7 +138,7 @@ function loadMap(id) {
   if (world && world.mapId === id) return resetMapProps();
   if (world) world.dispose();
   if (weather) weather.dispose();
-  world = buildWorld(scene, id);
+  world = buildWorld(scene, id, { ads: !account.cfg?.features?.adsOff }); // the JINtelligence ads, unless an admin turned them off
   world.setEffects(effects);
   resetMapProps();
   if (!zombies) {

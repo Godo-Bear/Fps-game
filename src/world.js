@@ -77,7 +77,7 @@ function loadWarehouse() {
 }
 
 // Builds a map: terrain, buildings, wrecks and clutter. Returns collision data and update/dispose hooks.
-export function buildWorld(scene, mapId = 'plains') {
+export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
   if (!THEMES[mapId]) mapId = 'plains';
   const theme = THEMES[mapId];
   setTerrain(mapId);
@@ -414,6 +414,7 @@ export function buildWorld(scene, mapId = 'plains') {
       const n = Math.max(2, Math.round(wl.len / 1.1));
       const sl = wl.len / n;
       const door = wl.front ? Math.floor(n / 2) : -1;
+      const whole = new Set(); // bits of wall still standing full height, with no window
       for (let i = 0; i < n; i++) {
         const off = -wl.len / 2 + sl * (i + 0.5);
         let ht = h;
@@ -429,6 +430,7 @@ export function buildWorld(scene, mapId = 'plains') {
           pieces.push([0, 0.95], [2.05, h - 2.05]); // window hole
         } else if (ht > 0.05) {
           pieces.push([0, ht]);
+          if (ht >= h * 0.95) whole.add(i);
         }
         for (const [y0, ph] of pieces) {
           const seg = box(wl.alongX ? sl + 0.01 : T, ph, wl.alongX ? T : sl + 0.01, wall);
@@ -438,6 +440,11 @@ export function buildWorld(scene, mapId = 'plains') {
           solid(seg);
           g.add(seg);
         }
+      }
+      // an ad poster pasted on the back wall of every other house (where two bits of wall still stand)
+      if (ads && wi === 1 && wi !== ruined && h >= 2.8 && houseAds++ % 2 === 0) {
+        const i = [...whole].find((k) => whole.has(k + 1));
+        if (i !== undefined) adPanel(g, 'poster', 1.1, 1.65, -wl.len / 2 + sl * (i + 1), 1.75, wl.cz + T / 2 + 0.03).userData.wall = true;
       }
       // rubble from the collapsed wall
       if (wi === ruined) {
@@ -517,6 +524,115 @@ export function buildWorld(scene, mapId = 'plains') {
     return g;
   }
 
+  // ---------------------------------------------------------------- adverts
+  // The owner's JINtelligence ads (public/textures/ads): on billboards, poster stands and the warehouse walls.
+  // Lit a little from inside so they read at dusk too. ads = false (admin panel) leaves them all out.
+  const AD_SETS = {
+    billboard: ['billboard-levelup', 'billboard-stuck', 'billboard-logo-red', 'billboard-subjects', 'billboard-revise', 'billboard-logo-light'],
+    poster: ['poster-stuck', 'poster-logo-red', 'poster-levelup', 'poster-subjects', 'poster-logo-light', 'poster-revise'],
+    banner: ['banner-logo-red', 'banner-logo-light'],
+    square: ['square-logo-red', 'square-logo-light'],
+  };
+  const adCount = { billboard: 0, poster: 0, banner: 0, square: 0 };
+  let houseAds = 0;
+  const mapNo = Math.max(0, MAP_IDS.indexOf(mapId));
+  const adMats = {};
+  const adLoader = new THREE.TextureLoader();
+  // the next ad of a kind (each map starts at a different one, so they're all seen)
+  function adMat(kind) {
+    const list = AD_SETS[kind];
+    const name = list[(adCount[kind]++ + mapNo) % list.length];
+    if (!adMats[name]) {
+      const tex = adLoader.load(`/textures/ads/${name}.jpg`);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      adMats[name] = new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.3, roughness: 0.85 });
+    }
+    return adMats[name];
+  }
+  // an ad facing +z on `parent`, centred at (x, y, z)
+  function adPanel(parent, kind, w, h, x, y, z, ry = 0) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), adMat(kind));
+    m.position.set(x, y, z);
+    m.rotation.y = ry;
+    m.receiveShadow = true;
+    m.userData.ad = kind;
+    parent.add(m);
+    return m;
+  }
+  // a big roadside billboard on two legs, an ad on each face
+  function billboard(x, z, rot) {
+    const g = new THREE.Group();
+    const W = 6.4;
+    const H = W * (9 / 16);
+    const y = 3.2 + H / 2;
+    for (const s of [-1, 1]) {
+      const leg = cyl(0.14, 0.16, y + H / 2, M.metalDark);
+      leg.position.set(s * W * 0.3, (y + H / 2) / 2, -0.25);
+      g.add(solid(leg));
+    }
+    const brace = box(W * 0.6, 0.12, 0.12, M.metalDark);
+    brace.position.set(0, 2.2, -0.25);
+    g.add(brace);
+    const frame = box(W + 0.3, H + 0.3, 0.2, M.metalDark);
+    frame.position.y = y;
+    g.add(solid(frame, false)); // stops bullets; you can walk under it
+    adPanel(g, 'billboard', W, H, 0, y, 0.11);
+    adPanel(g, 'billboard', W, H, 0, y, -0.11, PI);
+    // a catwalk and a couple of lamps along the top
+    const walk = box(W, 0.08, 0.6, M.metalDark);
+    walk.position.set(0, y - H / 2 - 0.3, 0.35);
+    g.add(walk);
+    for (const s of [-1, 1]) {
+      const lamp = box(0.35, 0.12, 0.3, M.metalDark);
+      lamp.position.set(s * W * 0.3, y + H / 2 + 0.3, 0.45);
+      g.add(lamp);
+    }
+    place(g, x, z, rot, 0.1);
+    reserve(x, z, W / 2 + 0.5);
+    return g;
+  }
+  // a poster on a post, an ad on each face
+  function posterStand(x, z, rot) {
+    const g = new THREE.Group();
+    const W = 1.3;
+    const H = W * 1.5;
+    const post = cyl(0.07, 0.08, 2.9, M.metalDark);
+    post.position.y = 1.45;
+    g.add(solid(post));
+    const frame = box(W + 0.12, H + 0.12, 0.08, M.darkWood);
+    frame.position.y = 1.75;
+    g.add(solid(frame));
+    adPanel(g, 'poster', W, H, 0, 1.75, 0.05);
+    adPanel(g, 'poster', W, H, 0, 1.75, -0.05, PI);
+    place(g, x, z, rot, 0.05);
+    reserve(x, z, 1.2);
+    return g;
+  }
+  // facing the middle of the map from (x, z)
+  const faceIn = (x, z) => Math.atan2(-x, -z);
+  // spread round the map: the first clear spot near each of `n` directions, between radii r0 and r1
+  function adSpots(n, r0, r1, need, fn) {
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * PI * 2 + mapNo * 0.7;
+      let done = false;
+      for (let t = 0; t < 14 && !done; t++) {
+        const a = a0 + (t % 2 ? 1 : -1) * Math.ceil(t / 2) * 0.09;
+        const r = r0 + ((t * 0.37) % 1) * (r1 - r0);
+        const x = Math.sin(a) * r;
+        const z = Math.cos(a) * r;
+        if (Math.hypot(x, z) > ARENA_RADIUS - 8 || !isFree(x, z, need)) continue;
+        fn(x, z, faceIn(x, z));
+        done = true;
+      }
+    }
+  }
+  function adverts() {
+    if (!ads) return;
+    adSpots(4, 58, 92, 4.5, billboard);
+    adSpots(8, 18, 52, 1.4, posterStand);
+  }
+
   // ---------------------------------------------------------------- warehouse
   // A big closed warehouse (the owner's model). It's solid: you take cover behind it, you can't go in.
   // Long side along its local z. A plain shed stands in until the model has loaded.
@@ -535,6 +651,12 @@ export function buildWorld(scene, mapId = 'plains') {
     // what you bump into and what stops bullets, the same either way
     const hit = proxy(g, W, H, D, 0, H / 2, 0);
     hit.userData.solid = true;
+    if (ads) {
+      // a long banner down each side, a square sign over the doors
+      adPanel(g, 'banner', 7.2, 1.8, W / 2 + 0.06, 4.4, 0, PI / 2);
+      adPanel(g, 'banner', 7.2, 1.8, -W / 2 - 0.06, 4.4, 0, -PI / 2);
+      adPanel(g, 'square', 2.6, 2.6, 0, 4.6, -D / 2 - 0.1, PI);
+    }
     place(g, x, z, rot, 0.25);
     reserve(x, z, Math.hypot(W, D) / 2 + 1.5);
     loadWarehouse().then((model) => {
@@ -2343,6 +2465,7 @@ export function buildWorld(scene, mapId = 'plains') {
     },
   };
   layouts[mapId]();
+  adverts();
 
   // Dry grass tufts
   {
