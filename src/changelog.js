@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.34', date: '20 Oct 2026', title: '🏹 The Crossbow, and special gear',
+    items: [
+      'New gun: the Crossbow. Silent, hits hard and the bolt goes through up to two targets. Find it on the map (epic).',
+      'The Thumper and every other explosion now shows up for everyone in online games.',
+      'Special gear has arrived: a Tank, a Flamethrower and a Bazooka. Only admins have it, and only an admin can hand it out.',
+      'Admin: a Special gear card in the Game tab (get or remove it yourself), and GIVE / TAKE buttons for each piece in MANAGE.',
+    ],
+  },
+  {
     v: '5.33', date: '20 Oct 2026', title: 'Fix: maxed power-ups',
     items: [
       'With every power-up maxed, the power-up screen was empty and you got stuck. Now it offers an ⭐ All maxed card: full health, full ammo and +500 score.',

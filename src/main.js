@@ -19,6 +19,8 @@ import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, setArmLook, randomMutation, r
 import { Minimap } from './minimap.js';
 import { Avatar, Multiplayer } from './multiplayer.js';
 import { DROP_CHANCE, EVENT_MAX_PLAYERS, PIECE_COUNT, totalPieces } from '../shared/events.js';
+import { TANK_ARMOUR, ownsGear } from '../shared/gear.js';
+import { buildTank, loadTankModel, tankModelReady } from './tank.js';
 import { showPiece } from './puzzle.js';
 import { NavGrid } from './navgrid.js';
 import { GunPickups } from './pickups.js';
@@ -820,7 +822,7 @@ function fireShot(moving, speed) {
 let hitSoundPlayed = false;
 function traceBullet(origin, dir, primary) {
   const def = weapon.def;
-  const far = 260;
+  const far = def.range || 260; // the flamethrower only reaches so far
   raycaster.set(origin, dir);
   raycaster.far = far;
   const hits = raycaster.intersectObjects(targets(), false);
@@ -868,7 +870,11 @@ function traceBullet(origin, dir, primary) {
   // explosive rounds: one blast per trigger pull, so shotguns don't nuke everything
   if (stats.explosive > 0 && impact && primary) explodeAt(end, 2.6 + (stats.explosive - 1) * 0.9, weapon.damage(stats) * 0.6 * Math.max(1, def.pellets / 3));
   const mut = weapon.mutation;
-  if (!weapon.scoped) effects.tracer(_muzzle, end, mut ? MUTATIONS[mut].color : 0xffd27a);
+  if (def.burn) {
+    // flames instead of a tracer: a few licks of fire along the way
+    const t = 0.35 + Math.random() * 0.65;
+    effects.burst(_muzzle.clone().lerp(end, t), { count: 3, color: [0xff7a1a, 0xffc04a, 0xff4a1a], speed: 1.5, size: 0.28, life: 0.35, grav: -2, up: 0.6 });
+  } else if (!weapon.scoped) effects.tracer(_muzzle, end, mut ? MUTATIONS[mut].color : 0xffd27a);
   if (game.mode === 'mp' && primary) mp.reportShot(_muzzle, end);
 }
 
@@ -909,7 +915,7 @@ function hitZombie(z, head, point, dir, distance = 0) {
     // co-op guest: show the hit, let the host apply it
     effects.blood(point, dir, head ? 1.8 : def.pellets > 1 ? 0.5 : 1);
     z.flashT = 0.08;
-    mp.relay('host', { k: 'zhit', id: z.id, dmg: Math.round(dmg), head, mut, slow: stats.slow });
+    mp.relay('host', { k: 'zhit', id: z.id, dmg: Math.round(dmg), head, mut, slow: stats.slow, src: def.burn ? 'flamer' : null });
     if (!hitSoundPlayed) {
       audio.hit(head || crit);
       hitSoundPlayed = true;
@@ -918,13 +924,14 @@ function hitZombie(z, head, point, dir, distance = 0) {
     damageNumber(point, dmg, head ? 'head' : crit ? 'crit' : '');
     return;
   }
-  applyZombieHit(z, dmg, { head, crit, mut, dir, point, slow: stats.slow, shooter: 'me', pellets: def.pellets });
+  applyZombieHit(z, dmg, { head, crit, mut, dir, point, slow: stats.slow, shooter: 'me', pellets: def.pellets, src: def.burn ? 'flamer' : null });
 }
 
 // Damage a zombie on the machine that runs them (solo, or the co-op host), with mutated-gun powers.
 function applyZombieHit(z, dmg, { head = false, crit = false, mut = null, dir = null, point = null, slow = 0, shooter = 'me', pellets = 1, src = null }) {
   if (!z.alive) return;
   if (mut === 'frost' && z.slowT > 0) dmg *= 1.4;
+  if (src === 'flamer') zombies.addDot(z, 'fire', 14, 2.5); // the flamethrower sets them alight
   if (!point) point = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
   if (shooter !== 'me') effects.blood(point, dir, head ? 1.8 : 1);
   else effects.blood(point, dir, head ? 1.8 : pellets > 1 ? 0.5 : 1);
@@ -1199,6 +1206,7 @@ function updateProjectiles(dt) {
       const c = at || pos;
       explodeAt(c, p.radius, p.damage);
       if (game.mode === 'mp') {
+        mp.send({ t: 'fx', k: 'boom', p: [c.x, c.y, c.z].map((v) => Math.round(v * 10) / 10) }); // everyone sees it go off
         // splash damage against other players
         for (const a of mp.avatars.values()) {
           if (!a.alive || !mp.isEnemy(a.id)) continue;
@@ -1893,6 +1901,7 @@ function onPlayerHit(z, dmg, kind) {
   }
   if (!zombieGame() || player.dead) return;
   wolfGuard(z);
+  if (tank.on) dmg *= TANK_ARMOUR; // armour
   if (shieldUp()) return; // the force field takes it
   if (game.state !== 'playing' && !isCoop()) return;
   if (cheats.god && cheatsOn()) return;
@@ -2649,7 +2658,7 @@ const _tpDir = new THREE.Vector3();
 const _tpRight = new THREE.Vector3();
 const _tpWant = new THREE.Vector3();
 const tpRay = new THREE.Raycaster();
-const thirdPerson = () => isEvent() && !player.dead && !spectate.on;
+const thirdPerson = () => (isEvent() || tank.on) && !player.dead && !spectate.on;
 function tpCamera() {
   ev.tp.dist = 0;
   if (!thirdPerson()) return;
@@ -2657,8 +2666,9 @@ function tpCamera() {
   camera.getWorldDirection(_tpDir);
   _tpRight.setFromMatrixColumn(camera.matrixWorld, 0);
   const eye = camera.position;
-  let back = 3.1;
-  _tpWant.copy(eye).addScaledVector(_tpRight, 0.6).add(new THREE.Vector3(0, 0.3, 0));
+  // behind your shoulder, or well back and above the tank
+  let back = tank.on ? 8 : 3.1;
+  _tpWant.copy(eye).addScaledVector(_tpRight, tank.on ? 0 : 0.6).add(new THREE.Vector3(0, tank.on ? 2.4 : 0.3, 0));
   // don't go through walls behind you
   const away = _tpWant.clone().addScaledVector(_tpDir, -back).sub(eye);
   const len = away.length();
@@ -2696,7 +2706,7 @@ function updateMyAvatar(dt) {
   a.setGun(weapon.def.id);
   a.update(dt, 0);
   a.label.visible = false;
-  a.root.visible = !player.dead || !!a.model;
+  a.root.visible = (!player.dead || !!a.model) && !tank.on; // inside the tank you can't see yourself
 }
 
 // the Join Event button (Multiplayer, under the room code): lit up while the admin's event is on, greyed out otherwise
@@ -2788,6 +2798,60 @@ setInterval(() => {
 account.onChange(renderEventCard);
 renderEventCard();
 setInterval(renderEventCard, 30000);
+
+// ---------------------------------------------------------------- the tank (special gear: H to get in and out)
+// Only admins, or whoever an admin gives it to. You drive it with WASD (no sprinting, jumping or crouching),
+// it faces where you look, and clicking fires the cannon. Inside, you take a quarter of the damage.
+const tank = { on: false, g: null, reload: 0, yaw: 0 };
+const shellGeo = new THREE.SphereGeometry(0.22, 10, 8);
+const shellMat = new THREE.MeshBasicMaterial({ color: 0xffd27a });
+function toggleTank() {
+  if (tank.on) return leaveTank();
+  if (!ownsGear(account.items, 'tank')) return;
+  if (player.dead || game.state !== 'playing' || game.phase === 'tutorial' || mp.infected) return;
+  tank.on = true;
+  tank.g = buildTank();
+  tank.yaw = player.yaw + Math.PI;
+  scene.add(tank.g);
+  setBuild(false);
+  banner('🛡️ TANK', 'Click to fire the cannon · H to get out', 'gold', 1.8);
+}
+function leaveTank() {
+  if (!tank.on) return;
+  tank.on = false;
+  scene.remove(tank.g);
+  tank.g = null;
+}
+function updateTank(dt) {
+  if (!tank.on) return;
+  if (player.dead || !['playing', 'paused', 'choosing'].includes(game.state)) return leaveTank();
+  // the model may have loaded since you got in
+  if (!tank.g.userData.model && tankModelReady()) {
+    scene.remove(tank.g);
+    tank.g = buildTank();
+    scene.add(tank.g);
+  }
+  tank.reload -= dt;
+  let d = player.yaw + Math.PI - tank.yaw;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  tank.yaw += d * Math.min(1, dt * 4); // a heavy turret: it turns after your aim
+  tank.g.position.copy(player.pos);
+  tank.g.rotation.y = tank.yaw;
+}
+const _shellDir = new THREE.Vector3();
+function fireTank() {
+  if (tank.reload > 0) return;
+  tank.reload = 1.6;
+  camera.getWorldDirection(_shellDir);
+  const mesh = new THREE.Mesh(shellGeo, shellMat);
+  tank.g.updateMatrixWorld(true);
+  tank.g.userData.muzzle.getWorldPosition(mesh.position);
+  scene.add(mesh);
+  projectiles.push({ mesh, vel: _shellDir.clone().multiplyScalar(95), life: 4, radius: 7, gravity: 2, damage: 450 });
+  effects.burst(mesh.position.clone(), { count: 18, color: [0xffd27a, 0xff7a1a, 0x555555], speed: 6, size: 0.3, life: 0.5, grav: 1, up: 1 });
+  audio.shot('launcher', true);
+  player.shake = Math.min(1, player.shake + 0.6);
+}
 
 // ---------------------------------------------------------------- saved games (solo)
 // You name a game when you start it. It's saved when it starts and after every wave (once you
@@ -2997,6 +3061,11 @@ function restoreRun(save) {
 // The gun you equipped in the Shop: you spawn holding it (every mode, every respawn)
 // and it never runs out of reserve ammo (you still reload).
 function giveLoadout() {
+  // special gear the admin gave you (admin panel): the flamethrower and bazooka come into every game, unlimited ammo
+  for (const gid of ['flamer', 'bazooka']) {
+    if (!ownsGear(account.items, gid) || weapon.slots.some((s) => s.def.id === gid)) continue;
+    weapon.slots.push({ def: GUNS[gid], ammo: weapon.magSize(stats, GUNS[gid]), reserve: Infinity, mut: null });
+  }
   const id = account.items.loadout;
   if (!id || !account.items[`gun_${id}`] || !GUNS[id]) return;
   let i = weapon.slots.findIndex((s) => s.def.id === id);
@@ -3037,6 +3106,7 @@ const scavengerLevel = () => (game.mode === 'solo' ? account.items.scavenger || 
 
 function startGame(save = null, name = null, { weekly = false } = {}) {
   if (needAccount()) return;
+  leaveTank();
   audio.init();
   // the weekly challenge: this week's map and twists, the same for everyone
   game.weekly = weekly && !save;
@@ -3181,6 +3251,7 @@ const pointsBonus = (wave = game.wave) => (isDefend() ? 25 * wave * defend.heldC
 
 const mp = new Multiplayer({
   scene, effects, audio, account, player, weapon, banner, subBanner, defend,
+  inTank: () => tank.on,
   onMatchCleared() {
     supply?.clear();
     clearShields();
@@ -3260,6 +3331,7 @@ const mp = new Multiplayer({
     $('subbanner').className = '';
     spectate.id = null;
     coop.remaining = 0;
+    leaveTank();
     // events: a fresh horde, and no drops left over
     ev.t = 0;
     ev.spawnT = 4;
@@ -3868,6 +3940,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyV' && !player.dead && weapon.quickMelee()) meleeAttack();
   if (e.code === 'KeyG') throwGrenade();
   if (e.code === 'KeyF') useShield();
+  if (e.code === 'KeyH') toggleTank();
   const digit = /^Digit([1-9])$/.exec(e.code);
   if (digit) weapon.equip(Number(digit[1]) - 1);
 });
@@ -4830,11 +4903,13 @@ function update(dt) {
   const def = weapon.def;
   const moveMul = (def.moveMul || 1) * (1 - weapon.ads * 0.35);
   const flying = cheatsOn() && cheats.fly;
+  if (tank.on) for (const k of ['ShiftLeft', 'ShiftRight', 'Space', 'KeyC', 'ControlLeft']) player.keys.delete(k); // tanks don't sprint, jump or crouch
   const speedMul = cheatsOn() && cheats.speed ? 2 : 1;
   const hSpeed = flying ? flyUpdate(dt) : player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul * speedMul * weatherMove(), world.ladders);
   tpCamera(); // events: over the shoulder
   hitSoundPlayed = false;
-  const shots = player.dead
+  if (tank.on && !player.dead && trigger) fireTank();
+  const shots = player.dead || tank.on
     ? 0
     : weapon.update(
         dt,
@@ -4949,7 +5024,7 @@ function onCoopRelay(from, d) {
       const z = zombies.list.find((o) => o.id === d.id);
       if (!z || !z.alive) return;
       const dmg = Math.max(0, Math.min(5000, Number(d.dmg) || 0));
-      const src = ['melee', 'grenade', 'turret', 'wolf'].includes(d.src) ? d.src : null;
+      const src = ['melee', 'grenade', 'turret', 'wolf', 'flamer'].includes(d.src) ? d.src : null;
       applyZombieHit(z, dmg, { head: !!d.head, mut: MUTATIONS[d.mut] ? d.mut : null, slow: Math.min(0.75, Number(d.slow) || 0), shooter: from, src });
       break;
     }
@@ -5089,6 +5164,7 @@ function frame(now) {
   updatePets(dt);
   updateMyAvatar(dt);
   updateEventDrops(dt);
+  updateTank(dt);
   structures.update(dt, effects);
   updateChat();
 
@@ -5156,6 +5232,8 @@ loadGunModels().then(() => {
   weapon.refreshModels();
   pickups.refreshModels?.();
 });
+// the tank model (the block tank is used until it has loaded)
+loadTankModel();
 // the wolf model (the block wolf is used until it has loaded)
 loadWolfModel().then(() => {
   myWolf?.refresh();
@@ -5199,7 +5277,7 @@ if (import.meta.env.DEV) {
       return savedGames;
     },
     bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio }); },
-    get wolf() { return myWolf; }, wolfHunt, ev, worldTick, isEvent,
+    get wolf() { return myWolf; }, wolfHunt, ev, worldTick, isEvent, tank,
     game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

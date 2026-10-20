@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
+import { SPECIAL_GEAR, TANK_ARMOUR, TANK_FLAG } from '../shared/gear.js';
 import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
@@ -436,6 +437,7 @@ export class GameDB extends DurableObject {
       wolf: !!this._items(u)[PET_ITEM],
       wolfLevel: petLevel(this._items(u)),
       pieces: totalPieces(this._items(u)),
+      gear: SPECIAL_GEAR.filter((g) => this._items(u)[g.item]).map((g) => g.id),
     };
   }
 
@@ -952,7 +954,7 @@ export class GameDB extends DurableObject {
       const u = typeof body.username === 'string' ? this._byName(body.username) : null;
       if (!u) return err('No player with that name', 404);
       const action = String(body.action);
-      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces'].includes(action)) return err("You can't do that to yourself");
+      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces', 'gear'].includes(action)) return err("You can't do that to yourself");
       if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
       let note = '';
       if (action === 'kick') {
@@ -998,6 +1000,15 @@ export class GameDB extends DurableObject {
         profile.pet = body.on ? 'wolf' : 'none';
         this.sql.exec('UPDATE users SET items = ?, profile = ? WHERE id = ?', JSON.stringify(items), JSON.stringify(profile), u.id);
         note = body.on ? `${u.username} now owns the 🐺 wolf. They pick its colour in Profile.` : `Took the 🐺 wolf from ${u.username}.`;
+      } else if (action === 'gear') {
+        // special gear (tank, flamethrower, bazooka): only an admin can hand it out
+        const g = SPECIAL_GEAR.find((x) => x.id === body.id);
+        if (!g) return err('Unknown gear');
+        const items = this._items(u);
+        if (body.on) items[g.item] = 1;
+        else delete items[g.item];
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
+        note = body.on ? `${u.username} has the ${g.icon} ${g.name}${g.id === 'tank' ? ' (H to drive it)' : ''}.` : `Took the ${g.icon} ${g.name} from ${u.username}.`;
       } else if (action === 'pieces') {
         // every character piece (they can wear any character), or none
         const items = this._items(u);
@@ -1877,7 +1888,7 @@ export class Room extends DurableObject {
         if (now - p.hits[1] > 1000) p.hits = [0, now];
         if (++p.hits[0] > 30) return;
         if (now < p.protectUntil || now < (p.shieldUntil || 0) || p.god) return;
-        p.hp -= dmg;
+        p.hp -= dmg * (p.flags & TANK_FLAG && p.items?.sp_tank ? TANK_ARMOUR : 1);
         p.lastHurt = now;
         this._send(p, { t: 'hurt', by: 0, dmg, from: p.pos, hp: Math.max(0, p.hp) });
         if (p.hp > 0) return;
@@ -2395,7 +2406,9 @@ export class Room extends DurableObject {
     if (mode.infection && p.team === INFECTED && (!m.melee || dist > 5)) return;
     if (now < target.protectUntil || now < (target.shieldUntil || 0) || target.god) return;
     // one in the chamber: every bullet kills (and an admin's one-hit-kill cheat)
-    target.hp -= (mode.oitc && !m.melee) || p.onehit ? target.hp : dmg;
+    // in a tank (only if they really have one): a quarter of the damage
+    const armour = target.flags & TANK_FLAG && target.items?.sp_tank ? TANK_ARMOUR : 1;
+    target.hp -= (mode.oitc && !m.melee) || p.onehit ? target.hp : dmg * armour;
     target.lastHurt = now;
     this._send(target, { t: 'hurt', by: p.id, dmg, from: p.pos, hp: Math.max(0, target.hp) });
     if (target.hp > 0) return;

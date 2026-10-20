@@ -12,6 +12,9 @@ const GUN_MODELS = {
   lmg: { url: '/models/MK14 by austincford - lNGPW2NGPZ.glb', length: 1.25, at: [0, -0.06, -0.29], mag: 'Magazine_Standard', muzzleZ: -0.82 },
   dmr: { url: '/models/Sniper Rifle by Zsky - ZkwSIy3JOV.glb', length: 1.3, muzzleZ: -0.8, topY: 0.13 },
   sniper: { url: '/models/AWP Sniper by Kyler Swanson - fKsTWWhSkqt.glb', length: 1.55, muzzleZ: -1.05, topY: 0.135 },
+  crossbow: { url: '/models/Crossbow by CreativeTrio - kHb0kA11oD.glb', length: 0.95, muzzleZ: -0.62, topY: 0.06 },
+  flamer: { url: '/models/TF2 flamethrower by mario tofani - djC1ShUqIXf.glb', rotY: Math.PI / 2, length: 1.15, muzzleZ: -0.8, topY: 0.09 },
+  bazooka: { url: '/models/Bazooka by CreativeTrio - eJNzLpBsEt.glb', length: 1.35, muzzleZ: -0.9, topY: 0.14 },
 };
 const gunModels = {};
 const loadModel = (url) =>
@@ -191,6 +194,29 @@ export const GUNS = {
     hands: { grip: [0.005, -0.12, 0.1], fore: [-0.02, -0.09, -0.3] },
     ads: [0, -0.075, -0.36],
   },
+  crossbow: {
+    id: 'crossbow', name: 'Crossbow', tier: 'epic', icon: '🏹',
+    damage: 130, pellets: 1, fireRate: 1.1, mag: 1, reload: 1.3, reserve: 24,
+    spread: 0.0015, hipSpread: 0.018, auto: false, recoil: 0.025, kick: 0.6, zoomFov: 42, sound: 'crossbow', reloadStyle: 'mag', pierce: 2,
+    hands: { grip: [0.005, -0.1, 0.14], fore: [-0.02, -0.07, -0.26] },
+    ads: [0, -0.06, -0.3],
+  },
+  // special gear: admins only, or whoever an admin gives it to (shared/gear.js); never found on the map
+  flamer: {
+    id: 'flamer', name: 'Flamethrower', tier: 'legendary', icon: '🔥', special: true,
+    damage: 9, pellets: 2, fireRate: 16, mag: 150, reload: 3, reserve: Infinity, range: 16, burn: true,
+    spread: 0.07, auto: true, recoil: 0.002, kick: 0.08, zoomFov: 70, sound: 'flamer', reloadStyle: 'box', falloff: [8, 16],
+    hands: { grip: [0.005, -0.12, 0.12], fore: [-0.02, -0.1, -0.3] },
+    ads: [0, -0.07, -0.34],
+  },
+  bazooka: {
+    id: 'bazooka', name: 'Bazooka', tier: 'legendary', icon: '🚀', special: true,
+    damage: 320, pellets: 1, fireRate: 0.8, mag: 1, reload: 2, reserve: Infinity,
+    spread: 0.002, auto: false, recoil: 0.08, kick: 1, zoomFov: 55, sound: 'launcher', reloadStyle: 'drum',
+    projectile: { speed: 75, gravity: 1.5, radius: 6.5 },
+    hands: { grip: [0.005, -0.12, 0.08], fore: [-0.02, -0.08, -0.32] },
+    ads: [0, -0.08, -0.34],
+  },
 };
 
 export const TIER_COLOR = { common: 0xcfc6b0, rare: 0x3d8bff, epic: 0xb04dff, legendary: 0xffb020 };
@@ -199,7 +225,7 @@ export const TIER_CSS = { common: '#cfc6b0', rare: 'var(--rare)', epic: 'var(--e
 // Chances when a weapon spawns on the map.
 export const GUN_DROP_TABLE = [
   { tier: 'legendary', chance: 0.1, guns: ['sniper', 'launcher'] },
-  { tier: 'epic', chance: 0.3, guns: ['revolver', 'lmg', 'dmr'] },
+  { tier: 'epic', chance: 0.3, guns: ['revolver', 'lmg', 'dmr', 'crossbow'] },
   { tier: 'rare', chance: 0.6, guns: ['smg', 'shotgun'] },
 ];
 
@@ -437,6 +463,21 @@ function buildGunBase(id) {
       part(g, B(0.032, 0.04, 0.012), M.metal, 0, -0.004, 0.095);
       out.muzzleZ = -0.25;
       out.muzzleY = 0.01;
+      break;
+    }
+    case 'crossbow':
+    case 'flamer':
+    case 'bazooka': {
+      if (gunModels[id]) {
+        modelGun(g, out, id);
+        break;
+      }
+      // until the model has loaded: a plain block version
+      part(g, B(0.08, 0.1, 0.6), M.dark, 0, 0, -0.2);
+      part(g, C(0.04, 0.04, 0.4, 10), M.metal, 0, 0.03, -0.6, H);
+      part(g, B(0.05, 0.13, 0.06), M.dark, 0, -0.1, 0.1, -0.35);
+      if (id === 'crossbow') part(g, B(0.7, 0.03, 0.04), M.wood, 0, 0.02, -0.55);
+      out.muzzleZ = -0.82;
       break;
     }
     case 'launcher': {

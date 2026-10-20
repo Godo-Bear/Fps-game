@@ -4,6 +4,8 @@ import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 import { Wolf } from './pet.js';
 import { buildCharacter, buildModelCharacter, loadCharacterModel } from './character.js';
+import { buildTank } from './tank.js';
+import { TANK_FLAG } from '../shared/gear.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -155,6 +157,17 @@ export class Avatar {
   }
 
   update(dt, flags) {
+    // in a tank: show the tank instead of them (their hidden body still takes the hits)
+    const inTank = !!(flags & TANK_FLAG) && this.alive;
+    if (inTank && !this.tank) {
+      this.tank = buildTank(); // faces +z like the character, so it points the way they look
+      this.root.add(this.tank);
+    } else if (!inTank && this.tank) {
+      this.root.remove(this.tank);
+      this.tank = null;
+    }
+    this.body.visible = !inTank;
+    if (this.model) this.model.root.visible = !inTank;
     if (this.bubble) {
       this.bubbleT -= dt;
       this.bubble.material.opacity = Math.min(1, this.bubbleT * 2);
@@ -810,7 +823,7 @@ export class Multiplayer {
     const p = this.ctx.player;
     if (this.sendT <= 0 && !p.dead) {
       this.sendT = 1 / 15;
-      const flags = (p.crouching ? FLAG_BITS.crouch : 0) | (this.ctx.weapon.ads > 0.5 ? FLAG_BITS.aim : 0) | (p.climbing ? FLAG_BITS.climb : 0) | (p.sliding ? FLAG_BITS.slide : 0);
+      const flags = (p.crouching ? FLAG_BITS.crouch : 0) | (this.ctx.weapon.ads > 0.5 ? FLAG_BITS.aim : 0) | (p.climbing ? FLAG_BITS.climb : 0) | (p.sliding ? FLAG_BITS.slide : 0) | (this.ctx.inTank?.() ? TANK_FLAG : 0);
       const r = (v) => Math.round(v * 100) / 100;
       this.send({ t: 's', p: [r(p.pos.x), r(p.pos.y), r(p.pos.z)], r: [r(p.yaw), r(p.pitch)], g: this.ctx.weapon.def.id, f: flags });
     }

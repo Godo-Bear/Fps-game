@@ -8,7 +8,7 @@ const SWITCH_TIME = 0.45;
 const SWING = 0.34; // knife swing
 const QUICK = 0.5; // quick melee: knife out, stab, back to the gun
 // Height of each gun's sights above its origin (gun units), used to line them up when aiming.
-const SIGHT_Y = { rifle: 0.1, smg: 0.075, shotgun: 0.066, revolver: 0.07, lmg: 0.145, dmr: 0.095, sniper: 0.1, launcher: 0.14 };
+const SIGHT_Y = { rifle: 0.1, smg: 0.075, shotgun: 0.066, revolver: 0.07, lmg: 0.145, dmr: 0.095, sniper: 0.1, launcher: 0.14, crossbow: 0.07, flamer: 0.1, bazooka: 0.16 };
 
 const ease = (t) => t * t * (3 - 2 * t);
 // Piecewise keyframes: [[time, value], ...] with smooth interpolation.

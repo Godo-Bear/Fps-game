@@ -1,4 +1,5 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
+import { SPECIAL_GEAR } from '../shared/gear.js';
 import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
@@ -1465,6 +1466,9 @@ export class AccountUI {
       <div class="acard"><h4>🧟 Zombie look <span class="muted small">(yours; new zombies change)</span></h4>
         <div class="admin-grid"><button class="btn small ghost" data-run="lineup" ${solo || mp ? '' : 'disabled'}>👀 SPAWN ONE OF EVERY KIND</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-zmodel">${act?.zombieModels?.() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL'}</button></div></div>
+      <div class="acard"><h4>🛡️ Special gear <span class="muted small">(admins only: nobody else has it unless you give it to them, with MANAGE in the Players tab)</span></h4>
+        <div class="admin-grid">${SPECIAL_GEAR.map((g) => (a.items[g.item] ? `<button class="btn small ghost" data-mygear="${g.id}" data-on="0">${g.icon} ${g.name.toUpperCase()} ✓ (REMOVE)</button>` : `<button class="btn small" data-mygear="${g.id}" data-on="1">${g.icon} GET THE ${g.name.toUpperCase()}</button>`)).join('')}</div>
+        <p class="muted small">The flamethrower and bazooka come into every game you start (unlimited ammo). Press <b>H</b> in a game to get in or out of the tank: WASD to drive, click to fire the cannon; you take a quarter of the damage inside.</p></div>
       <div class="acard"><h4>🔄 Game version <span class="muted small">(players on an old version are restarted onto the new one automatically)</span></h4>
         <p class="muted small">This copy: <b>${esc(act?.build?.().build || '?')}</b>${act?.build?.().at && act.build().build !== 'dev' ? ` · built ${esc(new Date(act.build().at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}` : ''}</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-version">CHECK FOR A NEW VERSION</button></div></div>
@@ -1759,6 +1763,16 @@ export class AccountUI {
         msg(err.message);
       }
     };
+    this.body.querySelectorAll('[data-mygear]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          msg((await a.adminPlayer(a.name, 'gear', { id: b.dataset.mygear, on: b.dataset.on === '1' })).note);
+          this.render();
+        } catch (err) {
+          msg(err.message);
+        }
+      }),
+    );
     this.body.querySelectorAll('[data-mypieces]').forEach((b) =>
       b.addEventListener('click', async () => {
         try {
@@ -1924,6 +1938,7 @@ export class AccountUI {
     const mins = [[5, '5 min'], [30, '30 min'], [60, '1 hour'], [1440, '1 day'], [10080, '1 week']];
     const mod = `<div class="manage-mod">
         <button type="button" data-mod="give100">+100 🪙</button>
+        ${SPECIAL_GEAR.map((g) => ((p.gear || []).includes(g.id) ? `<button type="button" data-mod="gear-off-${g.id}" title="Take it away">TAKE ${g.icon}</button>` : `<button type="button" data-mod="gear-on-${g.id}" class="hot" title="Give them the ${g.name}">GIVE ${g.icon} ${g.name.toUpperCase()}</button>`)).join('')}
         <button type="button" data-mod="pieces-all" title="Every character piece: they can wear any character">🧩 ALL PIECES (${p.pieces || 0})</button>${p.pieces ? '<button type="button" data-mod="pieces-none">TAKE PIECES</button>' : ''}
         ${CHARACTERS_LIVE ? '<button type="button" data-mod="resetlook" title="Their character back to the default look">RESET LOOK</button>' : ''}
         ${p.wolf ? `<button type="button" data-mod="wolf-up" class="hot" title="They paid you for a wolf level">+1 🐺 LEVEL (now ${p.wolfLevel})</button><button type="button" data-mod="wolf-off" title="Take their wolf companion away">TAKE 🐺 WOLF</button>` : '<button type="button" data-mod="wolf-on" class="hot" title="They paid you for the wolf companion">GIVE 🐺 WOLF</button>'}
@@ -1973,6 +1988,12 @@ export class AccountUI {
         if (action === 'give100') {
           action = 'give';
           extra.coins = 100;
+        }
+        const gearMod = /^gear-(on|off)-(\w+)$/.exec(action);
+        if (gearMod) {
+          extra.on = gearMod[1] === 'on';
+          extra.id = gearMod[2];
+          action = 'gear';
         }
         if (action === 'pieces-all' || action === 'pieces-none') {
           extra.mode = action === 'pieces-all' ? 'all' : 'none';

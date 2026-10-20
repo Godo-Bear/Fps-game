@@ -6,6 +6,8 @@ const SHOTS = {
   lmg: { lp: 3000, end: 250, dur: 0.22, vol: 0.8, boom: 130, boomVol: 0.85 },
   sniper: { lp: 5200, end: 180, dur: 0.55, vol: 1.15, boom: 80, boomVol: 1.1, tail: 0.35 },
   launcher: { lp: 900, end: 120, dur: 0.25, vol: 0.7, boom: 70, boomVol: 1.0 },
+  crossbow: { lp: 1800, end: 400, dur: 0.12, vol: 0.45, boom: 220, boomVol: 0.25 }, // a soft thwack
+  flamer: { lp: 1400, end: 600, dur: 0.16, vol: 0.32, boom: 60, boomVol: 0.08 }, // a roaring whoosh
 };
 
 // All sounds are synthesised with WebAudio so the game ships without audio files.
