@@ -280,6 +280,15 @@ export class GameDB extends DurableObject {
     }
   }
 
+  // features held back for a big update until an admin deploys them (admin panel): { view: true, ... }
+  _features() {
+    try {
+      return JSON.parse(this.sql.exec("SELECT value FROM config WHERE key = 'features'").toArray()[0]?.value || '{}');
+    } catch {
+      return {};
+    }
+  }
+
   // what the wolf companion costs in real money (the admin sets it)
   _wolfPrice(key = 'wolfPrice') {
     return this.sql.exec('SELECT value FROM config WHERE key = ?', key).toArray()[0]?.value || (key === 'wolfPrice' ? '$1' : '50c');
@@ -538,6 +547,7 @@ export class GameDB extends DurableObject {
         wolfPrice: this._wolfPrice(),
         wolfLevelPrice: this._wolfPrice('wolfLevelPrice'),
         event: this._event(),
+        features: this._features(),
       });
     }
 
@@ -1053,6 +1063,17 @@ export class GameDB extends DurableObject {
       this.sql.exec('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', level ? 'wolfLevelPrice' : 'wolfPrice', price);
       return json({ note: level ? `A wolf level now costs ${price}.` : `The wolf now costs ${price}.`, price });
     }
+    // admin: deploy (or take back) a feature that was waiting for a big update
+    if (path === '/admin/feature' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const id = String(body.id || '');
+      if (!['view'].includes(id)) return err('Unknown feature');
+      const f = this._features();
+      if (body.on) f[id] = true;
+      else delete f[id];
+      this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('features', ?)", JSON.stringify(f));
+      return json({ features: f, note: body.on ? 'Deployed: everyone gets it within a minute (or when they reload).' : 'Hidden again: only admins have it.' });
+    }
     // ---- events
     // which event room to join: the fullest one that still has space, or a brand new one when they're all full
     if (path === '/event/room' && method === 'POST') {
@@ -1348,7 +1369,7 @@ export class GameDB extends DurableObject {
       const groupUnread = this.sql
         .exec('SELECT COUNT(*) AS n FROM group_messages g JOIN chat_members c ON c.grp = g.grp WHERE c.user = ? AND g.id > c.last_read AND g.sender != ?', me.id, me.id)
         .one().n;
-      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce(), event: this._event() });
+      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce(), event: this._event(), features: this._features() });
     }
     if (path === '/messages' && (method === 'GET' || method === 'POST')) {
       const name = method === 'GET' ? url.searchParams.get('with') : body.to;

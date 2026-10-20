@@ -8,7 +8,7 @@ import { addProgress, claimQuest as claimQuestState, questView } from '../shared
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
 import { GUNS } from './guns.js';
 import { ACHIEVEMENTS } from '../shared/achievements.js';
-import { termsHtml } from '../shared/terms.js';
+import { priceTag, termsHtml } from '../shared/terms.js';
 
 const TOKEN_KEY = 'deadplains.token';
 const GUEST_KEY = 'deadplains.guest';
@@ -467,8 +467,9 @@ export class Account {
       return this._setUnread({});
     }
     try {
-      const { unread, requests, timeoutMins, groupUnread, announce, event } = await this._api('/messages/unread');
+      const { unread, requests, timeoutMins, groupUnread, announce, event, features } = await this._api('/messages/unread');
       this._setEvent(event || null);
+      if (features && this.cfg) this.cfg.features = features; // a feature an admin just deployed
       this.timeoutMins = timeoutMins || 0;
       this._setAnnounce(announce || null);
       this.groupUnread = groupUnread || 0;
@@ -608,6 +609,19 @@ export class Account {
   async adminWolfPrice(price, kind = 'wolf') {
     const r = await this._api('/admin/wolf-price', { method: 'POST', body: { price, kind } });
     if (this.cfg) this.cfg[kind === 'level' ? 'wolfLevelPrice' : 'wolfPrice'] = r.price;
+    return r;
+  }
+  // features held back for a big update: live once an admin deploys them; admins always have them (a preview)
+  feature(id) {
+    return !!this.cfg?.features?.[id] || this.admin;
+  }
+  featureLive(id) {
+    return !!this.cfg?.features?.[id];
+  }
+  async adminFeature(id, on) {
+    const r = await this._api('/admin/feature', { method: 'POST', body: { id, on } });
+    if (this.cfg) this.cfg.features = r.features;
+    this._changed();
     return r;
   }
   adminUpdates(body) {
@@ -992,6 +1006,7 @@ export class AccountUI {
     if (g?.kind === 'unpaid') {
       this.body.innerHTML = `<div class="paygate">
         <h2>${g.expired ? 'Access ended' : 'Almost there'}</h2>
+        ${priceTag(price, months)}
         <p>Your account (<b>${esc(g.email)}</b>) ${g.expired ? `ran out${g.paidUntil ? ` on ${esc(g.paidUntil)}` : ''}` : "isn't active yet"}. Access is <b>${deal}, ${esc(c.payNote || 'paid cash in hand to the site owner')}</b>. The owner unlocks accounts by hand, so it may take a while after you've paid. Once it's unlocked, check again.</p>
         ${terms}
         <form id="pay-check"><button class="btn pay-main">I've paid — check again</button></form>
@@ -1019,6 +1034,7 @@ export class AccountUI {
       ${g?.kind === 'confirm' ? `<p class="must-login">📧 We sent a link to <b>${esc(g.email)}</b>. Click it to confirm your email, then log in here.</p>` : ''}
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make an account (or log in) to start playing.</b></p>' : ''}
       <h2>Get War Grounds</h2>
+      ${priceTag(price, months)}
       <p class="muted">${months ? `${price} for every ${months} months` : `One payment of ${price}, yours forever`}, ${esc(c.payNote || 'paid cash in hand to the site owner')}. No refunds. Make your account first, then pay the owner to have it switched on.</p>
       <form id="pay-auth" class="auth">
         <input name="email" type="email" placeholder="Email" autocomplete="email" required />
@@ -1466,8 +1482,10 @@ export class AccountUI {
       <div class="acard"><h4>🧟 Zombie look <span class="muted small">(yours; new zombies change)</span></h4>
         <div class="admin-grid"><button class="btn small ghost" data-run="lineup" ${solo || mp ? '' : 'disabled'}>👀 SPAWN ONE OF EVERY KIND</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-zmodel">${act?.zombieModels?.() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL'}</button></div></div>
-      <div class="acard"><h4>🎥 Camera <span class="muted small">(yours: P switches it in a game too)</span></h4>
-        <div class="admin-grid"><button class="btn small ghost" id="admin-view">${act?.viewName ? `VIEW: ${act.viewName()} · SWITCH` : 'SWITCH VIEW'}</button></div></div>
+      <div class="acard"><h4>🎥 First / third person switch <span class="muted small">(saved for the big update: ${a.featureLive('view') ? '<b>DEPLOYED</b>, everyone has it' : '<b>HIDDEN</b>, only admins have it (a preview)'})</span></h4>
+        <p class="muted small">P, the pause menu button and Settings → Camera. Events are third person either way.</p>
+        <div class="admin-grid"><button class="btn small ghost" id="admin-view">${act?.viewName ? `MY VIEW: ${act.viewName()} · SWITCH` : 'SWITCH MY VIEW'}</button>
+        ${a.featureLive('view') ? '<button class="btn small ghost" id="admin-deploy-view" data-on="0">HIDE IT AGAIN</button>' : '<button class="btn small" id="admin-deploy-view" data-on="1">🚀 DEPLOY TO EVERYONE</button>'}</div></div>
       <div class="acard"><h4>🛡️ Special gear <span class="muted small">(admins only: nobody else has it unless you give it to them, with MANAGE in the Players tab)</span></h4>
         <div class="admin-grid">${SPECIAL_GEAR.map((g) => (a.items[g.item] ? `<button class="btn small ghost" data-mygear="${g.id}" data-on="0">${g.icon} ${g.name.toUpperCase()} ✓ (REMOVE)</button>` : `<button class="btn small" data-mygear="${g.id}" data-on="1">${g.icon} GET THE ${g.name.toUpperCase()}</button>`)).join('')}</div>
         <p class="muted small">The flamethrower and bazooka come into every game you start (unlimited ammo). Press <b>H</b> in a game to get in or out of the tank: WASD to drive, click to fire the cannon; you take a quarter of the damage inside.</p></div>
@@ -1825,6 +1843,15 @@ export class AccountUI {
     if (vw) vw.onclick = () => {
       msg(act.toggleView());
       vw.textContent = `VIEW: ${act.viewName()} · SWITCH`;
+    };
+    const dv = document.getElementById('admin-deploy-view');
+    if (dv) dv.onclick = () => {
+      const on = dv.dataset.on === '1';
+      if (on && !confirm('Deploy the first / third person switch to everyone?')) return;
+      a.adminFeature('view', on).then((r) => {
+        msg(r.note);
+        this.render?.();
+      }, (err) => msg(err.message));
     };
     const vb = document.getElementById('admin-version');
     if (vb) vb.onclick = async () => msg(await act.checkVersion());

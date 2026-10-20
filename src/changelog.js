@@ -2,14 +2,23 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.37', date: '20 Oct 2026', title: '🔥 Shots fly forward, and a real flamethrower',
+    items: [
+      'Bullet trails were drawn backwards from the gun. Now every shot is a streak that flies forward from the barrel to where it hits.',
+      'The Flamethrower blasts a long jet of fire (it now reaches 24 m) that billows out as it goes, without covering your screen.',
+      'Tank: the tank model now faces the way it drives, and the cannon fires straight at your crosshair.',
+      'Access is now shown big and clear: $2 for 6 whole months.',
+      'The first / third person switch is saved for the big update (events are still third person). Admin: deploy it to everyone from the Game tab.',
+    ],
+  },
+  {
     v: '5.36', date: '20 Oct 2026', title: '🎥 Third person, done properly',
     items: [
       'Characters now hold their gun in both hands, tucked against the chest (not floating or off to the side), like Fortnite, and it points where they look. The gun never goes through their body.',
       'Crouching bends the knees, sliding sits back with one leg out, and running backwards or sideways has its own animation.',
       'Feet stand on the ground, on slopes too, so legs no longer sink into it.',
       'Aiming in third person goes to first person through your sights.',
-      'New: switch between first and third person with P, the button in the pause menu, or Settings → Camera. Auto is third person in events and first person everywhere else.',
-      'Admin: a Camera card in the Game tab.',
+      'Admin: a First / third person switch card in the Game tab (it is saved for the big update: admins can try it, and deploy it to everyone with one button).',
     ],
   },
   {
@@ -544,6 +553,12 @@ export const LATEST_VERSION = CHANGELOG[0].v;
 // What's being worked on, shown on the Updates page's "Coming soon" tab. No release dates on purpose.
 // Move an entry into CHANGELOG (and delete it here) when it ships.
 export const UPCOMING = [
+  {
+    v: 'soon-view', title: '🎥 First / third person anywhere',
+    items: [
+      'Switch between first and third person in every mode, not just events: press P, use the pause menu, or Settings → Camera.',
+    ],
+  },
   {
     v: 'soon-story', title: '📖 Story Campaign',
     items: [

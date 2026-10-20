@@ -613,7 +613,8 @@ export class Multiplayer {
         if (a) a.lastShot = performance.now();
         const o = new THREE.Vector3(...m.o);
         const e = new THREE.Vector3(...m.e);
-        this.ctx.effects.tracer(o, e);
+        if (GUNS[m.g]?.burn) this.ctx.effects.flames(o, e);
+        else this.ctx.effects.tracer(o, e);
         this.ctx.audio.shot(GUNS[m.g]?.sound || 'rifle', false, o);
         break;
       }

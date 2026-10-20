@@ -204,8 +204,8 @@ export const GUNS = {
   // special gear: admins only, or whoever an admin gives it to (shared/gear.js); never found on the map
   flamer: {
     id: 'flamer', name: 'Flamethrower', tier: 'legendary', icon: '🔥', special: true,
-    damage: 9, pellets: 2, fireRate: 16, mag: 150, reload: 3, reserve: Infinity, range: 16, burn: true,
-    spread: 0.07, auto: true, recoil: 0.002, kick: 0.08, zoomFov: 70, sound: 'flamer', reloadStyle: 'box', falloff: [8, 16],
+    damage: 9, pellets: 2, fireRate: 16, mag: 150, reload: 3, reserve: Infinity, range: 24, burn: true,
+    spread: 0.07, auto: true, recoil: 0.002, kick: 0.08, zoomFov: 70, sound: 'flamer', reloadStyle: 'box', falloff: [12, 24],
     hands: { grip: [0.005, -0.12, 0.12], fore: [-0.02, -0.1, -0.3] },
     ads: [0, -0.07, -0.34],
   },

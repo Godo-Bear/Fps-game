@@ -6,7 +6,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 // Faces +z like the characters.
 const URL = '/models/Mini Fantasy Tank by Maxwell Planck - 4XjRDOSpazi.glb';
 const LENGTH = 4.2; // metres long
-const ROT_Y = -Math.PI / 2; // turns the model so its barrel points down +z
+// turns the model so its hull and barrel point down +z (the model itself sits 34° off its own axes)
+const ROT_Y = -Math.PI / 2 + (34 * Math.PI) / 180;
 let template = null;
 let loading = null;
 

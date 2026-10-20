@@ -3829,3 +3829,15 @@ body.infected #game::after {
 .acard.closed > :not(h4) {
   display: none;
 }
+
+/* the access price, with the 6 months standing out */
+.price-tag { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 4px 10px; margin: 10px 0 12px; padding: 12px 16px; border: 2px solid #ffd34d; border-radius: 12px; background: linear-gradient(135deg, rgba(255, 211, 77, 0.16), rgba(255, 140, 40, 0.1)); text-align: center; }
+.price-tag .pt-price { font-family: 'Black Ops One', sans-serif; font-size: 34px; font-weight: 900; color: #fff; }
+.price-tag .pt-for { font-size: 18px; color: #e8dcc0; }
+.price-tag .pt-months { font-family: 'Black Ops One', sans-serif; font-size: 34px; font-weight: 900; color: #1a1205; background: #ffd34d; padding: 0 12px; border-radius: 8px; box-shadow: 0 0 18px rgba(255, 211, 77, 0.55); animation: pt-glow 2.2s ease-in-out infinite; }
+.price-tag .pt-months b { font-size: 44px; }
+.price-tag .pt-each { flex-basis: 100%; font-size: 13px; color: #ffe39a; }
+@keyframes pt-glow { 50% { box-shadow: 0 0 30px rgba(255, 211, 77, 0.9); } }
+.access-box .price-tag { justify-content: flex-start; margin: 4px 0 6px; padding: 8px 12px; }
+.access-box .price-tag .pt-price, .access-box .price-tag .pt-months { font-size: 24px; }
+.access-box .price-tag .pt-months b { font-size: 30px; }

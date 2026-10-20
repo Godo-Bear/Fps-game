@@ -7,6 +7,7 @@ import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
+import { priceTag } from '../shared/terms.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
 import { CHANGELOG, LATEST_VERSION, UPCOMING } from './changelog.js';
@@ -866,14 +867,13 @@ function traceBullet(origin, dir, primary) {
     impact = true;
     effects.dust(end);
   }
-  if (!end) end = origin.clone().addScaledVector(dir, 120);
+  if (!end) end = origin.clone().addScaledVector(dir, def.burn ? far : 120); // fire only reaches so far
   // explosive rounds: one blast per trigger pull, so shotguns don't nuke everything
   if (stats.explosive > 0 && impact && primary) explodeAt(end, 2.6 + (stats.explosive - 1) * 0.9, weapon.damage(stats) * 0.6 * Math.max(1, def.pellets / 3));
   const mut = weapon.mutation;
   if (def.burn) {
-    // flames instead of a tracer: a few licks of fire along the way
-    const t = 0.35 + Math.random() * 0.65;
-    effects.burst(_muzzle.clone().lerp(end, t), { count: 3, color: [0xff7a1a, 0xffc04a, 0xff4a1a], speed: 1.5, size: 0.28, life: 0.35, grav: -2, up: 0.6 });
+    // a jet of fire instead of a tracer, out to where it hits (once per trigger pull, not per pellet)
+    if (primary) effects.flames(_muzzle, end);
   } else if (!weapon.scoped) effects.tracer(_muzzle, end, mut ? MUTATIONS[mut].color : 0xffd27a);
   if (game.mode === 'mp' && primary) mp.reportShot(_muzzle, end);
 }
@@ -986,7 +986,7 @@ function chainLightning(from, point, dmg) {
     .slice(0, 2);
   for (const { o } of near) {
     const to = new THREE.Vector3(o.root.position.x, o.centerY, o.root.position.z);
-    effects.tracer(point, to, 0x5ff2ff, 0.05);
+    effects.tracer(point, to, 0x5ff2ff, 0.05, false);
     effects.sparks(to);
     o.lastHit = from.lastHit;
     if (zombies.damage(o, dmg, { slow: 0.3 })) killedBy(o, false, from.lastHit, null);
@@ -2661,15 +2661,19 @@ const _tpWant = new THREE.Vector3();
 const tpRay = new THREE.Raycaster();
 // The camera: third person in events, first person elsewhere, unless you switch it (P, the pause menu or Settings).
 // Aiming always goes to first person through your sights, like Fortnite; the tank is always third person.
-const wantThird = () => settings.view === 'third' || (settings.view !== 'first' && isEvent());
+// The switch is saved for the big update: only admins have it until one deploys it (admin panel).
+const canSwitchView = () => account.feature('view');
+const wantThird = () => (canSwitchView() && settings.view !== 'auto' ? settings.view === 'third' : isEvent());
 const thirdPerson = () => !player.dead && !spectate.on && (tank.on || (wantThird() && !(weapon.ads > 0.4 && !weapon.def.melee)));
 function toggleView() {
+  if (!canSwitchView()) return;
   settings.view = wantThird() ? 'first' : 'third';
   applySettings();
   renderViewBtn();
   banner(settings.view === 'third' ? '👁 THIRD PERSON' : '👁 FIRST PERSON', 'P to switch · aiming looks down your sights', 'gold', 1.2);
 }
 function renderViewBtn() {
+  $('pause-view').classList.toggle('hidden', !canSwitchView());
   $('pause-view').textContent = `👁 VIEW: ${wantThird() ? 'THIRD' : 'FIRST'} PERSON (P)`;
 }
 function tpCamera() {
@@ -2851,20 +2855,43 @@ function updateTank(dt) {
   tank.reload -= dt;
   let d = player.yaw + Math.PI - tank.yaw;
   d = Math.atan2(Math.sin(d), Math.cos(d));
-  tank.yaw += d * Math.min(1, dt * 4); // a heavy turret: it turns after your aim
+  tank.yaw += d * Math.min(1, dt * 7); // a heavy tank: it turns after your aim
   tank.g.position.copy(player.pos);
   tank.g.rotation.y = tank.yaw;
 }
 const _shellDir = new THREE.Vector3();
+const _shellAim = new THREE.Vector3();
+// what's under the crosshair: the first zombie, enemy, wall or bit of ground along your view, or far away
+function crosshairPoint(out, far = 300) {
+  camera.updateMatrixWorld();
+  camera.getWorldPosition(_origin);
+  camera.getWorldDirection(_dir);
+  raycaster.set(_origin, _dir);
+  raycaster.far = far;
+  let t = terrainHit(_origin, _dir, far);
+  for (const h of raycaster.intersectObjects(targets(), false)) {
+    if (h.distance > t) break;
+    const ud = h.object.userData;
+    if (ud.zombie && !ud.zombie.alive) continue;
+    if (ud.player !== undefined && (!mp.isAlive(ud.player) || !mp.isEnemy(ud.player))) continue;
+    t = h.distance;
+    break;
+  }
+  return out.copy(_origin).addScaledVector(_dir, Math.min(t, far));
+}
 function fireTank() {
   if (tank.reload > 0) return;
   tank.reload = 1.6;
-  camera.getWorldDirection(_shellDir);
   const mesh = new THREE.Mesh(shellGeo, shellMat);
   tank.g.updateMatrixWorld(true);
   tank.g.userData.muzzle.getWorldPosition(mesh.position);
+  // straight from the barrel to whatever is under the crosshair
+  crosshairPoint(_shellAim);
+  _shellDir.subVectors(_shellAim, mesh.position);
+  if (_shellDir.lengthSq() < 4) camera.getWorldDirection(_shellDir); // right up against something: just fire ahead
+  _shellDir.normalize();
   scene.add(mesh);
-  projectiles.push({ mesh, vel: _shellDir.clone().multiplyScalar(95), life: 4, radius: 7, gravity: 2, damage: 450 });
+  projectiles.push({ mesh, vel: _shellDir.clone().multiplyScalar(95), life: 4, radius: 7, gravity: 0, damage: 450 });
   effects.burst(mesh.position.clone(), { count: 18, color: [0xffd27a, 0xff7a1a, 0x555555], speed: 6, size: 0.3, life: 0.5, grav: 1, up: 1 });
   audio.shot('launcher', true);
   player.shake = Math.min(1, player.shake + 0.6);
@@ -4420,7 +4447,6 @@ const SETTING_ROWS = [
   ['tutorial', 'Tutorial wave for new games', 'check'],
   ['autoWaves', 'Start waves by themselves (no READY button)', 'check'],
   ['music', 'Music volume', 'range', 0, 1, 0.05],
-  ['view', 'Camera (P switches) · Auto: third person in events', 'select', ['auto', 'first', 'third']],
 ];
 // Gun position: move the gun on screen (aiming still lines it up in the middle)
 const GUN_ROWS = [
@@ -4451,12 +4477,13 @@ const MORE_SETTING_ROWS = [
   ['flashlight', 'Flashlight at night', 'check'],
   ['zombieModels', '3D zombie models (turn off on a slow computer for the old block zombies)', 'check'],
 ];
-const ALL_SETTING_ROWS = [...SETTING_ROWS, ...GUN_ROWS, ...MORE_SETTING_ROWS];
+const VIEW_ROW = ['view', 'Camera (P switches) · Auto: third person in events', 'select', ['auto', 'first', 'third']];
+const ALL_SETTING_ROWS = [...SETTING_ROWS, VIEW_ROW, ...GUN_ROWS, ...MORE_SETTING_ROWS];
 let showAllSettings = false;
 const CONTROL_LIST = [
   ['WASD / arrows', 'Move'], ['Mouse', 'Look'], ['Left click', 'Shoot'], ['Right click', 'Aim / scope'], ['R', 'Reload'], ['Shift', 'Sprint'],
   ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-8 / wheel', 'Switch gun'], ['Q', 'Last gun'], ['V', 'Knife stab'],
-  ['G', 'Throw grenade'], ['P', 'First / third person'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
+  ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
   ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];
 // Settings: how long your paid access has left, and what it costs
@@ -4476,7 +4503,7 @@ function accessBox() {
     const date = new Date(end).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
     status = `<b class="${days <= 14 ? 'acc-low' : ''}">${days} day${days === 1 ? '' : 's'} left</b> · until ${esc(date)}`;
   }
-  return `<div class="access-box"><div><span class="muted small">YOUR ACCESS</span><div>${status}</div></div><div><span class="muted small">FEE</span><div><b>${fee}</b>, ${esc(c.payNote || 'paid cash in hand to the site owner')}</div></div></div>`;
+  return `<div class="access-box"><div><span class="muted small">YOUR ACCESS</span><div>${status}</div></div><div><span class="muted small">FEE</span>${priceTag(price, months)}<div class="muted small">${fee}, ${esc(c.payNote || 'paid cash in hand to the site owner')}</div></div></div>`;
 }
 
 function openSettings() {
@@ -4489,7 +4516,7 @@ function openSettings() {
     if (type === 'select') input = `<select data-k="${k}">${a.map((o) => `<option ${o === v ? 'selected' : ''} value="${o}">${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}</select>`;
     return `<label class="s-row"><span>${label}</span><span class="s-in">${input}</span></label>`;
   };
-  $('settings-body').innerHTML = `${accessBox()}${SETTING_ROWS.map(row).join('')}
+  $('settings-body').innerHTML = `${accessBox()}${SETTING_ROWS.map(row).join('')}${canSwitchView() ? row(VIEW_ROW) : ''}
     <div class="gun-pos"><h4>🔫 Gun position</h4>
       <div class="gun-presets">${Object.entries(GUN_PRESETS).map(([id, p]) => `<button class="chipbtn" data-gunpos="${id}">${p[0]}</button>`).join('')}</div>
       ${GUN_ROWS.map(row).join('')}
@@ -4499,7 +4526,7 @@ function openSettings() {
       <h4>More settings</h4>
       ${MORE_SETTING_ROWS.map(row).join('')}
       <h4>Controls</h4>
-      <div class="s-controls">${CONTROL_LIST.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>
+      <div class="s-controls">${[...CONTROL_LIST, ...(canSwitchView() ? [['P', 'First / third person']] : [])].map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>
       <p class="muted small">Controller and touch controls are in How to Play.</p>
     </div>
     <details class="pay-terms settings-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(account.cfg?.price || '$2', account.cfg?.payNote || 'paid cash in hand to the site owner', account.cfg?.months === undefined ? 6 : Number(account.cfg.months) || 0)}</details>`;
@@ -5308,7 +5335,7 @@ if (import.meta.env.DEV) {
       return savedGames;
     },
     bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio }); },
-    get wolf() { return myWolf; }, wolfHunt, ev, worldTick, isEvent, tank,
+    get wolf() { return myWolf; }, wolfHunt, effects, ev, worldTick, isEvent, tank,
     game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }
