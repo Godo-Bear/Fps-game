@@ -4347,7 +4347,7 @@ const CONTROL_LIST = [
 function accessBox() {
   const c = account.cfg || {};
   if (!account.paywall) return '';
-  const price = esc(c.price || '$3');
+  const price = esc(c.price || '$2');
   const months = c.months === undefined ? 6 : Number(c.months) || 0;
   const fee = months ? `${price} for every ${months} months` : `${price} once, yours forever`;
   let status;
@@ -4386,7 +4386,7 @@ function openSettings() {
       <div class="s-controls">${CONTROL_LIST.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>
       <p class="muted small">Controller and touch controls are in How to Play.</p>
     </div>
-    <details class="pay-terms settings-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(account.cfg?.price || '$3', account.cfg?.payNote || 'paid cash in hand to the site owner', account.cfg?.months === undefined ? 6 : Number(account.cfg.months) || 0)}</details>`;
+    <details class="pay-terms settings-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(account.cfg?.price || '$2', account.cfg?.payNote || 'paid cash in hand to the site owner', account.cfg?.months === undefined ? 6 : Number(account.cfg.months) || 0)}</details>`;
   $('settings-all').addEventListener('click', () => {
     showAllSettings = !showAllSettings;
     openSettings();

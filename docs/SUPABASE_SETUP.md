@@ -4,7 +4,7 @@ How it works once it's set up:
 
 1. A player signs up on the game with their **email + password** (Supabase handles this).
 2. Supabase makes a row for them in a table called **profiles** with `has_paid = FALSE`.
-3. The game shows them the **"Almost there"** screen ($3 for every 6 months, paid cash in hand, no refunds).
+3. The game shows them the **"Almost there"** screen ($2 for every 6 months, paid cash in hand, no refunds).
 4. They pay you. You open the **profiles** table in Supabase and switch their `has_paid` to **TRUE**.
    Also set `paid_until` to the date 6 months from today, so their access ends when their 6 months are up.
 5. They press **"I've paid — check again"**, pick a player name, and they're in.
@@ -40,7 +40,7 @@ create table public.profiles (
   email text,
   has_paid boolean not null default false,
   paid_until date,               -- optional: the day their membership ends
-  note text,                     -- optional: e.g. "paid $3 cash 15 Oct"
+  note text,                     -- optional: e.g. "paid $2 cash 15 Oct"
   created_at timestamptz not null default now()
 );
 
@@ -106,7 +106,7 @@ are what keep `has_paid` locked). **Never** use the `service_role` / **Secret** 
    | --- | --- | --- |
    | Secret | `SUPABASE_URL` | the Project URL from step 4 |
    | Secret | `SUPABASE_ANON_KEY` | the anon / publishable key from step 4 |
-   | Secret (optional) | `PAY_PRICE` | `$3` (that's the default) |
+   | Secret (optional) | `PAY_PRICE` | `$2` (that's the default) |
    | Secret (optional) | `PAY_MONTHS` | `6` (that's the default; `0` means pay once, forever) |
    | Secret (optional) | `PAY_NOTE` | `paid cash in hand to the site owner` (default) |
 
@@ -137,7 +137,7 @@ they link their old player name to keep their progress.
 4. Set **paid_until** to 6 months from today (e.g. paid on 16 Oct 2026 → `2027-04-16`). When that day passes,
    the game shows them "Access ended". When they pay again, set a new date 6 months on.
    (Leave it empty and their access never ends.)
-5. Optional: write something in **note** like `$3 cash 15 Oct`.
+5. Optional: write something in **note** like `$2 cash 15 Oct`.
 6. Tell them to press **I've paid — check again**.
 
 To take someone's access away: set **has_paid** to **FALSE**. They're locked out the next time they

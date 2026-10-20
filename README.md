@@ -199,7 +199,7 @@ and health packs around the map heal 40 HP (they come back 30 seconds later).
 Press Esc for the pause menu with **Resume** and **Exit**.
 
 ### Accounts, friends and progress
-- **Paid access (optional, $3 for every 6 months):** with Supabase set up, players sign up by email and you switch them on by setting `has_paid` to TRUE. Full step-by-step guide: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
+- **Paid access (optional, $2 for every 6 months):** with Supabase set up, players sign up by email and you switch them on by setting `has_paid` to TRUE. Full step-by-step guide: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
 - **You need a free account to play** (username + password). PLAY asks you to sign up or log in first.
 - **You need an account to play** (no guests): the site opens on sign up / log in, and rooms refuse anyone without one.
 - **AI bots** (normal difficulty) fill PvP matches: quick join with nobody around starts a TDM against bots, and hosts can set bots in the lobby (0/2/4/6/8 players). The host's game moves the bots; the server keeps score as usual.

@@ -1,5 +1,5 @@
 // Terms & Conditions: shown in Settings and on the sign-up screens.
-export function termsHtml(price = '$3', note = 'paid cash in hand to the site owner', months = 6) {
+export function termsHtml(price = '$2', note = 'paid cash in hand to the site owner', months = 6) {
   return `
     <p><b>Price.</b> ${
       months

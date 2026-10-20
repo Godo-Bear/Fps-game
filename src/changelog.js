@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.32', date: '20 Oct 2026', title: 'Cheaper access: $2',
+    items: [
+      'Access to War Grounds is now $2 for every 6 months (was $3), paid to the owner.',
+    ],
+  },
+  {
     v: '5.31', date: '20 Oct 2026', title: 'Fix: set waves are saved',
     items: [
       'Admin: SET WAVE (and SET SCORE, SET SCRAP, SET GRENADES) now save your game straight away, so continuing it later picks up at the new wave.',

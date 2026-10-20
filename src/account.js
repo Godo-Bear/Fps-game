@@ -961,7 +961,7 @@ export class AccountUI {
     const a = this.account;
     const c = a.cfg || {};
     const g = a.gate;
-    const price = esc(c.price || '$3');
+    const price = esc(c.price || '$2');
     const months = c.months === undefined ? 6 : Number(c.months) || 0;
     // what you pay: every few months (or once and forever, if the owner sets PAY_MONTHS to 0)
     const deal = months ? `${price} for every ${months} months` : `a one-time ${price}, yours forever`;
