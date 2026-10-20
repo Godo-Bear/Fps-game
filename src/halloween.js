@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // Halloween: decorations for the maps and the zombies while the admin's Halloween event is on (admin panel →
 // Events), or for an admin previewing it. Nothing here shows otherwise.
@@ -6,7 +7,92 @@ let live = false;
 export const isHalloween = () => live;
 export function setHalloween(on) {
   live = !!on;
+  if (live) loadHalloweenModels();
 }
+
+// ---- the owner's Halloween models (public/models). Until one has loaded, a simple shape stands in, and
+// swaps to the model as soon as it arrives. Each is fitted to a box: `fit` is the size (metres) of its
+// widest side, or its height with `tall`; `center` puts its middle (not its bottom) at 0.
+const MODELS = {
+  pumpkin: { url: '/models/Pumpkin by CreativeTrio - XYPzyxSw3c.glb', fit: 2, center: true },
+  grave: { url: '/models/Grave by Kay Lousberg - znGrV0V80y.glb', fit: 1.25, tall: true },
+  cauldron: { url: '/models/Cauldron by Quaternius - QaWJOPa6Gt.glb', fit: 1.6 },
+  scarecrow: { url: '/models/Scarecrow by Poly by Google - 7qFs_DjjuVp.glb', fit: 3, tall: true },
+  scythe: { url: '/models/Scythe by Quaternius - yE9TKCewO8.glb', fit: 1, tall: true, center: true },
+  hat: { url: '/models/Wizard hat by Poly by Google - 7VVumyY7L_u.glb', fit: 1 },
+};
+const templates = {};
+const waiting = {}; // model name -> groups still showing their stand-in
+let loading = null;
+export function loadHalloweenModels() {
+  if (!loading)
+    loading = Promise.all(
+      Object.entries(MODELS).map(([name, m]) =>
+        new GLTFLoader()
+          .loadAsync(encodeURI(m.url))
+          .then((gltf) => {
+            const scene = gltf.scene;
+            scene.traverse((o) => {
+              if (!o.isMesh) return;
+              o.castShadow = true;
+              o.userData.shared = true; // kept when a map is thrown away
+            });
+            const holder = new THREE.Group();
+            holder.add(scene);
+            holder.updateMatrixWorld(true);
+            let box = new THREE.Box3().setFromObject(holder);
+            const size = box.getSize(new THREE.Vector3());
+            holder.scale.setScalar(m.fit / ((m.tall ? size.y : Math.max(size.x, size.z)) || 1));
+            holder.updateMatrixWorld(true);
+            box = new THREE.Box3().setFromObject(holder);
+            const c = box.getCenter(new THREE.Vector3());
+            scene.position.sub(new THREE.Vector3(c.x, m.center ? c.y : box.min.y, c.z).divideScalar(holder.scale.x));
+            templates[name] = holder;
+            // everything already out with a stand-in gets the model now
+            for (const g of waiting[name] || []) swapIn(g, name);
+            waiting[name] = [];
+          })
+          .catch(() => {}),
+      ),
+    );
+  return loading;
+}
+function swapIn(g, name) {
+  for (const c of [...g.children]) if (c.userData.standIn) g.remove(c);
+  g.add(templates[name].clone(true));
+}
+// a group showing the model (or its stand-in until the model has loaded)
+function slot(name, standIn) {
+  const g = new THREE.Group();
+  if (templates[name]) g.add(templates[name].clone(true));
+  else {
+    const s = standIn();
+    s.userData.standIn = true;
+    g.add(s);
+    (waiting[name] ||= []).push(g);
+    loadHalloweenModels();
+  }
+  return g;
+}
+export const graveModel = (standIn) => slot('grave', standIn);
+export const cauldronModel = (standIn) => slot('cauldron', standIn);
+export const scarecrowModel = (standIn) => slot('scarecrow', standIn);
+// a scythe about 1 m long (scale it), blade at the top
+export const scythe = () => slot('scythe', () => {
+  const g = new THREE.Group();
+  const pole = mesh(new THREE.BoxGeometry(0.04, 1, 0.04), MAT.stem);
+  g.add(pole);
+  return g;
+});
+// a witch's hat 1 m across (scale it)
+export const witchHat = () => slot('hat', () => {
+  const g = new THREE.Group();
+  const brim = mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.04, 12), MAT.bat);
+  const cone = mesh(new THREE.ConeGeometry(0.28, 0.6, 10), MAT.bat);
+  cone.position.y = 0.3;
+  g.add(brim, cone);
+  return g;
+});
 
 // shared shapes and colours (marked shared so a map being thrown away doesn't dispose them)
 const lam = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true, ...o });
@@ -39,6 +125,7 @@ const GEO = {
     return g;
   })(),
   batBody: new THREE.SphereGeometry(0.12, 6, 4),
+  inner: new THREE.SphereGeometry(1, 8, 6),
 };
 const mesh = (geo, mat) => {
   const m = new THREE.Mesh(geo, mat);
@@ -46,8 +133,22 @@ const mesh = (geo, mat) => {
   return m;
 };
 
-// A carved pumpkin (faces +z), `size` metres across. light: a little orange glow inside.
+// A carved pumpkin (faces +z), `size` metres across, its middle at 0. light: a real orange light inside
+// (they cost, so only a few). The owner's pumpkin model once it's loaded, with a glow showing through the face.
 export function jackOLantern(size = 0.6, { light = false, carved = true } = {}) {
+  const g = slot('pumpkin', () => blockPumpkin(carved));
+  const inner = mesh(GEO.inner, MAT.face);
+  inner.scale.setScalar(0.62);
+  g.add(inner);
+  if (light) {
+    const l = new THREE.PointLight(0xff8a2a, 2.2, 9, 2);
+    l.position.y = 0.2;
+    g.add(l);
+  }
+  g.scale.setScalar(size / 2);
+  return g;
+}
+function blockPumpkin(carved) {
   const g = new THREE.Group();
   const body = mesh(GEO.pumpkin, Math.random() < 0.5 ? MAT.pumpkin : MAT.pumpkinDark);
   body.scale.set(1, 0.8, 1);
@@ -80,12 +181,6 @@ export function jackOLantern(size = 0.6, { light = false, carved = true } = {}) 
       g.add(t);
     }
   }
-  if (light) {
-    const l = new THREE.PointLight(0xff8a2a, 2.2, 9, 2);
-    l.position.y = 0.2;
-    g.add(l);
-  }
-  g.scale.setScalar(size / 2);
   return g;
 }
 

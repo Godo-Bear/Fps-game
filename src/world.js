@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { bat, ghost, glowMat, jackOLantern, sharedMesh } from './halloween.js';
+import { bat, cauldronModel, ghost, glowMat, graveModel, jackOLantern, scarecrowModel, sharedMesh } from './halloween.js';
 import { DEFEND_POINTS, FFA_SPAWNS, FLAG_BASES, POINT, TEAM_SPAWNS } from '../shared/modes.js';
 import { ARENA_RADIUS, Colliders, heightAt, mulberry32, setTerrain } from './terrain.js';
 import { GROUND_PALETTES, grimeTexture, groundTexture, planksTexture, roadTexture, softDotTexture, textTexture } from './textures.js';
@@ -896,19 +896,45 @@ export function buildWorld(scene, mapId = 'plains', { ads = true, halloween = fa
     // little graveyards
     let yards = 0;
     scatter(3, 7, (x, z) => {
-      graveyard(x, z, rand(0, PI), 2, 4);
+      // two rows of the owner's gravestones (a plain stone until the model has loaded)
+      const g = new THREE.Group();
+      const rot = rand(0, PI);
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 4; c++) {
+          if (rng() < 0.15) continue;
+          const stone = graveModel(() => {
+            const b = box(0.7, 1.1, 0.2, M.stone);
+            b.position.y = 0.55;
+            return b;
+          });
+          stone.position.set((c - 1.5) * 2.2 + rand(-0.2, 0.2), 0, (r - 0.5) * 2.6);
+          stone.rotation.set(rand(-0.06, 0.06), rand(-0.15, 0.15), rand(-0.06, 0.06));
+          g.add(stone);
+          const col = box(0.9, 1.2, 0.5);
+          col.visible = false;
+          col.position.copy(stone.position).setY(0.6);
+          col.userData.collide = true;
+          g.add(col);
+        }
+      }
+      at(g, x, z, rot, -0.05);
+      reserve(x, z, 6.5);
       at(jackOLantern(0.6), x + 3, z + 3, rand(0, PI * 2), 0.22);
       yards++;
     }, 30, ARENA_RADIUS - 12);
     // cauldrons bubbling green
     scatter(2, 2.5, (x, z) => {
       const g = new THREE.Group();
-      const pot = cyl(0.75, 0.55, 0.9, M.metalDark, 12);
-      pot.position.y = 0.45;
-      g.add(solid(pot));
+      g.add(cauldronModel(() => {
+        const pot = cyl(0.75, 0.55, 0.9, M.metalDark, 12);
+        pot.position.y = 0.45;
+        return pot;
+      }));
+      proxy(g, 1.4, 1, 1.4, 0, 0.5, 0);
       const brew = sharedMesh(HW.brew, glowMat('green'));
       brew.rotation.x = -PI / 2;
-      brew.position.y = 0.86;
+      brew.position.y = 0.97; // just under the rim of the owner's cauldron
+      brew.scale.setScalar(0.82);
       g.add(brew);
       const light = new THREE.PointLight(0x7dff3a, 2, 7, 2);
       light.position.y = 1.4;
@@ -923,7 +949,7 @@ export function buildWorld(scene, mapId = 'plains', { ads = true, halloween = fa
       updaters.push((dt, t) => {
         for (const b of bubbles) {
           const k = (t * 0.6 + b.userData.off) % 1;
-          b.position.set(Math.sin(b.userData.off * 9) * 0.4, 0.9 + k * 0.6, Math.cos(b.userData.off * 7) * 0.4);
+          b.position.set(Math.sin(b.userData.off * 9) * 0.35, 1 + k * 0.6, Math.cos(b.userData.off * 7) * 0.35);
           b.scale.setScalar(1 - k);
         }
       });
@@ -933,16 +959,20 @@ export function buildWorld(scene, mapId = 'plains', { ads = true, halloween = fa
     // pumpkin-head scarecrows
     scatter(3, 1.5, (x, z) => {
       const g = new THREE.Group();
-      const pole = box(0.12, 2.4, 0.12, M.wood);
-      pole.position.y = 1.2;
-      const arms = box(1.7, 0.1, 0.1, M.wood);
-      arms.position.y = 1.85;
-      const coat = box(0.65, 0.85, 0.32, M.darkWood);
-      coat.position.y = 1.65;
-      g.add(pole, arms, coat);
-      const head = jackOLantern(0.6);
-      head.position.y = 2.35;
-      g.add(head);
+      g.add(scarecrowModel(() => {
+        const s = new THREE.Group();
+        const pole = box(0.12, 2.4, 0.12, M.wood);
+        pole.position.y = 1.2;
+        const arms = box(1.7, 0.1, 0.1, M.wood);
+        arms.position.y = 1.85;
+        const coat = box(0.65, 0.85, 0.32, M.darkWood);
+        coat.position.y = 1.65;
+        const head = jackOLantern(0.6);
+        head.position.y = 2.35;
+        s.add(pole, arms, coat, head);
+        return s;
+      }));
+      proxy(g, 0.4, 2.8, 0.4, 0, 1.4, 0);
       at(g, x, z, faceIn(x, z));
       reserve(x, z, 1);
     }, 20, 80);

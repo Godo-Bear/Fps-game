@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ARENA_RADIUS, heightAt } from './terrain.js';
 import { animateZombieModel, attachZombieModel, decapitateZombieModel, hasDeathClip } from './zombieModel.js';
-import { isHalloween, jackOLantern } from './halloween.js';
+import { isHalloween, jackOLantern, scythe, witchHat } from './halloween.js';
 
 // Boss waves (every 5th) bring one of these. Each has its own trick.
 export const BOSSES = {
@@ -190,10 +190,16 @@ class Zombie {
     head.add(jaw);
     this.jaw = jaw;
     // Halloween: some wear a jack-o'-lantern (every boss does)
-    if (isHalloween() && (variant || Math.random() < 0.4)) {
+    const roll = Math.random();
+    if (isHalloween() && (variant || roll < 0.4)) {
       const p = jackOLantern(variant ? 0.75 : 0.55, { light: !!variant });
       p.position.y = 0.05;
       head.add(p);
+    } else if (isHalloween() && roll < 0.7) {
+      const h = witchHat();
+      h.scale.setScalar(0.6);
+      h.position.y = 0.18;
+      head.add(h);
     }
 
     this.armL = new THREE.Group();
@@ -202,6 +208,12 @@ class Zombie {
     this.armR.position.set(T.bloated ? 0.55 : 0.37, 0.64, 0);
     this.armL.add(part(GEO.arm, this.skinMat, 'body'));
     if (Math.random() > 0.12 || typeId === 'boss' || T.crawl) this.armR.add(part(GEO.arm, this.skinMat, 'body'));
+    if (isHalloween() && variant) {
+      const sc = scythe();
+      sc.scale.setScalar(1.8);
+      sc.position.set(0, -0.55, 0.15);
+      this.armR.add(sc);
+    }
     upper.add(this.armL, this.armR);
     this.armDroop = !T.crawl && Math.random() < 0.25 ? 1 : 0;
 

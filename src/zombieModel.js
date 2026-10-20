@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { isHalloween, jackOLantern } from './halloween.js';
+import { isHalloween, jackOLantern, scythe, witchHat } from './halloween.js';
 
 // The owner's zombie models (public/models). Every zombie gets its own copy with its own animations;
 // the old block zombie stays underneath, invisible, so hits and headshots work exactly as before.
@@ -467,12 +467,32 @@ function dressUp(z, b) {
     );
   }
   // Halloween: a jack-o'-lantern over the head instead of a hat (on some of them, and every boss: a big one)
-  const pumpkin = isHalloween() && (BV || Math.random() < 0.4);
-  if (pumpkin) onHead(jackOLantern(r * (BV ? 3.4 : 2.7), { light: !!BV }), topY - hh * 0.55);
+  // (wrapped: wear() sets the scale of what it's given, the thing inside keeps its own)
+  const wrap = (obj) => {
+    const g = new THREE.Group();
+    g.add(obj);
+    return g;
+  };
+  const roll = Math.random();
+  const pumpkin = isHalloween() && (BV || roll < 0.4);
+  if (pumpkin) onHead(wrap(jackOLantern(r * (BV ? 3.4 : 2.7), { light: !!BV })), topY - hh * 0.55);
+  const witch = isHalloween() && !pumpkin && roll < 0.7;
+  if (witch) {
+    const h = witchHat();
+    h.scale.setScalar(r * 2.6);
+    onHead(wrap(h), topY - hh * 0.3);
+  }
+  // bosses carry the reaper's scythe
+  if (isHalloween() && BV && b.RightHand) {
+    const s = scythe();
+    s.scale.setScalar(1.9);
+    s.rotation.set(Math.PI / 2, 0, 0);
+    wear(z, b.RightHand, wrap(s), 0, 0.05, 0);
+  }
   // police wear their caps and workers their hard hats; everyone else maybe something random
   const outfitHat = { police: 1, hardhat: 0 }[z.model.outfit?.hat];
-  if (pumpkin) {
-    // (no hat over the pumpkin)
+  if (pumpkin || witch) {
+    // (no other hat on top)
   } else if (hats.length && outfitHat !== undefined && Math.random() < 0.8) {
     const [hat, y] = hats[outfitHat]();
     onHead(hat, y);
@@ -488,7 +508,7 @@ function dressUp(z, b) {
   // the marks of each kind
   if (T === 'runner') {
     // a sweatband: built for speed
-    if (!pumpkin) onHead(piece(GEAR.band, pick([0xff3020, 0xffffff, 0xffd020]), r * 1.06, r * 0.2, r * 1.1), topY - hh * 0.28);
+    if (!pumpkin && !witch) onHead(piece(GEAR.band, pick([0xff3020, 0xffffff, 0xffd020]), r * 1.06, r * 0.2, r * 1.1), topY - hh * 0.28);
   }
   if (T === 'brute' || BV === 'juggernaut') {
     // armour on the shoulders and chest
@@ -499,7 +519,7 @@ function dressUp(z, b) {
       wear(z, back, pad, sx * 0.19, 0.16, 0);
     }
     wear(z, back, piece(GEAR.box, steel, 0.34, 0.26, 0.05), 0, 0.02, 0.14);
-    if (!pumpkin && (BV === 'juggernaut' || Math.random() < 0.4)) onHead(piece(GEAR.half, steel, r * 1.12, r * 0.9, r * 1.18), topY - hh * 0.3);
+    if (!pumpkin && !witch && (BV === 'juggernaut' || Math.random() < 0.4)) onHead(piece(GEAR.half, steel, r * 1.12, r * 0.9, r * 1.18), topY - hh * 0.3);
   }
   if (T === 'spitter') {
     // a swollen glowing sac on the throat
