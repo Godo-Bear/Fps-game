@@ -2,6 +2,17 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.36', date: '20 Oct 2026', title: '🎥 Third person, done properly',
+    items: [
+      'Characters now hold their gun in both hands, tucked against the chest (not floating or off to the side), like Fortnite, and it points where they look. The gun never goes through their body.',
+      'Crouching bends the knees, sliding sits back with one leg out, and running backwards or sideways has its own animation.',
+      'Feet stand on the ground, on slopes too, so legs no longer sink into it.',
+      'Aiming in third person goes to first person through your sights.',
+      'New: switch between first and third person with P, the button in the pause menu, or Settings → Camera. Auto is third person in events and first person everywhere else.',
+      'Admin: a Camera card in the Game tab.',
+    ],
+  },
+  {
     v: '5.35', date: '20 Oct 2026', title: 'Admin: a cleaner panel',
     items: [
       'Admin: the panel is easier to read. Bigger tabs, clear headings with a short note under each, and every section folds away (click its heading). It remembers which ones you opened.',

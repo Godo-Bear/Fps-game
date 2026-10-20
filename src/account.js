@@ -1466,6 +1466,8 @@ export class AccountUI {
       <div class="acard"><h4>🧟 Zombie look <span class="muted small">(yours; new zombies change)</span></h4>
         <div class="admin-grid"><button class="btn small ghost" data-run="lineup" ${solo || mp ? '' : 'disabled'}>👀 SPAWN ONE OF EVERY KIND</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-zmodel">${act?.zombieModels?.() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL'}</button></div></div>
+      <div class="acard"><h4>🎥 Camera <span class="muted small">(yours: P switches it in a game too)</span></h4>
+        <div class="admin-grid"><button class="btn small ghost" id="admin-view">${act?.viewName ? `VIEW: ${act.viewName()} · SWITCH` : 'SWITCH VIEW'}</button></div></div>
       <div class="acard"><h4>🛡️ Special gear <span class="muted small">(admins only: nobody else has it unless you give it to them, with MANAGE in the Players tab)</span></h4>
         <div class="admin-grid">${SPECIAL_GEAR.map((g) => (a.items[g.item] ? `<button class="btn small ghost" data-mygear="${g.id}" data-on="0">${g.icon} ${g.name.toUpperCase()} ✓ (REMOVE)</button>` : `<button class="btn small" data-mygear="${g.id}" data-on="1">${g.icon} GET THE ${g.name.toUpperCase()}</button>`)).join('')}</div>
         <p class="muted small">The flamethrower and bazooka come into every game you start (unlimited ammo). Press <b>H</b> in a game to get in or out of the tank: WASD to drive, click to fire the cannon; you take a quarter of the damage inside.</p></div>
@@ -1818,6 +1820,11 @@ export class AccountUI {
     if (zm) zm.onclick = () => {
       msg(act.toggleZombieModels());
       zm.textContent = act.zombieModels() ? '3D MODEL ON · SWITCH TO BLOCKS' : 'BLOCKS ON · SWITCH TO 3D MODEL';
+    };
+    const vw = document.getElementById('admin-view');
+    if (vw) vw.onclick = () => {
+      msg(act.toggleView());
+      vw.textContent = `VIEW: ${act.viewName()} · SWITCH`;
     };
     const vb = document.getElementById('admin-version');
     if (vb) vb.onclick = async () => msg(await act.checkVersion());

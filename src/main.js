@@ -17,7 +17,7 @@ import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../sha
 import { Effects } from './effects.js';
 import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, setArmLook, randomMutation, rollGun } from './guns.js';
 import { Minimap } from './minimap.js';
-import { Avatar, Multiplayer } from './multiplayer.js';
+import { Avatar, FLAG_BITS, Multiplayer } from './multiplayer.js';
 import { DROP_CHANCE, EVENT_MAX_PLAYERS, PIECE_COUNT, totalPieces } from '../shared/events.js';
 import { TANK_ARMOUR, ownsGear } from '../shared/gear.js';
 import { buildTank, loadTankModel, tankModelReady } from './tank.js';
@@ -2367,6 +2367,7 @@ function pauseFor(title, text) {
   $('pause').querySelector('p').textContent = text;
   $('quit-btn').textContent = game.mode === 'mp' ? 'EXIT MATCH' : 'EXIT TO MENU';
   $('resume-btn').textContent = title === 'PAUSED' ? 'RESUME' : 'PLAY';
+  renderViewBtn();
   showOnly('pause');
 }
 
@@ -2658,7 +2659,19 @@ const _tpDir = new THREE.Vector3();
 const _tpRight = new THREE.Vector3();
 const _tpWant = new THREE.Vector3();
 const tpRay = new THREE.Raycaster();
-const thirdPerson = () => (isEvent() || tank.on) && !player.dead && !spectate.on;
+// The camera: third person in events, first person elsewhere, unless you switch it (P, the pause menu or Settings).
+// Aiming always goes to first person through your sights, like Fortnite; the tank is always third person.
+const wantThird = () => settings.view === 'third' || (settings.view !== 'first' && isEvent());
+const thirdPerson = () => !player.dead && !spectate.on && (tank.on || (wantThird() && !(weapon.ads > 0.4 && !weapon.def.melee)));
+function toggleView() {
+  settings.view = wantThird() ? 'first' : 'third';
+  applySettings();
+  renderViewBtn();
+  banner(settings.view === 'third' ? '👁 THIRD PERSON' : '👁 FIRST PERSON', 'P to switch · aiming looks down your sights', 'gold', 1.2);
+}
+function renderViewBtn() {
+  $('pause-view').textContent = `👁 VIEW: ${wantThird() ? 'THIRD' : 'FIRST'} PERSON (P)`;
+}
 function tpCamera() {
   ev.tp.dist = 0;
   if (!thirdPerson()) return;
@@ -2681,11 +2694,13 @@ function tpCamera() {
   ev.tp.dist = _tpWant.distanceTo(eye);
   camera.position.copy(_tpWant);
 }
-// your own character (the same one other players see), shown in events
+// your own character (the same one other players see), shown in third person
 function updateMyAvatar(dt) {
-  const show = isEvent() && ['playing', 'paused', 'choosing'].includes(game.state);
-  const look = account.profile.look;
-  const key = show ? `${mp.myTeam}|${JSON.stringify(look)}` : '';
+  const show = (isEvent() || wantThird()) && ['playing', 'paused', 'choosing'].includes(game.state);
+  // the 3D characters: in events, or once they're out (admins see the preview); otherwise the block one
+  const look = isEvent() || CHARACTERS_LIVE || account.admin ? account.profile.look : null;
+  const team = game.mode === 'mp' && mp.inMatch ? mp.myTeam : null;
+  const key = show ? `${team}|${JSON.stringify(look)}` : '';
   if (ev.myAvatar && ev.avatarKey !== key) {
     scene.remove(ev.myAvatar.root);
     ev.myAvatar.dispose();
@@ -2694,7 +2709,7 @@ function updateMyAvatar(dt) {
   ev.avatarKey = key;
   if (!show) return;
   if (!ev.myAvatar) {
-    ev.myAvatar = new Avatar({ id: -1, name: account.name, look }, mp.myTeam === 'blue' ? 0x2f6fd0 : 0xc0392b, true);
+    ev.myAvatar = new Avatar({ id: -1, name: account.name, look }, team === 'blue' ? 0x2f6fd0 : 0xc0392b, !!team);
     ev.myAvatar.fresh = true;
     scene.add(ev.myAvatar.root);
   }
@@ -2704,9 +2719,11 @@ function updateMyAvatar(dt) {
   a.pitch = player.pitch;
   a.alive = !player.dead;
   a.setGun(weapon.def.id);
-  a.update(dt, 0);
+  const F = FLAG_BITS;
+  a.update(dt, (player.sliding ? F.slide : player.crouching ? F.crouch : 0) | (weapon.ads > 0.5 ? F.aim : 0));
   a.label.visible = false;
-  a.root.visible = (!player.dead || !!a.model) && !tank.on; // inside the tank you can't see yourself
+  // hidden while you look through your sights (first person) and inside the tank
+  a.root.visible = (thirdPerson() || (player.dead && !!a.model && isEvent())) && !tank.on;
 }
 
 // the Join Event button (Multiplayer, under the room code): lit up while the admin's event is on, greyed out otherwise
@@ -3941,6 +3958,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyG') throwGrenade();
   if (e.code === 'KeyF') useShield();
   if (e.code === 'KeyH') toggleTank();
+  if (e.code === 'KeyP') toggleView();
   const digit = /^Digit([1-9])$/.exec(e.code);
   if (digit) weapon.equip(Number(digit[1]) - 1);
 });
@@ -4348,6 +4366,8 @@ const DEFAULT_SETTINGS = {
   hudScale: 1, crosshairSize: 1, minimap: true, chat: true, hitmarkers: true, shake: 1, bob: true, toggleAim: false, bubbles: true, flashlight: true,
   // where the gun sits on screen (0 = the normal spot)
   gunX: 0, gunY: 0, gunZ: 0,
+  // camera: auto (third person in events), first or third
+  view: 'auto',
   zombieModels: true,
 };
 const settings = { ...DEFAULT_SETTINGS };
@@ -4400,6 +4420,7 @@ const SETTING_ROWS = [
   ['tutorial', 'Tutorial wave for new games', 'check'],
   ['autoWaves', 'Start waves by themselves (no READY button)', 'check'],
   ['music', 'Music volume', 'range', 0, 1, 0.05],
+  ['view', 'Camera (P switches) · Auto: third person in events', 'select', ['auto', 'first', 'third']],
 ];
 // Gun position: move the gun on screen (aiming still lines it up in the middle)
 const GUN_ROWS = [
@@ -4435,7 +4456,7 @@ let showAllSettings = false;
 const CONTROL_LIST = [
   ['WASD / arrows', 'Move'], ['Mouse', 'Look'], ['Left click', 'Shoot'], ['Right click', 'Aim / scope'], ['R', 'Reload'], ['Shift', 'Sprint'],
   ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-8 / wheel', 'Switch gun'], ['Q', 'Last gun'], ['V', 'Knife stab'],
-  ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
+  ['G', 'Throw grenade'], ['P', 'First / third person'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
   ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];
 // Settings: how long your paid access has left, and what it costs
@@ -4510,6 +4531,10 @@ $('settings-reset').addEventListener('click', () => {
 $('settings-close').addEventListener('click', () => hidePage('settings'));
 $('settings').addEventListener('click', (e) => {
   if (e.target === $('settings') && !$('settings').classList.contains('docked')) hidePage('settings');
+});
+$('pause-view').addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleView();
 });
 for (const id of ['settings-btn', 'pause-settings']) {
   $(id).addEventListener('click', (e) => {
@@ -4596,6 +4621,12 @@ accountUI.adminActions = {
     if (live === BUILD) return 'You have the newest version. Everyone else gets moved onto it within a minute of it going live.';
     versionWatch.check();
     return 'A newer version is live: restarting…';
+  },
+  viewName: () => (wantThird() ? 'THIRD PERSON' : 'FIRST PERSON'),
+  toggleView() {
+    settings.view = wantThird() ? 'first' : 'third';
+    applySettings();
+    return wantThird() ? 'Third person (aiming still goes through your sights).' : 'First person.';
   },
   zombieModels: () => settings.zombieModels,
   toggleZombieModels() {

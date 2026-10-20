@@ -3,7 +3,7 @@ import { GUN_LADDERS, INFECTED, MAPS, MODES, MODE_SETTINGS, MP_MAPS, FLAG_BASES,
 import { GUNS, buildGun } from './guns.js';
 import { heightAt } from './terrain.js';
 import { Wolf } from './pet.js';
-import { buildCharacter, buildModelCharacter, loadCharacterModel } from './character.js';
+import { buildCharacter, buildModelCharacter, loadCharacterModel, poseCharacter } from './character.js';
 import { buildTank } from './tank.js';
 import { TANK_FLAG } from '../shared/gear.js';
 
@@ -73,6 +73,13 @@ function nameSprite(text, color) {
 }
 
 // Another player's soldier in the world.
+// where a 3D character holds their gun (character space: +z forward, +x their left): the pivot is at the
+// right shoulder joint (x, y are only used before the character has a shoulder bone). The guns are made for
+// first person, so they're shrunk to fit the body (`scale`); the gun sits just below and outside the shoulder,
+// its back end `chest` in front of it: tucked against the chest, never through it
+const AIM = { x: -0.16, y: 1.36, gx: -0.05, gy: -0.12, chest: 0.02, scale: 0.72 };
+const _grip = new THREE.Vector3();
+const _fore = new THREE.Vector3();
 export class Avatar {
   constructor(info, teamColor, teamVest = false) {
     this.id = info.id;
@@ -140,8 +147,15 @@ export class Avatar {
     this.gunHolder.traverse((o) => {
       if (o.isMesh) o.visible = true; // their gun stays
     });
-    // held out on the right, where you can see it past the character
-    this.gunHolder.position.set(0.26, 0.42, 0.32);
+    // held up at the chest in both hands (their right hand on the grip, the left under the barrel),
+    // turning up and down with where they look
+    this.aimPivot = new THREE.Group();
+    this.aimPivot.position.set(AIM.x, AIM.y, 0);
+    this.root.add(this.aimPivot);
+    this.aimPivot.add(this.gunHolder);
+    this.gunHolder.position.set(AIM.gx, AIM.gy, AIM.chest);
+    this.gunHolder.rotation.set(0, Math.PI, 0);
+    this.gunHolder.scale.setScalar(AIM.scale);
     this.root.add(m.root);
   }
 
@@ -153,6 +167,10 @@ export class Avatar {
     g.traverse((o) => {
       if (o.isMesh) o.castShadow = true;
     });
+    // how far the gun reaches back behind its grip (it points down -z), so a 3D character can hold it with the
+    // stock against their shoulder instead of through their chest
+    g.updateMatrixWorld(true);
+    this.gunBack = Math.max(0, new THREE.Box3().setFromObject(g, true).max.z);
     this.gunHolder.add(g);
   }
 
@@ -192,11 +210,7 @@ export class Avatar {
     // our yaw convention looks down -z; the model faces +z
     this.root.rotation.y = this.yaw + Math.PI;
     const speed = before.distanceTo(this.pos) / Math.max(dt, 1e-3);
-    if (this.model) {
-      // the 3D character's own animations: idle, run, and falling down when they die
-      this.model.play(!this.alive ? 'die' : speed > 0.5 ? 'run' : 'idle');
-      this.model.mixer.update(dt);
-    }
+    if (this.model) this._animate(dt, flags, speed, before);
     if (this.alive) {
       this.body.rotation.x = 0;
       this.phase += dt * speed * 2.2;
@@ -223,6 +237,52 @@ export class Avatar {
       this.downSprite.visible = true;
       this.downSprite.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() / 150);
     } else if (this.downSprite) this.downSprite.visible = false;
+  }
+
+  // the 3D character: its animation (running the way they move, not just the way they face), then the pose on
+  // top: hands on the gun, and the hips down for crouching or sliding
+  _animate(dt, flags, speed, before) {
+    const m = this.model;
+    const slide = !!(flags & FLAG_BITS.slide);
+    const crouch = !slide && !!(flags & FLAG_BITS.crouch);
+    let clip = 'idle';
+    let rate = 1;
+    if (!this.alive) clip = 'die';
+    else if (slide) clip = 'idle';
+    else if (speed > 0.5) {
+      // which way they're going compared with where they face (we look down -z)
+      const vx = this.pos.x - before.x;
+      const vz = this.pos.z - before.z;
+      const f = -(vx * Math.sin(this.yaw) + vz * Math.cos(this.yaw));
+      const r = vx * Math.cos(this.yaw) - vz * Math.sin(this.yaw);
+      clip = Math.abs(f) >= Math.abs(r) * 0.8 ? (f > 0 ? 'run' : 'back') : r > 0 ? 'right' : 'left';
+      if (crouch && clip === 'run' && m.actions.walk) clip = 'walk';
+      rate = THREE.MathUtils.clamp(speed / (crouch ? 2.5 : 6), 0.55, 1.4);
+    }
+    m.play(clip);
+    m.mixer.timeScale = rate;
+    m.mixer.update(dt);
+    this.lowT = THREE.MathUtils.damp(this.lowT || 0, slide ? 0.68 : crouch ? 0.5 : 0, 14, dt);
+    this.slideT = THREE.MathUtils.damp(this.slideT || 0, slide ? 1 : 0, 14, dt);
+    this.leanT = THREE.MathUtils.damp(this.leanT || 0, slide ? 0.45 : 0, 14, dt);
+    this.gunHolder.visible = this.alive;
+    if (!this.alive) {
+      poseCharacter(m); // lets go of last frame's pose
+      return;
+    }
+    // the gun: against the chest, below their right shoulder wherever the pose has put it, pointing where they look
+    const aim = !!(flags & FLAG_BITS.aim);
+    const h = GUNS[this.gunId]?.hands;
+    const hold = (B) => {
+      if (B.upperArmR) this.aimPivot.position.copy(this.root.worldToLocal(B.upperArmR.getWorldPosition(_grip)));
+      else this.aimPivot.position.set(AIM.x, AIM.y - this.lowT, 0);
+      this.aimPivot.rotation.x = -this.pitch;
+      this.gunHolder.position.set(AIM.gx, AIM.gy + (aim ? 0.05 : 0), AIM.chest + (this.gunBack || 0) * AIM.scale + (aim ? 0.04 : 0));
+      if (!h) return { grip: null, fore: null };
+      this.aimPivot.updateMatrixWorld(true);
+      return { grip: this.gunHolder.localToWorld(_grip.fromArray(h.grip)), fore: this.gunHolder.localToWorld(_fore.fromArray(h.fore)) };
+    };
+    poseCharacter(m, { low: this.lowT, lean: this.leanT, slide: this.slideT, ground: heightAt, hold });
   }
 
   // a speech bubble over their head for a few seconds

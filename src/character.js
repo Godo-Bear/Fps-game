@@ -10,24 +10,24 @@ const CHARACTER_MODELS = {
   man: {
     url: '/models/Man by Quaternius - HMnuH5geEG.glb',
     slots: { Skin: 'skin', Hair: 'hairColor', Shirt: 'topColor', Pants: 'pants', Socks: 'hatColor' },
-    clips: { idle: 'Man_Idle', run: 'Man_Run', walk: 'Man_Walk', die: 'Man_Death' },
+    clips: { idle: 'Man_Idle', run: 'Man_Run', walk: 'Man_Walk', die: 'Man_Death' }, // no strafing clips: the run does
   },
   adventurer: {
     url: '/models/Adventurer by Quaternius - 5EGWBMpuXq.glb',
     slots: { Skin: 'skin', Hair: 'hairColor', Eyebrows: 'hairColor', 'Body/Green': 'topColor', 'Body/LightGreen': 'topColor', 'Legs/Brown2': 'pants', 'Legs/Brown': 'pants', 'Backpack/*': 'hatColor' },
     gear: ['Backpack'],
-    clips: { idle: 'Idle_Gun', run: 'Run_Shoot', walk: 'Walk', die: 'Death' },
+    clips: { idle: 'Idle_Gun', run: 'Run', back: 'Run_Back', left: 'Run_Left', right: 'Run_Right', walk: 'Walk', die: 'Death' },
   },
   swat: {
     url: '/models/SWAT by Quaternius - Btfn3G5Xv4.glb',
     slots: { Skin: 'skin', 'Body/Swat': 'topColor', 'Head/Swat': 'topColor', 'Legs/Swat': 'pants', Swat_Black: 'hatColor' },
-    clips: { idle: 'Idle_Gun', run: 'Run_Shoot', walk: 'Walk', die: 'Death' },
+    clips: { idle: 'Idle_Gun', run: 'Run', back: 'Run_Back', left: 'Run_Left', right: 'Run_Right', walk: 'Walk', die: 'Death' },
   },
   king: {
     url: '/models/King by Quaternius - I1gTjmuK2m.glb',
     slots: { Skin: 'skin', Hair_White: 'hairColor', Blue: 'topColor', DarkBrown: 'pants', Metal: 'hatColor', Metal_Dark: 'hatColor' },
     gear: ['King_Head_4'], // the crown
-    clips: { idle: 'Idle_Gun', run: 'Run_Shoot', walk: 'Walk', die: 'Death' },
+    clips: { idle: 'Idle_Gun', run: 'Run', back: 'Run_Back', left: 'Run_Left', right: 'Run_Right', walk: 'Walk', die: 'Death' },
   },
 };
 const HEIGHT = 1.8;
@@ -110,20 +110,175 @@ export function buildModelCharacter(lookIn) {
     actions.die.setLoop(THREE.LoopOnce, 1);
     actions.die.clampWhenFinished = true;
   }
-  let hand = null;
+  // the bones the pose code moves (both rigs: the Survivor's and the other three's)
+  const bones = {};
   model.traverse((o) => {
-    if (!hand && o.isBone && /^(WristR|PalmR)$/.test(o.name)) hand = o;
+    if (!o.isBone) return;
+    const n = o.name;
+    if (n === 'Body') bones.body = o;
+    for (const side of ['L', 'R']) {
+      if (n === `UpperArm${side}`) bones[`upperArm${side}`] = o;
+      if (n === `LowerArm${side}`) bones[`lowerArm${side}`] = o;
+      if (n === `Wrist${side}` || n === `Palm${side}`) bones[`hand${side}`] = o;
+      if (n === `UpperLeg${side}`) bones[`upperLeg${side}`] = o;
+      if (n === `LowerLeg${side}`) bones[`lowerLeg${side}`] = o;
+      if (n === `Foot${side}`) bones[`foot${side}`] = o;
+    }
   });
+  // the feet hang off the rig's root, not the legs, so the shin's own end bone is what the knee bend moves
+  for (const side of ['L', 'R']) bones[`shin${side}`] = bones[`lowerLeg${side}`]?.children[0];
   let playing = null;
   const play = (k, fade = 0.2) => {
-    const a = actions[k] || actions.idle;
+    const a = actions[k] || (k === 'back' || k === 'left' || k === 'right' ? actions.run : null) || actions.idle;
     if (!a || a === playing) return;
     a.reset().play();
     if (playing) playing.crossFadeTo(a, fade, false);
     playing = a;
   };
   play('idle', 0);
-  return { root, model, mixer, actions, play, mats, hand, look };
+  return { root, model, mixer, actions, play, mats, hand: bones.handR, bones, look, scale: t.scale };
+}
+
+// ---- posing a 3D character on top of its animation (called every frame, after the mixer):
+// both hands on the gun (wherever it's held), and for crouching/sliding the hips drop and the knees bend
+// so the feet stay where the animation put them. Plain two-bone IK, so it works on both rigs.
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _t = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _pole = new THREE.Vector3();
+const _elbow = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const _qw = new THREE.Quaternion();
+const _qp = new THREE.Quaternion();
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+// Bones the pose moved last frame. A bone the animation doesn't move would otherwise keep last frame's pose
+// and drift further every frame, so it goes back to how it was before the next pose.
+let touched = null;
+function touch(bone) {
+  if (touched && !touched.has(bone)) touched.set(bone, { p: bone.position.clone(), q: bone.quaternion.clone() });
+}
+function untouch(m) {
+  for (const [bone, was] of m._posed || []) {
+    if (bone.position.equals(was.pp)) bone.position.copy(was.p);
+    if (bone.quaternion.equals(was.pq)) bone.quaternion.copy(was.q);
+  }
+  m._posed = null;
+}
+// turns a bone (in world space) so the direction `from` now points along `to`
+function turnBone(bone, from, to) {
+  if (from.lengthSq() < 1e-8 || to.lengthSq() < 1e-8) return;
+  touch(bone);
+  _q.setFromUnitVectors(_v1.copy(from).normalize(), _v2.copy(to).normalize());
+  bone.getWorldQuaternion(_qw);
+  bone.parent.getWorldQuaternion(_qp);
+  bone.quaternion.copy(_qp.invert().multiply(_q.multiply(_qw)));
+  bone.updateWorldMatrix(false, true);
+}
+// upper/lower/end: a limb; target: where the end should go; pole: which way the joint bends
+function reach(upper, lower, end, target, pole) {
+  if (!upper || !lower || !end) return;
+  upper.getWorldPosition(_a);
+  lower.getWorldPosition(_b);
+  end.getWorldPosition(_c);
+  const l1 = _a.distanceTo(_b);
+  const l2 = _b.distanceTo(_c);
+  _dir.subVectors(target, _a);
+  const d = Math.min(Math.max(_dir.length(), Math.abs(l1 - l2) + 1e-3), l1 + l2 - 1e-3);
+  _dir.normalize();
+  // where the joint goes: on the circle round the reach line, on the pole's side
+  const x = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+  const hgt = Math.sqrt(Math.max(0, l1 * l1 - x * x));
+  _pole.subVectors(pole, _a);
+  _pole.addScaledVector(_dir, -_pole.dot(_dir));
+  if (_pole.lengthSq() < 1e-6) _pole.set(0, -1, 0);
+  _pole.normalize();
+  _elbow.copy(_a).addScaledVector(_dir, x).addScaledVector(_pole, hgt);
+  turnBone(upper, _t.subVectors(_b, _a), _v1.subVectors(_elbow, _a).clone());
+  lower.getWorldPosition(_b);
+  end.getWorldPosition(_c);
+  const goal = _a.clone().addScaledVector(_dir, d);
+  turnBone(lower, _t.subVectors(_c, _b).clone(), goal.sub(_b));
+}
+const _down = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+const _side = new THREE.Vector3();
+const _feet = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+const _lift = { L: 0, R: 0 };
+// m: from buildModelCharacter. grip/fore: where the right and left hands go (world), or null.
+// low: how far the hips drop (metres; crouch ~0.45), lean: lean back (radians; sliding)
+// slide: the front (left) leg stretched out ahead and the back one tucked under, instead of feet staying put.
+// ground(x, z): the ground height there, so each foot stands on the ground under it (on slopes the uphill foot
+// comes up and the hips drop for the downhill one, so no leg goes into the ground).
+// hold(): called once the body is posed (so the gun can be put against the chest where it now is); returns
+// { grip, fore } for the hands.
+export function poseCharacter(m, { grip = null, fore = null, low = 0, lean = 0, slide = 0, ground = null, hold = null } = {}) {
+  const B = m.bones;
+  if (!B) return;
+  untouch(m);
+  touched = new Map();
+  m.root.updateMatrixWorld(true);
+  m.root.getWorldDirection(_fwd); // the way they face (+z)
+  _side.set(_fwd.z, 0, -_fwd.x); // their left
+  const legs = B.body && B.footL && B.footR && B.shinL && B.shinR;
+  let drop = 0;
+  if (legs) {
+    // where the animation has the feet, moved up or down onto the ground under each one
+    m.root.getWorldPosition(_a);
+    // only when they're standing on the ground (not mid-jump, or up on a roof or a crate)
+    if (ground && Math.abs(_a.y - ground(_a.x, _a.z)) > 0.25) ground = null;
+    for (const s of ['L', 'R']) {
+      B[`foot${s}`].getWorldPosition(_feet[s]);
+      const d = ground ? ground(_feet[s].x, _feet[s].z) - _a.y : 0;
+      _lift[s] = Math.abs(d) < 0.6 ? d : 0; // a bigger step is a ledge or a floor: leave it
+    }
+    drop = -Math.min(_lift.L, _lift.R); // down for the lower foot (or up, if they are sunk into the ground)
+  }
+  if (legs && (low > 0.01 || Math.abs(drop) > 0.01 || Math.abs(_lift.L) > 0.01 || Math.abs(_lift.R) > 0.01)) {
+    // the hips come down; the knees bend forwards so the feet land where they should
+    for (const s of ['L', 'R']) _feet[s].y += _lift[s];
+    B.body.getWorldPosition(_t);
+    if (slide > 0.01) {
+      const gy = Math.min(_feet.L.y, _feet.R.y);
+      _c.copy(_t).setY(gy);
+      _feet.L.lerp(_b.copy(_c).addScaledVector(_fwd, 0.62).addScaledVector(_side, 0.1), slide);
+      _feet.R.lerp(_b.copy(_c).addScaledVector(_fwd, 0.12).addScaledVector(_side, -0.16), slide);
+    }
+    _t.y -= low + drop;
+    _t.addScaledVector(_fwd, -lean * 0.4);
+    B.body.parent.worldToLocal(_t);
+    touch(B.body);
+    B.body.position.copy(_t);
+    if (lean) B.body.rotateOnWorldAxis(_v1.copy(_side), -lean);
+    B.body.updateWorldMatrix(false, true);
+    for (const s of ['L', 'R']) {
+      // the foot itself (it hangs off the rig's root, not the leg)
+      const foot = B[`foot${s}`];
+      touch(foot);
+      foot.position.copy(foot.parent.worldToLocal(_c.copy(_feet[s])));
+      foot.updateWorldMatrix(false, true);
+      B[`upperLeg${s}`].getWorldPosition(_c);
+      // knees forward; sliding, the tucked leg's knee points down and out
+      const pole = _c.clone().addScaledVector(_fwd, 1).setY(_c.y + (s === 'L' ? slide * 0.8 : 0));
+      if (s === 'R') pole.addScaledVector(_side, -slide * 0.8);
+      reach(B[`upperLeg${s}`], B[`lowerLeg${s}`], B[`shin${s}`], _feet[s], pole);
+    }
+  }
+  if (hold) ({ grip, fore } = hold(B));
+  // hands on the gun: elbows down and out
+  if (grip && B.upperArmR) {
+    B.upperArmR.getWorldPosition(_c);
+    reach(B.upperArmR, B.lowerArmR, B.handR, grip, _c.clone().add(_down.set(0, -1, 0)).addScaledVector(_side, -0.6));
+  }
+  if (fore && B.upperArmL) {
+    B.upperArmL.getWorldPosition(_c);
+    reach(B.upperArmL, B.lowerArmL, B.handL, fore, _c.clone().add(_down.set(0, -1, 0)).addScaledVector(_side, 0.6));
+  }
+  m._posed = touched;
+  for (const [bone, was] of touched) Object.assign(was, { pp: bone.position.clone(), pq: bone.quaternion.clone() });
+  touched = null;
 }
 
 
