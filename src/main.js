@@ -2072,9 +2072,19 @@ function openChoice() {
   if (document.pointerLockElement) document.exitPointerLock();
   const counts = new Map([...owned].map(([id, o]) => [id, o.count]));
   game.offer = rollOffer(stats, counts);
+  // every power-up maxed (nothing left to offer): a bonus card instead, so there's always something to pick
+  if (!game.offer.length) game.offer = [{ maxed: true, rarity: 'legendary' }];
   $('choose-title').textContent = `WAVE ${game.wave} SURVIVED`;
   $('cards').innerHTML = game.offer
     .map((o, i) => {
+      if (o.maxed)
+        return `<div class="card legendary" data-i="${i}">
+        <div class="key">${i + 1}</div>
+        <div class="rarity">ALL MAXED</div>
+        <div class="icon">⭐</div>
+        <div class="name">Every power-up maxed</div>
+        <div class="desc">Full health, full ammo and +500 score instead</div>
+      </div>`;
       const have = owned.get(o.def.id)?.count || 0;
       return `<div class="card ${o.rarity}" data-i="${i}">
         <div class="key">${i + 1}</div>
@@ -2099,6 +2109,13 @@ function choose(i) {
   if (game.state !== 'choosing') return;
   const o = game.offer[i];
   if (!o) return;
+  if (o.maxed) {
+    player.health = Math.max(player.health, stats.maxHealth);
+    weapon.refillMags(stats);
+    game.score += 500;
+    audio.powerup('legendary');
+    return afterChoice();
+  }
   const prevMag = weapon.magSize(stats, GUNS.rifle);
   o.def.apply(stats, o.value, { player });
   if (weapon.magSize(stats, GUNS.rifle) !== prevMag) weapon.refillMags(stats);
@@ -2111,6 +2128,11 @@ function choose(i) {
   }
   renderOwned();
   audio.powerup(o.rarity);
+  afterChoice();
+}
+
+// back into the game after picking: ready up (co-op) or the break before the next wave
+function afterChoice() {
   if (isCoop()) {
     if (mp.isHost()) coop.ready.add('me');
     else mp.relay('host', { k: 'ready' });

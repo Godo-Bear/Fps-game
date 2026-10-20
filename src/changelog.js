@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.33', date: '20 Oct 2026', title: 'Fix: maxed power-ups',
+    items: [
+      'With every power-up maxed, the power-up screen was empty and you got stuck. Now it offers an ⭐ All maxed card: full health, full ammo and +500 score.',
+    ],
+  },
+  {
     v: '5.32', date: '20 Oct 2026', title: 'Cheaper access: $2',
     items: [
       'Access to War Grounds is now $2 for every 6 months (was $3), paid to the owner.',
