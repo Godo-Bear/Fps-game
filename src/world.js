@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DEFEND_POINTS, FFA_SPAWNS, FLAG_BASES, POINT, TEAM_SPAWNS } from '../shared/modes.js';
 import { ARENA_RADIUS, Colliders, heightAt, mulberry32, setTerrain } from './terrain.js';
 import { GROUND_PALETTES, grimeTexture, groundTexture, planksTexture, roadTexture, softDotTexture, textTexture } from './textures.js';
@@ -46,6 +47,34 @@ Object.assign(THEMES, {
   },
 });
 export const MAP_IDS = Object.keys(THEMES);
+
+// The owner's warehouse model (public/models), loaded once and shared by every map that has one.
+const WAREHOUSE_URL = '/models/Warehouse by Lavender Harmony - fsxbktzB1zo.glb';
+const WAREHOUSE_SCALE = 0.16; // the model is in big units: this makes it about 10 x 16 m and 8 m high
+let warehouseModel = null;
+function loadWarehouse() {
+  if (!warehouseModel)
+    warehouseModel = new GLTFLoader()
+      .loadAsync(encodeURI(WAREHOUSE_URL))
+      .then((gltf) => {
+        const m = gltf.scene;
+        m.traverse((o) => {
+          if (!o.isMesh) return;
+          // its own floor plane and a stray block inside aren't needed
+          if (o.name === 'Plane' || [].concat(o.material).some((x) => x.name === 'Material.002')) o.visible = false;
+          for (const mat of [].concat(o.material)) mat.side = THREE.DoubleSide; // the walls are one-sided in the file
+          o.castShadow = true;
+          o.receiveShadow = true;
+          o.userData.shared = true; // kept when a map is thrown away
+        });
+        m.scale.setScalar(WAREHOUSE_SCALE);
+        // centred on its footprint, floor at 0
+        m.position.set(0.25 * WAREHOUSE_SCALE, -0.2 * WAREHOUSE_SCALE, -13.4 * WAREHOUSE_SCALE);
+        return m;
+      })
+      .catch(() => null);
+  return warehouseModel;
+}
 
 // Builds a map: terrain, buildings, wrecks and clutter. Returns collision data and update/dispose hooks.
 export function buildWorld(scene, mapId = 'plains') {
@@ -485,6 +514,34 @@ export function buildWorld(scene, mapId = 'plains') {
       const p = toWorld(g, side * (w / 2 + 1.1), rand(-d / 3, d / 3));
       if (rng() < 0.7) rubble(p.x, p.z, wall);
     }
+    return g;
+  }
+
+  // ---------------------------------------------------------------- warehouse
+  // A big closed warehouse (the owner's model). It's solid: you take cover behind it, you can't go in.
+  // Long side along its local z. A plain shed stands in until the model has loaded.
+  function warehouse(x, z, rot) {
+    const W = 9.6;
+    const D = 16.3;
+    const H = 7.9;
+    const g = new THREE.Group();
+    const stand = new THREE.Group();
+    const walls = box(W, H * 0.8, D, M.metalDark ?? M.concreteDark);
+    walls.position.y = (H * 0.8) / 2;
+    const top = box(W + 0.4, 0.3, D + 0.4, M.darkWood);
+    top.position.y = H * 0.8;
+    stand.add(walls, top);
+    g.add(stand);
+    // what you bump into and what stops bullets, the same either way
+    const hit = proxy(g, W, H, D, 0, H / 2, 0);
+    hit.userData.solid = true;
+    place(g, x, z, rot, 0.25);
+    reserve(x, z, Math.hypot(W, D) / 2 + 1.5);
+    loadWarehouse().then((model) => {
+      if (!model || !root.parent) return; // didn't load, or this map is gone already
+      g.add(model.clone(true));
+      stand.visible = false;
+    });
     return g;
   }
 
@@ -2076,7 +2133,7 @@ export function buildWorld(scene, mapId = 'plains') {
       brokenHouse(28, 10, PI, 7, 6, { wall: M.woodWall });
       // Farmstead
       brokenHouse(-62, -28, 0.3, 9, 7, { wall: M.woodWall });
-      brokenHouse(-42, -52, -0.2, 14, 10, { h: 4.6, wall: M.barnRed, chimney: false });
+      warehouse(-42, -52, -0.2 + PI / 2); // the farm's big shed
       fenceLine(-78, -12, -40, -12);
       fenceLine(-78, -12, -82, -60);
       fenceLine(-82, -60, -60, -70);
@@ -2127,7 +2184,7 @@ export function buildWorld(scene, mapId = 'plains') {
       bunker(30, -34, -0.6, 7, 5);
       brokenHouse(-30, 22, PI, 12, 6, { h: 3, wall: M.concrete, chimney: false, graffiti: 'EVAC' }); // barracks
       brokenHouse(-50, 40, PI / 2, 10, 6, { h: 3, wall: M.concrete, chimney: false });
-      brokenHouse(44, 46, -PI / 2, 10, 6, { h: 3, wall: M.concreteDark, chimney: false });
+      warehouse(44, 46, 0); // the supply warehouse
       watchtower(-44, -6, 0.4);
       watchtower(44, -14, PI);
       watchtower(4, 52, -PI / 2);
@@ -2166,7 +2223,7 @@ export function buildWorld(scene, mapId = 'plains') {
       brokenHouse(-36, 26, 0.4, 8, 6, { wall: M.woodWall });
       brokenHouse(40, 30, -0.6, 8, 6, { wall: M.woodWall, graffiti: 'HIDE' });
       brokenHouse(30, -40, 2.4, 7, 6, { wall: M.darkWood });
-      brokenHouse(-58, -40, 1.1, 9, 7, { wall: M.woodWall });
+      warehouse(-58, -40, 1.1 + PI / 2); // the logging shed
       church(-8, 70, PI);
       graveyard(24, 64, 0.1);
       watchtower(60, 10, PI, { wood: M.wood, h: 7 });
@@ -2196,8 +2253,8 @@ export function buildWorld(scene, mapId = 'plains') {
 
     docks() {
       // warehouses along the quay
-      brokenHouse(-30, 30, 0, 14, 10, { h: 5, wall: M.concreteDark, chimney: false, graffiti: 'DOCK 4' });
-      brokenHouse(30, -32, PI, 14, 10, { h: 5, wall: M.concrete, chimney: false });
+      warehouse(-30, 30, PI / 2);
+      warehouse(30, -32, PI / 2);
       brokenHouse(-42, -40, PI / 2, 12, 8, { h: 4.4, wall: M.metalDark, chimney: false });
       brokenHouse(45, 40, -PI / 2, 14, 9, { h: 5, wall: M.concreteDark, chimney: false, graffiti: 'NO EXIT' });
       // container yard
@@ -2250,7 +2307,7 @@ export function buildWorld(scene, mapId = 'plains') {
       // scorched mining camp
       brokenHouse(-30, 26, 0.3, 8, 6, { wall: M.burnt, roof: false, graffiti: 'BURN' });
       brokenHouse(32, -24, 2.8, 8, 6, { wall: M.burnt, roof: false });
-      brokenHouse(-48, -36, 1.2, 9, 7, { wall: M.darkWood, roof: false });
+      warehouse(-48, -36, 1.2 + PI / 2); // the mine's ore shed
       brokenHouse(46, 44, -0.8, 8, 6, { wall: M.burnt });
       watchtower(58, 8, PI, { wood: M.burnt, h: 7 });
       watchtower(-56, -6, 0.2, { wood: M.burnt, h: 7 });
@@ -2480,6 +2537,7 @@ export function buildWorld(scene, mapId = 'plains') {
       root.removeFromParent();
       const seen = new Set();
       root.traverse((o) => {
+        if (o.userData.shared) return; // the warehouse model: other maps use it too
         if (o.geometry && !seen.has(o.geometry)) {
           seen.add(o.geometry);
           o.geometry.dispose();

@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.38', date: '20 Oct 2026', title: '🏭 Warehouses',
+    items: [
+      'A big new warehouse on every map, replacing an old building: the farm barn on Dead Plains, a supply building at Frostbite Outpost, a cabin in Blackwood Hollow, two warehouses at Rustwater Docks and a shack in Ember Canyon.',
+      'They are solid: take cover behind them.',
+    ],
+  },
+  {
     v: '5.37', date: '20 Oct 2026', title: '🔥 Shots fly forward, and a real flamethrower',
     items: [
       'Bullet trails were drawn backwards from the gun. Now every shot is a streak that flies forward from the barrel to where it hits.',
