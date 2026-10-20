@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.41', date: '20 Oct 2026', title: 'Clearer ads',
+    items: [
+      'The ads round the maps now have a sharp QR code and the link in big, bold letters, so you can read (and scan) them.',
+      'The ads are spread out properly over each map instead of bunching up, and the poster stands have a leg each side so nothing covers the poster.',
+    ],
+  },
+  {
     v: '5.40', date: '20 Oct 2026', title: '🙈 Hide and Seek',
     items: [
       'New multiplayer mode: Hide and Seek. Everyone starts hiding; the game picks the seekers, who count with their eyes shut while the rest hide.',

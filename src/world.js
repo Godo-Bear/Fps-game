@@ -822,9 +822,12 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
     const g = new THREE.Group();
     const W = 1.3;
     const H = W * 1.5;
-    const post = cyl(0.07, 0.08, 2.9, M.metalDark);
-    post.position.y = 1.45;
-    g.add(solid(post));
+    // a leg each side, so nothing covers the poster
+    for (const side of [-1, 1]) {
+      const post = cyl(0.06, 0.07, 2.75, M.metalDark);
+      post.position.set(side * (W / 2 + 0.1), 1.375, 0);
+      g.add(solid(post));
+    }
     const frame = box(W + 0.12, H + 0.12, 0.08, M.darkWood);
     frame.position.y = 1.75;
     g.add(solid(frame));
@@ -836,14 +839,16 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
   }
   // facing the middle of the map from (x, z)
   const faceIn = (x, z) => Math.atan2(-x, -z);
-  // spread round the map: the first clear spot near each of `n` directions, between radii r0 and r1
-  function adSpots(n, r0, r1, need, fn) {
+  // spread round the map: n ads in n directions, each at a different distance from the middle (so they
+  // aren't all in one ring), at the first clear spot near there. turn: where the first one goes.
+  function adSpots(n, r0, r1, need, fn, turn = 0) {
     for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * PI * 2 + mapNo * 0.7;
+      const a0 = ((i + turn) / n) * PI * 2 + mapNo * 0.7;
+      const rBase = r0 + ((i * 0.618 + 0.25) % 1) * (r1 - r0);
       let done = false;
-      for (let t = 0; t < 14 && !done; t++) {
+      for (let t = 0; t < 16 && !done; t++) {
         const a = a0 + (t % 2 ? 1 : -1) * Math.ceil(t / 2) * 0.09;
-        const r = r0 + ((t * 0.37) % 1) * (r1 - r0);
+        const r = THREE.MathUtils.clamp(rBase + (t % 3 - 1) * 6, r0, r1);
         const x = Math.sin(a) * r;
         const z = Math.cos(a) * r;
         if (Math.hypot(x, z) > ARENA_RADIUS - 8 || !isFree(x, z, need)) continue;
@@ -854,8 +859,8 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
   }
   function adverts() {
     if (!ads) return;
-    adSpots(3, 58, 92, 4.5, billboard);
-    adSpots(6, 18, 52, 1.4, posterStand);
+    adSpots(3, 55, 95, 4.5, billboard);
+    adSpots(6, 22, 85, 1.4, posterStand, 0.5); // in between the billboards' directions
   }
 
   // ---------------------------------------------------------------- warehouse
