@@ -4599,9 +4599,11 @@ accountUI.adminActions = {
         return `Grenades: ${game.grenades}.`;
       case 'setscrap':
         game.scrap = Math.max(0, Math.min(999, Math.floor(value)));
+        persistRun();
         return `Scrap set to ${game.scrap}.`;
       case 'setnades':
         game.grenades = Math.max(0, Math.min(20, Math.floor(value)));
+        persistRun();
         return `Grenades set to ${game.grenades}.`;
       case 'noscrap':
         game.scrap = 0;
@@ -4698,6 +4700,7 @@ accountUI.adminActions = {
         return `Weather: ${WEATHER[value].name}`;
       case 'score':
         game.score = Math.max(0, Math.floor(value));
+        persistRun();
         return `Score set to ${game.score}.`;
       case 'wave':
         for (const z of zombies.list) if (z.alive) zombies.damage(z, 1e9);
@@ -4706,7 +4709,9 @@ accountUI.adminActions = {
         game.bossToSpawn = 0;
         game.phase = 'countdown';
         game.timer = 3;
-        return `Wave ${game.wave + 1} starts in 3 seconds.`;
+        // saved straight away: continuing this game later starts at the new wave
+        persistRun();
+        return `Wave ${game.wave + 1} starts in 3 seconds (saved).`;
     }
     return '';
   },

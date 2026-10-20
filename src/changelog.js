@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.31', date: '20 Oct 2026', title: 'Fix: set waves are saved',
+    items: [
+      'Admin: SET WAVE (and SET SCORE, SET SCRAP, SET GRENADES) now save your game straight away, so continuing it later picks up at the new wave.',
+    ],
+  },
+  {
     v: '5.30', date: '19 Oct 2026', title: 'Smoother bots, no more Longshot lag',
     items: [
       'Matches with AI bots run much lighter: bots look round for targets a few times a second instead of every frame, and share their routes round the map.',
