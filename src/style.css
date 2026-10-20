@@ -3749,3 +3749,83 @@ body.infected #game::after {
 .mp-host:disabled {
   cursor: not-allowed;
 }
+
+/* ---- admin panel: tabs and fold-away cards */
+.asubtabs {
+  gap: 4px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(10, 8, 6, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.asubtabs .chipbtn {
+  flex: 1;
+  min-width: 110px;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 8px;
+}
+.asubtabs .chipbtn.on {
+  background: #ffd34d;
+  color: #120e0a;
+  border-color: #ffd34d;
+}
+.acard {
+  padding: 0;
+  overflow: hidden;
+}
+.acard > h4 {
+  margin: 0;
+  padding: 10px 40px 10px 14px;
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.acard > h4:hover {
+  background: rgba(255, 211, 77, 0.08);
+}
+.acard .af-title {
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  color: #ffd34d;
+}
+.acard .af-note {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgba(233, 217, 184, 0.65);
+}
+.acard .af-chev {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: transform 0.2s;
+  opacity: 0.7;
+}
+.acard.closed .af-chev {
+  transform: translateY(-50%) rotate(-90deg);
+}
+.acard.closed > h4 {
+  border-bottom: none;
+}
+.acard > :not(h4) {
+  margin-left: 14px;
+  margin-right: 14px;
+}
+.acard > :last-child {
+  margin-bottom: 12px;
+}
+.acard > h4 + * {
+  margin-top: 10px;
+}
+.acard.closed > :not(h4) {
+  display: none;
+}

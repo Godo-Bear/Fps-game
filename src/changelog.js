@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.35', date: '20 Oct 2026', title: 'Admin: a cleaner panel',
+    items: [
+      'Admin: the panel is easier to read. Bigger tabs, clear headings with a short note under each, and every section folds away (click its heading). It remembers which ones you opened.',
+      'Admin: the bot count and gun position are now drop-downs.',
+    ],
+  },
+  {
     v: '5.34', date: '20 Oct 2026', title: '🏹 The Crossbow, and special gear',
     items: [
       'New gun: the Crossbow. Silent, hits hard and the bolt goes through up to two targets. Find it on the map (epic).',

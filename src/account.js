@@ -1473,8 +1473,8 @@ export class AccountUI {
         <p class="muted small">This copy: <b>${esc(act?.build?.().build || '?')}</b>${act?.build?.().at && act.build().build !== 'dev' ? ` · built ${esc(new Date(act.build().at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}` : ''}</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-version">CHECK FOR A NEW VERSION</button></div></div>
       <div class="acard"><h4>🔫 Gun position <span class="muted small">(yours; everyone can change theirs in Settings)</span></h4>
-        <div class="gun-presets">${(act?.gunPresets?.() || []).map(([id, n]) => `<button class="chipbtn" data-agun="${id}">${n}</button>`).join('')}</div></div>
-      <div class="acard"><h4>Cheats ${mp ? '<span class="muted small">(in multiplayer they only affect you, except freeze and slow motion as co-op host)</span>' : ''}</h4>
+        <div class="auth inline admin-row"><select id="admin-gunpos"><option value="">Pick a spot…</option>${(act?.gunPresets?.() || []).map(([id, n]) => `<option value="${id}">${n}</option>`).join('')}</select></div></div>
+      <div class="acard"><h4>🎛️ Cheats ${mp ? '<span class="muted small">(in multiplayer they only affect you, except freeze and slow motion as co-op host)</span>' : ''}</h4>
       <div class="admin-grid">
         ${[
           ['god', 'God mode'], ['ammo', 'Infinite ammo (all guns)'], ['onehit', 'One-hit kills'], ['fly', 'Fly / noclip (Space up, C down, Shift fast)'],
@@ -1485,7 +1485,7 @@ export class AccountUI {
           .join('')}
       </div>
       </div>
-      <div class="acard"><h4>Actions</h4>
+      <div class="acard"><h4>⚡ Actions</h4>
       <div class="admin-grid">
         <button class="btn small" data-run="guns" ${solo || mp ? '' : 'disabled'}>GIVE ALL GUNS</button>
         <button class="btn small" data-run="mutate" ${solo || mp ? '' : 'disabled'}>MUTATE ALL MY GUNS</button>
@@ -1519,7 +1519,7 @@ export class AccountUI {
         <button class="btn small" id="admin-weather-btn" ${solo || mp ? '' : 'disabled'}>SET WEATHER</button>
       </div>
       </div>
-      <div class="acard"><h4>Numbers</h4>
+      <div class="acard"><h4>🔢 Numbers <span class="muted small">(score, scrap, grenades, wave size and wave)</span></h4>
       <form class="auth inline admin-row" data-act="score"><input name="v" type="number" min="0" placeholder="Set score" ${solo || mp ? '' : 'disabled'} /><button class="btn small" ${solo || mp ? '' : 'disabled'}>SET SCORE</button></form>
       <form class="auth inline admin-row" data-act="setscrap"><input name="v" type="number" min="0" max="999" placeholder="Set scrap" ${solo || mp ? '' : 'disabled'} /><button class="btn small" ${solo || mp ? '' : 'disabled'}>SET SCRAP</button></form>
       <form class="auth inline admin-row" data-act="setnades"><input name="v" type="number" min="0" max="20" placeholder="Set grenades" ${solo || mp ? '' : 'disabled'} /><button class="btn small" ${solo || mp ? '' : 'disabled'}>SET GRENADES</button></form>
@@ -1534,7 +1534,7 @@ export class AccountUI {
         <button class="btn small" data-barrels="ammo">🔫 REFILL ALL AMMO CRATES</button>
       </div>
       </div>
-      <div class="acard"><h4>Undo</h4>
+      <div class="acard"><h4>↩️ Undo</h4>
       <div class="admin-grid">
         <button class="btn small ghost" data-run="removeguns" ${solo || mp ? '' : 'disabled'}>REMOVE ALL GUNS</button>
         <button class="btn small ghost" data-run="unmutate" ${solo || mp ? '' : 'disabled'}>UNMUTATE GUNS</button>
@@ -1547,14 +1547,14 @@ export class AccountUI {
     </section>
     <section class="asec" data-sec="mp">
       ${mp ? '' : '<p class="muted small">Join or create a room to use these.</p>'}
-      <div class="acard"><h4>📢 Room</h4>
+      <div class="acard"><h4>📦 Supply drop</h4>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
       </div>
       <div class="acard"><h4>🗂️ Every room <span class="muted small">(private ones too: players only see the public ones)</span> <a href="#" id="admin-rooms-refresh" class="small">refresh</a></h4>
       <div id="admin-rooms" class="admin-players muted small">Loading…</div>
       </div>
       <div class="acard"><h4>🤖 AI bots in this room <span class="muted small">(PvP modes; the host picks this in Match settings too)</span></h4>
-      <div class="gun-presets">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<button class="chipbtn" data-abots="${n}" ${mp ? '' : 'disabled'}>${n ? `${n} bot${n > 1 ? 's' : ''}` : 'No bots'}</button>`).join('')}</div>
+      <div class="auth inline admin-row"><select id="admin-bots" ${mp ? '' : 'disabled'}><option value="">How many bots…</option>${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}">${n ? `${n} bot${n > 1 ? 's' : ''}` : 'No bots'}</option>`).join('')}</select></div>
       </div>
       <div class="acard"><h4>👥 Teams in this room</h4>
       <div id="admin-teams" class="admin-players"></div>
@@ -1576,7 +1576,7 @@ export class AccountUI {
         <p class="muted small" id="admin-event-desc">${esc(EVENT_PRESETS[0].desc)}</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-event-stop">⏹ END THE EVENT NOW</button></div>
       </div>
-      <div class="acard"><h4>How it works</h4>
+      <div class="acard"><h4>ℹ️ How it works</h4>
         <p class="muted small">While it's on, the <b>JOIN EVENT</b> button in Multiplayer (under the room code) lights up. Everyone plays in <b>one match</b> (${EVENT_MAX_PLAYERS} players a room: when one fills up, a new one opens; no host): <b>Red vs Blue vs the zombies</b>, seen from behind their character, starting as the <b>Survivor</b>.
         Teams score ${EVENT_POINTS.player} points for an enemy, ${EVENT_POINTS.zombie} for a zombie, ${EVENT_POINTS.special} for a big or mutated one and ${EVENT_POINTS.boss} for a boss (one comes every 3 minutes). A new match starts by itself after each one.
         Kills can drop a glowing 🧩 <b>puzzle piece</b> (only the killer sees it); walking over it reveals which piece it is. 4 pieces unlock a character: ${PIECE_SETS.map((s) => `${s.name} (${s.rarity})`).join(', ')}. ${PIECE_COUNT} pieces in all; after that, pieces turn into coins.</p>
@@ -1590,7 +1590,7 @@ export class AccountUI {
       </div>
     </section>
     <section class="asec" data-sec="me">
-      <div class="acard"><h4>My account</h4>
+      <div class="acard"><h4>👤 My account <span class="muted small">(level, coins, mastery, quests, guns, solo map)</span></h4>
       <form class="auth inline admin-row" data-act="level"><input name="v" type="number" min="1" max="200" placeholder="Set level (1-200)" /><button class="btn small">SET LEVEL</button></form>
       <form class="auth inline admin-row" data-act="coins"><input name="v" type="number" min="0" placeholder="Set coins" /><button class="btn small">SET COINS</button></form>
       <div class="admin-grid">
@@ -1628,6 +1628,7 @@ export class AccountUI {
       for (const el of this.body.querySelectorAll('.asec')) el.classList.toggle('hidden', el.dataset.sec !== id);
     };
     for (const b of this.body.querySelectorAll('[data-asec]')) b.onclick = () => showSec(b.dataset.asec);
+    this._foldCards();
     showSec(sec);
     const msg = (t) => (document.getElementById('admin-msg').textContent = t);
     document.getElementById('admin-drop').onclick = () => msg(act.supplyDrop());
@@ -1820,8 +1821,10 @@ export class AccountUI {
     };
     const vb = document.getElementById('admin-version');
     if (vb) vb.onclick = async () => msg(await act.checkVersion());
-    for (const b of this.body.querySelectorAll('[data-abots]')) b.onclick = () => msg(act.setBots(Number(b.dataset.abots)));
-    for (const b of this.body.querySelectorAll('[data-agun]')) b.onclick = () => msg(act.gunPreset(b.dataset.agun));
+    const botsSel = document.getElementById('admin-bots');
+    botsSel.onchange = () => botsSel.value !== '' && msg(act.setBots(Number(botsSel.value)));
+    const gunSel = document.getElementById('admin-gunpos');
+    gunSel.onchange = () => gunSel.value && msg(act.gunPreset(gunSel.value));
     document.getElementById('admin-night').onchange = (e) => msg(act.setNightMode(e.target.value));
     document.getElementById('admin-map').onchange = (e) => msg(act.setSoloMap(e.target.value));
     document.getElementById('admin-loadout').onchange = (e) =>
@@ -1879,6 +1882,44 @@ export class AccountUI {
         } else msg(act.run(f.dataset.act, v));
       })
     );
+  }
+
+  // Admin panel cards fold away (click the heading): a clear title with its note underneath, and the
+  // first card in each tab open. Which ones you've opened or closed is remembered in this browser.
+  _foldCards() {
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem('deadplains.adminFold') || '{}') || {};
+    } catch {
+      /* private window */
+    }
+    for (const sec of this.body.querySelectorAll('.asec')) {
+      sec.querySelectorAll(':scope > .acard').forEach((card, i) => {
+        const h = card.querySelector(':scope > h4');
+        if (!h || h.dataset.folded) return;
+        h.dataset.folded = '1';
+        // the bit in brackets becomes a note under the title
+        const note = h.querySelector(':scope > span.muted');
+        const extra = [...h.querySelectorAll(':scope > a')];
+        const title = h.cloneNode(true);
+        title.querySelectorAll('span.muted, a').forEach((x) => x.remove());
+        const key = title.textContent.trim();
+        h.innerHTML = `<span class="af-title">${esc(key)}</span>${note ? `<span class="af-note">${esc(note.textContent.replace(/^\(|\)$/g, ''))}</span>` : ''}<span class="af-chev">▾</span>`;
+        for (const a of extra) h.querySelector('.af-title').after(a);
+        const open = key in saved ? saved[key] : i === 0;
+        card.classList.toggle('closed', !open);
+        h.addEventListener('click', (e) => {
+          if (e.target.closest('a')) return; // links in the heading (refresh) still work
+          const now = card.classList.toggle('closed');
+          saved[key] = !now;
+          try {
+            localStorage.setItem('deadplains.adminFold', JSON.stringify(saved));
+          } catch {
+            /* private window */
+          }
+        });
+      });
+    }
   }
 
   // admin: move players between teams in the room you're in (lobby or mid-match)
