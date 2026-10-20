@@ -22,6 +22,11 @@ export const WEATHER = {
     name: 'Thunderstorm', fogNear: 10, fogFar: 110, fog: 0x5a6068, top: 0x30363e, horizon: 0x5a6068,
     sun: 0.25, hemi: 1.1, rain: 1, dust: 0, lightning: true, wind: 0.7,
   },
+  // Hideaway Village
+  sunny: {
+    name: 'Sunny', fogNear: 45, fogFar: 330, fog: 0xcfe6f0, top: 0x5f9fd8, horizon: 0xcfe6f0,
+    sun: 2.8, hemi: 2.0, rain: 0, dust: 0, lightning: false, wind: 0.1,
+  },
   // Frostbite Outpost
   frostclear: {
     name: 'Cold and clear', fogNear: 40, fogFar: 320, fog: 0xd9e2ea, top: 0x7d93ab, horizon: 0xd9e2ea,

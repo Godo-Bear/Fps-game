@@ -1278,7 +1278,7 @@ const myOwner = () => (game.mode === 'mp' ? mp.myId : 'me');
 const freeBuild = () => (cheatsOn() && cheats.build) || tut.on;
 
 function setBuild(on) {
-  build.on = on && !player.dead && !mp.infected;
+  build.on = on && !player.dead && !mp.infected && !mp.hns; // no building in hide and seek either
   if (!build.on) structures.hideGhost();
   trigger = false;
   aim = false;
@@ -1430,7 +1430,46 @@ function updateTurrets(dt) {
 // Slot 2 (or V for a quick stab whatever you're holding). Hits whatever is right in front of you;
 // headshots and stabbing a zombie in the back hit much harder.
 const _flat = new THREE.Vector3();
+// hide and seek: the seekers' blindfold while they count, and the hint lights they get now and then
+function updateBlindfold(dt) {
+  const el = $('blindfold');
+  const n = mp.seeker && !player.dead ? Math.ceil(mp.countdown) : 0;
+  el.classList.toggle('hidden', !n);
+  if (n) el.querySelector('b').textContent = n;
+  for (const h of hintMarks) {
+    h.t -= dt;
+    h.g.children[0].material.opacity = Math.min(0.55, h.t / 2) * (0.75 + 0.25 * Math.sin(performance.now() / 120));
+    if (h.t <= 0) {
+      scene.remove(h.g);
+      for (const m of h.g.children) m.geometry.dispose(), m.material.dispose();
+    }
+  }
+  for (let i = hintMarks.length - 1; i >= 0; i--) if (hintMarks[i].t <= 0) hintMarks.splice(i, 1);
+}
+const hintMarks = [];
+// a tall red light (and a ring on the ground) where someone is hiding, give or take a few metres
+function addHintMark(x, z) {
+  const g = new THREE.Group();
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 60, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  beam.position.y = 30;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(5.5, 6, 40), new THREE.MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.15;
+  g.add(beam, ring);
+  g.position.set(x, heightAt(x, z), z);
+  scene.add(g);
+  hintMarks.push({ g, t: 10 });
+}
+// hide and seek: hiders can't fight back, and seekers can't tag anyone while they're still counting
+function hnsNoAttack() {
+  if (!mp.hns) return false;
+  if (!mp.seeker) subBanner("Hiders can't attack: stay hidden!", 0.9);
+  else if (mp.countdown > 0) subBanner('Still counting…', 0.9);
+  else return false;
+  return true;
+}
 function meleeAttack() {
+  if (hnsNoAttack()) return;
   const def = GUNS.knife;
   audio.swing();
   camera.updateMatrixWorld();
@@ -1530,7 +1569,8 @@ function giveGrenades(n) {
 
 function throwGrenade() {
   if (player.dead || throwCd > 0) return;
-  if (mp.infected) return subBanner('Zombies only have claws', 0.8);
+  if (mp.infected) return subBanner(mp.hns ? 'Seekers only tag (knife)' : 'Zombies only have claws', 0.8);
+  if (mp.hns) return subBanner('No grenades in hide and seek', 0.8);
   const free = cheatsOn() && cheats.grenades;
   if (game.grenades <= 0 && !free) {
     subBanner('No grenades', 0.8);
@@ -1692,7 +1732,16 @@ function updateSupply(dt) {
 function modeLoadout() {
   if (game.mode !== 'mp' || !mp.inMatch) return false;
   const mode = MODES[mp.mode];
-  document.body.classList.toggle('infected', mp.infected);
+  document.body.classList.toggle('infected', mp.infected && !mp.hns);
+  document.body.classList.toggle('seeker', mp.seeker);
+  if (mode.hns) {
+    // everyone has just the knife: seekers tag with it (a bit faster on their feet), hiders can't use it
+    stats.speedMul = mp.seeker ? 1.1 : 1;
+    weapon.setOnly(['knife'], stats);
+    game.grenades = 0;
+    setBuild(false);
+    return true;
+  }
   if (mode.gungame) {
     const ladder = mp.ladder;
     const id = ladder[Math.min(mp.myLevel || 0, ladder.length - 1)];
@@ -1837,7 +1886,7 @@ const shieldUp = () => {
   return !!s && s.until > time;
 };
 function useShield() {
-  if (player.dead || game.state !== 'playing' || (mp.infection && mp.infected)) return;
+  if (player.dead || game.state !== 'playing' || (mp.infection && mp.infected) || mp.hns) return;
   const free = cheats.shield && cheatsOn();
   if (shield.cd > 0 && !free) {
     subBanner(`Force field recharging · ${Math.ceil(shield.cd)}s`, 1);
@@ -2499,7 +2548,7 @@ let myWolf = null;
 const wolfHunt = { prey: null, findT: 0, biteT: 0, howlT: 20, pounce: false };
 function updatePets(dt) {
   const p = account.profile;
-  const show = p.pet === 'wolf' && ['playing', 'paused', 'choosing'].includes(game.state);
+  const show = p.pet === 'wolf' && ['playing', 'paused', 'choosing'].includes(game.state) && !mp.hns; // a wolf would give away your hiding place
   if (!show) {
     if (myWolf) {
       myWolf.look.root.visible = false;
@@ -2663,7 +2712,8 @@ const tpRay = new THREE.Raycaster();
 // Aiming always goes to first person through your sights, like Fortnite; the tank is always third person.
 // The switch is saved for the big update: only admins have it until one deploys it (admin panel).
 const canSwitchView = () => account.feature('view');
-const wantThird = () => (canSwitchView() && settings.view !== 'auto' ? settings.view === 'third' : isEvent());
+// Hide and seek hiders play in third person too, so they can peek round corners.
+const wantThird = () => (canSwitchView() && settings.view !== 'auto' ? settings.view === 'third' : isEvent() || (mp.hns && !mp.seeker));
 const thirdPerson = () => !player.dead && !spectate.on && (tank.on || (wantThird() && !(weapon.ads > 0.4 && !weapon.def.melee)));
 function toggleView() {
   if (!canSwitchView()) return;
@@ -3437,7 +3487,7 @@ const mp = new Multiplayer({
     el.classList.remove('hidden');
     let n = MODES[mp.mode]?.coop ? 4 : mp.settings.respawn || 4;
     const turning = mp.infection && mp.myTeam !== INFECTED && mp.lobby?.players.some((p) => p.id === killerId && p.team === INFECTED);
-    el.innerHTML = `${turning ? '🧟 Infected by' : 'Killed by'} <b>${esc(killer)}</b><br/><span>Respawning in ${n}</span>`;
+    el.innerHTML = `${turning ? (mp.hns ? '🔎 Found by' : '🧟 Infected by') : 'Killed by'} <b>${esc(killer)}</b><br/><span>${mp.hns && turning ? "You're a seeker now · back in" : 'Respawning in'} ${n}</span>`;
     const iv = setInterval(() => {
       n--;
       if (n <= 0 || !player.dead) return clearInterval(iv);
@@ -3469,7 +3519,19 @@ const mp = new Multiplayer({
   },
   onInfected(id, by, first) {
     if (id !== mp.myId) return;
-    banner("🧟 YOU'VE BEEN INFECTED", first ? 'You start the horde: claw the survivors!' : 'Now get the rest of them', 'red', 2.6);
+    if (mp.hns) banner('🔎 YOU ARE A SEEKER', first ? `Count with your eyes shut, then find them all` : 'You were found! Now help find the rest', 'red', 2.6);
+    else banner("🧟 YOU'VE BEEN INFECTED", first ? 'You start the horde: claw the survivors!' : 'Now get the rest of them', 'red', 2.6);
+  },
+  // hide and seek: the seekers open their eyes
+  onSeekStart() {
+    if (mp.seeker) banner('🔎 READY OR NOT', 'Here you come: find them all!', 'red', 2.4);
+    else banner('🔎 THE SEEKERS ARE COMING', 'Stay hidden!', 'gold', 2.4);
+    audio.waveStart();
+  },
+  // hide and seek: a seeker's hint, someone is hiding round here
+  onHint(x, z) {
+    addHintMark(x, z);
+    subBanner('📡 Hint: someone is hiding near the red light', 2.5);
   },
   onStructures(list) {
     structures.clear();
@@ -4661,6 +4723,15 @@ accountUI.adminActions = {
     applySettings();
     return settings.zombieModels ? 'New zombies use the 3D model.' : 'New zombies use the old blocks.';
   },
+  // admin: a new Hide and Seek room on Hideaway Village, ready for people to join
+  async hideSeekRoom() {
+    if (mp.inMatch || mp.lobby) return 'Leave the room you are in first.';
+    const err = await mp.create();
+    if (err) return err;
+    mp.send({ t: 'mode', mode: 'hide' });
+    accountUI.close();
+    return `Hide and Seek room ${mp.lobby?.code || ''} made: share the code, then press START.`;
+  },
   // admin: join any room by its code (private ones too)
   async joinRoom(code) {
     const err = await mp.join(code);
@@ -4962,7 +5033,10 @@ function update(dt) {
   const moveMul = (def.moveMul || 1) * (1 - weapon.ads * 0.35);
   const flying = cheatsOn() && cheats.fly;
   if (tank.on) for (const k of ['ShiftLeft', 'ShiftRight', 'Space', 'KeyC', 'ControlLeft']) player.keys.delete(k); // tanks don't sprint, jump or crouch
-  const speedMul = cheatsOn() && cheats.speed ? 2 : 1;
+  // hide and seek: seekers stay put (eyes shut) until they've finished counting
+  const speedMul = (cheatsOn() && cheats.speed ? 2 : 1) * (mp.seeker && mp.countdown > 0 ? 0 : 1);
+  if (mp.seeker && mp.countdown > 0) player.keys.delete('Space');
+  updateBlindfold(dt);
   const hSpeed = flying ? flyUpdate(dt) : player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul * speedMul * weatherMove(), world.ladders);
   tpCamera(); // events: over the shoulder
   hitSoundPlayed = false;

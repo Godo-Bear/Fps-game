@@ -3841,3 +3841,10 @@ body.infected #game::after {
 .access-box .price-tag { justify-content: flex-start; margin: 4px 0 6px; padding: 8px 12px; }
 .access-box .price-tag .pt-price, .access-box .price-tag .pt-months { font-size: 24px; }
 .access-box .price-tag .pt-months b { font-size: 30px; }
+
+/* ---- hide and seek */
+body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 50%, rgba(160, 30, 20, 0.3) 100%); z-index: 1; }
+#blindfold { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: #060505; pointer-events: none; }
+#blindfold > div { text-align: center; font-family: 'Black Ops One', sans-serif; font-size: 34px; color: #e9d9b8; letter-spacing: 2px; }
+#blindfold b { display: block; font-size: 120px; color: #ff5d4d; line-height: 1.1; }
+#blindfold span { display: block; font-family: 'Rajdhani', sans-serif; font-size: 18px; color: #9c8f78; letter-spacing: 0; }

@@ -38,6 +38,13 @@ Object.assign(THEMES, {
     horizon: 'sea', horizonColor: 0x3e464e, road: false, tumbleweeds: false, motes: 0xc8d0d8,
     weathers: ['harbour', 'harbour', 'seafog', 'rain', 'storm'], weather: 'harbour',
   },
+  village: {
+    name: 'Hideaway Village', desc: 'A sunny village made for hide and seek: houses, sheds, a hedge maze, corn fields, bushes and a playground.',
+    skyTop: 0x5f9fd8, skyHorizon: 0xcfe6f0, sunDir: [0.45, 0.55, -0.7], sunColor: 0xfff4dc, hemiSky: 0xe8f4ff, hemiGround: 0x6a8a4a,
+    ground: 'meadow', groundTint: [0xffffff, 0xe0f0d0, 0xc8e0b0], grass: { count: 9000, shades: [0x5a8a32, 0x6a9a3a, 0x4a7a2a, 0x7aa848], h: 1.1 },
+    horizon: 'treeline', horizonColor: 0x2e5a2e, road: false, tumbleweeds: false, motes: 0xffffff,
+    weathers: ['sunny', 'sunny', 'overcast', 'rain'], weather: 'sunny',
+  },
   ember: {
     name: 'Ember Canyon', desc: 'A burnt-out canyon under a burning sky: lava pools, scorched shacks and black rock.',
     skyTop: 0x3a1e22, skyHorizon: 0xd0602a, sunDir: [-0.3, 0.15, -0.95], sunColor: 0xff8a4a, hemiSky: 0xc08070, hemiGround: 0x2a1a14,
@@ -524,6 +531,224 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
     return g;
   }
 
+  // ---------------------------------------------------------------- hide and seek (Hideaway Village)
+  // Things to hide in, behind and under: bushes you can stand inside, a hedge maze, corn taller than you,
+  // sheds and toilets with doors, a playground and an orchard.
+  const lambert = (color) => new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true });
+  const HM = {
+    leaf: [lambert(0x4f8a34), lambert(0x3e7a2c), lambert(0x6a9a3a)],
+    hedge: lambert(0x3a7a2c),
+    corn: lambert(0x8fae48),
+    cornLeaf: lambert(0x6f9a36),
+    tassel: lambert(0xe0c060),
+    red: lambert(0xc8402a),
+    blue: lambert(0x2f6fd0),
+    yellow: lambert(0xf0c030),
+  };
+  const leafGeo = new THREE.DodecahedronGeometry(1, 0);
+  // a leafy bush you can walk into and crouch in (it doesn't stop you, it just hides you)
+  function bush(x, z, s = rand(0.9, 1.35)) {
+    const g = new THREE.Group();
+    const n = 4 + Math.floor(rng() * 3);
+    for (let i = 0; i < n; i++) {
+      const r = rand(0.75, 1.1) * s;
+      const m = meshOf(leafGeo, pick(HM.leaf));
+      m.scale.setScalar(r);
+      m.position.set(rand(-0.75, 0.75) * s, r * 0.72, rand(-0.75, 0.75) * s);
+      m.rotation.set(rand(0, PI), rand(0, PI), 0);
+      g.add(m);
+    }
+    place(g, x, z, 0, 0.1);
+    reserve(x, z, 1.3 * s);
+    return g;
+  }
+  // a round orchard tree (solid trunk, a big leafy top)
+  function roundTree(x, z, s = rand(0.9, 1.3)) {
+    const g = new THREE.Group();
+    const trunk = cyl(0.18 * s, 0.26 * s, 3 * s, M.tree, 7);
+    trunk.position.y = 1.5 * s;
+    g.add(solid(trunk));
+    for (let i = 0; i < 3; i++) {
+      const m = meshOf(leafGeo, pick(HM.leaf));
+      m.scale.setScalar(rand(1.3, 1.8) * s);
+      m.position.set(rand(-0.7, 0.7) * s, (3.4 + rand(0, 1)) * s, rand(-0.7, 0.7) * s);
+      g.add(m);
+    }
+    place(g, x, z, rand(0, PI), 0.1);
+    reserve(x, z, 1.2);
+    return g;
+  }
+  // a hedge maze (made from the map's seeded random numbers, so it's the same maze for everyone)
+  function hedgeMaze(cx, cz, cells = 6, size = 5) {
+    const N = cells;
+    const H = 2.6;
+    // walls between cells: horiz[r][c] is the wall above cell (r, c); vert[r][c] the wall left of it
+    const horiz = Array.from({ length: N + 1 }, () => Array(N).fill(true));
+    const vert = Array.from({ length: N }, () => Array(N + 1).fill(true));
+    const seen = Array.from({ length: N }, () => Array(N).fill(false));
+    const stack = [[0, 0]];
+    seen[0][0] = true;
+    while (stack.length) {
+      const [r, c] = stack[stack.length - 1];
+      const next = [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]].filter(([a, b]) => a >= 0 && b >= 0 && a < N && b < N && !seen[a][b]);
+      if (!next.length) {
+        stack.pop();
+        continue;
+      }
+      const [a, b] = next[Math.floor(rng() * next.length)];
+      if (a !== r) horiz[Math.max(a, r)][c] = false;
+      else vert[r][Math.max(b, c)] = false;
+      seen[a][b] = true;
+      stack.push([a, b]);
+    }
+    // ways in on all four sides
+    const mid = Math.floor(N / 2);
+    horiz[0][mid] = horiz[N][mid - 1] = false;
+    vert[mid][0] = vert[mid - 1][N] = false;
+    const g = new THREE.Group();
+    const half = (N * size) / 2;
+    const wall = (x, z, alongX) => {
+      const m = box(alongX ? size + 0.9 : 0.9, H, alongX ? 0.9 : size + 0.9, HM.hedge);
+      m.position.set(x, H / 2, z);
+      g.add(solid(m));
+    };
+    for (let r = 0; r <= N; r++) for (let c = 0; c < N; c++) if (horiz[r][c]) wall(-half + (c + 0.5) * size, -half + r * size, true);
+    for (let r = 0; r < N; r++) for (let c = 0; c <= N; c++) if (vert[r][c]) wall(-half + c * size, -half + (r + 0.5) * size, false);
+    // a statue in the middle
+    const plinth = box(1.2, 0.8, 1.2, M.stone);
+    plinth.position.y = 0.4;
+    g.add(solid(plinth));
+    const statue = meshOf(new THREE.DodecahedronGeometry(0.55, 0), M.stone);
+    statue.position.y = 1.35;
+    g.add(statue);
+    place(g, cx, cz, 0, 0.05);
+    reserve(cx, cz, half * 1.42 + 1);
+    return g;
+  }
+  // a field of corn taller than you (instanced: one draw for the stalks, one for the leaves, one for the tops)
+  function cornField(cx, cz, w, d) {
+    const pts = [];
+    for (let x = -w / 2; x < w / 2; x += 0.95) for (let z = -d / 2; z < d / 2; z += 0.95) if (rng() > 0.07) pts.push([cx + x + rand(-0.25, 0.25), cz + z + rand(-0.25, 0.25), rand(2.1, 2.7)]);
+    const stalkGeo = new THREE.BoxGeometry(0.1, 1, 0.1);
+    stalkGeo.translate(0, 0.5, 0);
+    const stalks = new THREE.InstancedMesh(stalkGeo, HM.corn, pts.length);
+    const tops = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 0.35, 0.16), HM.tassel, pts.length);
+    const leaves = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.03, 0.2), HM.cornLeaf, pts.length * 3);
+    const o = new THREE.Object3D();
+    pts.forEach(([x, z, h], i) => {
+      const y = heightAt(x, z) - 0.05;
+      o.position.set(x, y, z);
+      o.rotation.set(rand(-0.05, 0.05), 0, rand(-0.05, 0.05));
+      o.scale.set(1, h, 1);
+      o.updateMatrix();
+      stalks.setMatrixAt(i, o.matrix);
+      o.scale.set(1, 1, 1);
+      o.position.y = y + h + 0.1;
+      o.updateMatrix();
+      tops.setMatrixAt(i, o.matrix);
+      for (let k = 0; k < 3; k++) {
+        o.position.set(x, y + h * (0.3 + k * 0.22), z);
+        o.rotation.set(0, rand(0, PI), rand(-0.5, -0.2));
+        o.updateMatrix();
+        leaves.setMatrixAt(i * 3 + k, o.matrix);
+      }
+    });
+    for (const m of [stalks, tops, leaves]) {
+      m.castShadow = true;
+      m.receiveShadow = true;
+      root.add(m);
+    }
+    reserve(cx, cz, Math.hypot(w, d) / 2);
+    // a scarecrow keeping watch
+    const sc = new THREE.Group();
+    const pole = box(0.12, 2.6, 0.12, M.wood);
+    pole.position.y = 1.3;
+    const arms = box(1.6, 0.1, 0.1, M.wood);
+    arms.position.y = 2;
+    const coat = box(0.6, 0.8, 0.3, HM.red);
+    coat.position.y = 1.8;
+    const head = box(0.4, 0.4, 0.4, M.hay);
+    head.position.y = 2.45;
+    sc.add(pole, arms, coat, head);
+    place(sc, cx + rand(-w / 4, w / 4), cz + rand(-d / 4, d / 4), rand(0, PI));
+  }
+  // a little shed (or a toilet) with a door you can duck into
+  function shed(x, z, rot, { w = 3.4, d = 2.8, h = 2.4, wall = pick([M.woodWall, M.barnRed, M.darkWood]) } = {}) {
+    const g = new THREE.Group();
+    const T = 0.15;
+    const door = Math.min(1.2, w - 0.8);
+    const piece = (pw, ph, pd, px, py, pz, overhead = false) => {
+      const m = box(pw, ph, pd, wall);
+      m.position.set(px, py, pz);
+      if (overhead) m.userData.overhead = true;
+      g.add(solid(m));
+    };
+    piece(w, h, T, 0, h / 2, -d / 2);
+    piece(T, h, d, -w / 2, h / 2, 0);
+    piece(T, h, d, w / 2, h / 2, 0);
+    const side = (w - door) / 2;
+    piece(side, h, T, -w / 2 + side / 2, h / 2, d / 2);
+    piece(side, h, T, w / 2 - side / 2, h / 2, d / 2);
+    piece(door, 0.4, T, 0, h - 0.2, d / 2, true);
+    const roof = box(w + 0.4, 0.12, d + 0.5, M.roof);
+    roof.position.y = h + 0.12;
+    roof.rotation.x = 0.08;
+    g.add(roof);
+    const floor = box(w, 0.08, d, M.planks);
+    floor.position.y = 0.04;
+    g.add(floor);
+    if (w > 2.5) {
+      const junk = box(0.7, 0.6, 0.6, M.wood);
+      junk.position.set(w / 2 - 0.6, 0.3, -d / 2 + 0.5);
+      g.add(junk);
+    }
+    place(g, x, z, rot, 0.05);
+    reserve(x, z, Math.hypot(w, d) / 2 + 0.8);
+    return g;
+  }
+  // a playground: a slide with a platform you can climb onto, a tunnel to crawl in, swings
+  function playground(x, z, rot) {
+    const g = new THREE.Group();
+    const top = 1.8;
+    for (const [px, pz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) {
+      const post = box(0.12, top + 1, 0.12, HM.blue);
+      post.position.set(px, (top + 1) / 2, pz);
+      g.add(solid(post));
+    }
+    const deck = box(1.8, 0.15, 1.8, M.planks);
+    deck.position.y = top;
+    deck.userData.overhead = true;
+    g.add(solid(deck));
+    const slide = box(0.8, 0.06, 3.6, HM.yellow);
+    slide.position.set(0, top / 2, 2.6);
+    slide.rotation.x = Math.atan2(top, 3.4);
+    g.add(slide);
+    ladder(g, 0, -0.95, 0, -1, top);
+    // a red tunnel lying on the grass
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 3.2, 14, 1, true), new THREE.MeshStandardMaterial({ color: 0xc8402a, roughness: 0.8, side: THREE.DoubleSide }));
+    tube.rotation.z = PI / 2;
+    tube.position.set(-4.5, 0.7, 0);
+    tube.castShadow = true;
+    g.add(tube);
+    // swings
+    for (const sx of [3.6, 6]) {
+      for (const sz of [-1.2, 1.2]) {
+        const leg = box(0.1, 2.6, 0.1, HM.red);
+        leg.position.set(sx, 1.3, sz);
+        g.add(solid(leg));
+      }
+      const bar = box(0.12, 0.12, 2.6, HM.red);
+      bar.position.set(sx, 2.6, 0);
+      g.add(bar);
+      const seat = box(0.5, 0.06, 0.25, M.rubber);
+      seat.position.set(sx, 0.55, 0);
+      g.add(seat);
+    }
+    place(g, x, z, rot, 0.05);
+    reserve(x, z, 8);
+    return g;
+  }
+
   // ---------------------------------------------------------------- adverts
   // The owner's JINtelligence ads (public/textures/ads): on billboards, poster stands and the warehouse walls.
   // Lit a little from inside so they read at dusk too. ads = false (admin panel) leaves them all out.
@@ -629,8 +854,8 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
   }
   function adverts() {
     if (!ads) return;
-    adSpots(4, 58, 92, 4.5, billboard);
-    adSpots(8, 18, 52, 1.4, posterStand);
+    adSpots(3, 58, 92, 4.5, billboard);
+    adSpots(6, 18, 52, 1.4, posterStand);
   }
 
   // ---------------------------------------------------------------- warehouse
@@ -2158,6 +2383,10 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
       (x, z, r) => crateStack(x, z, r),
       (x, z, r) => dumpster(x, z, r),
       (x, z, r) => { tireStack(x, z); tireStack(x + 1.2, z + 0.3); pallet(x - 1.6, z); }],
+    village: [(x, z, r) => { hayBale(x, z); hayBale(x + 1.6, z + 0.4); },
+      (x, z, r) => crateStack(x, z, r),
+      (x, z, r) => { logPile(x, z, r); },
+      (x, z, r) => ruinWall(x, z, r, 4, M.stone)],
     ember: [(x, z, r) => ruinWall(x, z, r, 5, M.burnt),
       (x, z, r) => ruinWall(x, z, r, 4, M.obsidian),
       (x, z, r) => crateStack(x, z, r),
@@ -2423,6 +2652,53 @@ export function buildWorld(scene, mapId = 'plains', { ads = true } = {}) {
       ammoAt(-6, 22, 0);
       ammoAt(6, -18, PI);
       extras({ debris: M.rust, stones: M.concreteDark, cover: 18 });
+    },
+
+    village() {
+      // houses round the village green (the middle stays clear for capture point)
+      for (const [x, z, r, w, d, o] of [
+        [-20, -22, 0.2, 8, 6, {}], [20, -22, -0.2, 8, 6, { wall: M.brick }], [-26, 12, PI / 2, 9, 7, {}], [27, 8, -PI / 2, 8, 6, { wall: M.woodWall }],
+        [-14, 30, PI, 8, 6, { wall: M.plaster2 }], [14, 32, PI, 9, 6, {}], [-52, -30, 0.5, 9, 7, { wall: M.woodWall }], [54, -32, -0.4, 8, 6, {}],
+        [-56, 34, 2, 8, 7, { wall: M.brick }], [60, 36, -2.2, 9, 7, {}],
+      ]) brokenHouse(x, z, r, w, d, { chimney: true, ...o });
+      // the farm: barn, windmill, water tower, hay
+      brokenHouse(82, 22, -PI / 2, 12, 9, { h: 4.6, wall: M.barnRed, chimney: false });
+      windmill(-92, -18);
+      waterTower(88, -36);
+      for (const [x, z] of [[72, 46], [74, 44], [70, 50], [92, 6], [94, 9], [-82, 30], [-80, 33]]) hayBale(x, z);
+      // sheds, and toilets out the back
+      for (const [x, z, r] of [[-38, -12, 0.3], [40, -14, -0.3], [-8, -36, 0], [12, -38, 0.5], [46, 52, 1], [-48, 54, 2], [-64, -50, 0.8], [66, -52, -0.8], [-86, 6, PI / 2], [86, -6, -PI / 2]]) shed(x, z, r);
+      for (const [x, z, r] of [[33, -4, PI], [-30, 42, 0.4], [6, 46, PI], [-60, 24, -PI / 2]]) shed(x, z, r, { w: 1.5, d: 1.5, h: 2.3, wall: HM.blue });
+      // the hedge maze up north, the corn fields down south
+      hedgeMaze(0, -64);
+      cornField(-30, 52, 22, 16);
+      cornField(32, 64, 22, 16);
+      playground(40, -40, 0.4);
+      // containers and crates to squeeze between
+      for (const [x, z, r, m] of [[56, -70, 0.3, M.containerA], [62, -64, 1.7, M.containerB], [-60, -70, 0.2, M.containerC], [-52, -76, 1.5, M.containerA], [-88, 64, 0.6, M.containerB]]) container(x, z, r, m);
+      for (const [x, z, r] of [[50, -60, 0.2], [-46, -64, 1], [24, -54, 0.6], [-24, -52, 2.1]]) crateStack(x, z, r);
+      watchtower(-96, 40, 0.3, { wood: M.wood });
+      watchtower(98, 52, -0.4, { wood: M.wood });
+      car(-6, 44, 0.4);
+      car(48, 10, PI / 2 + 0.2);
+      truck(-40, 2, 0.2);
+      // the orchard
+      for (let i = 0; i < 18; i++) roundTree(-66 + (i % 6) * 7 + rand(-1.5, 1.5), 62 + Math.floor(i / 6) * 8 + rand(-1.5, 1.5));
+      // fences round the fields
+      fenceLine(-42, 42, -18, 42);
+      fenceLine(20, 54, 44, 54);
+      // bushes everywhere, a ring of trees, crates and barrels
+      for (const [x, z] of [[-14, -14], [14, -14], [-16, 18], [16, 20], [-34, 24], [36, 22], [-30, -34], [30, -34]]) bush(x, z, 1.2);
+      scatter(70, 1.6, (x, z) => bush(x, z), 14, ARENA_RADIUS - 8);
+      scatter(26, 1.4, (x, z) => roundTree(x, z), 30, ARENA_RADIUS - 4);
+      scatter(18, 1, crate, 14, 90);
+      scatter(14, 0.8, barrel, 14, 90);
+      scatter(10, 1.3, hayBale, 20, 95);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * PI * 2 + 0.2;
+        lampAt(Math.cos(a) * 14, Math.sin(a) * 14, -a + PI);
+      }
+      extras({ cover: 8, barrels: 0, ammo: 2, debris: M.wood, stones: M.rock });
     },
 
     ember() {

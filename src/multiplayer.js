@@ -356,6 +356,17 @@ export class Multiplayer {
   get infection() {
     return !!MODES[this.mode]?.infection;
   }
+  // hide and seek (it runs on the infection rules: hiders are the survivors, seekers the infected)
+  get hns() {
+    return this.inMatch && !!MODES[this.mode]?.hns;
+  }
+  get seeker() {
+    return this.hns && this.myTeam === INFECTED;
+  }
+  // seconds until the seekers open their eyes (0 once they have, or before anyone is seeking)
+  get countdown() {
+    return this.hns && this.seekAt ? Math.max(0, (this.seekAt - Date.now()) / 1000) : 0;
+  }
   get oitc() {
     return this.inMatch && !!MODES[this.mode]?.oitc;
   }
@@ -533,6 +544,7 @@ export class Multiplayer {
         this.myLevel = 0;
         this.jugg = m.jugg || 0;
         this.endsAt = Date.now() + (m.endsAt - m.now);
+        this.seekAt = m.seekAt ? Date.now() + (m.seekAt - m.now) : 0;
         this.myStats = { kills: 0, deaths: 0, headshots: 0 };
         this.feed = [];
         this._renderFeed();
@@ -554,6 +566,14 @@ export class Multiplayer {
         break;
       case 'infected':
         this.ctx.onInfected?.(m.id, m.by, !!m.first);
+        break;
+      case 'seek':
+        // hide and seek: when the seekers open their eyes
+        this.seekAt = Date.now() + (m.at - m.now);
+        this.ctx.onSeekStart?.();
+        break;
+      case 'hint':
+        this.ctx.onHint?.(m.x, m.z);
         break;
       case 'shield':
         this.ctx.onShield?.(m.id, m.ms);
@@ -663,7 +683,7 @@ export class Multiplayer {
     const kc = this.teams ? TEAM_CSS[this._team(m.k)] : '#ffd38a';
     const vc = this.teams ? TEAM_CSS[this._team(m.v)] : '#e9d9b8';
     const gun = GUNS[m.g];
-    const icon = this.infection && this._team(m.k) === INFECTED ? '🧟' : m.mel ? '🔪' : gun ? gun.icon : '🔫';
+    const icon = this.infection && this._team(m.k) === INFECTED ? (MODES[this.mode]?.hns ? '🔎' : '🧟') : m.mel ? '🔪' : gun ? gun.icon : '🔫';
     this._addFeed(`<b style="color:${kc}">${esc(killer)}</b> <span class="gun">${icon}${m.head ? ' 🎯' : ''}</span> <b style="color:${vc}">${esc(victim)}</b>`);
     if (m.k === this.myId) {
       this.myStats.kills++;
@@ -711,7 +731,7 @@ export class Multiplayer {
       }
       if (!a) {
         if (!info) continue;
-        const color = this.infection ? (info.team === INFECTED ? ZOMBIE_GREEN : TEAM_COLOR[SURVIVORS]) : this.teams ? TEAM_COLOR[info.team] : new THREE.Color(info.color || '#888888').getHex();
+        const color = this.hns ? TEAM_COLOR[info.team] : this.infection ? (info.team === INFECTED ? ZOMBIE_GREEN : TEAM_COLOR[SURVIVORS]) : this.teams ? TEAM_COLOR[info.team] : new THREE.Color(info.color || '#888888').getHex();
         a = new Avatar(info, color, !!(this.infection || this.teams));
         a.team = info.team;
         this.avatars.set(id, a);
@@ -855,9 +875,14 @@ export class Multiplayer {
     if (!this.inMatch) return;
     for (const a of this.avatars.values()) {
       a.update(dt, a.flags || 0);
-      // their wolf companion, if they have one out
+      // hide and seek: seekers don't get to see where hiders are from their names (or their chat bubbles)
+      if (this.seeker && a.team === SURVIVORS) {
+        a.label.visible = false;
+        if (a.bubble) a.bubble.visible = false;
+      }
+      // their wolf companion, if they have one out (not in hide and seek: it would give them away)
       const info = this.lobby?.players.find((p) => p.id === a.id);
-      const pet = info?.pet;
+      const pet = this.hns ? null : info?.pet;
       if (pet && !a.wolf) a.wolf = new Wolf(this.ctx.scene, pet);
       if (a.wolf) {
         a.wolf.look.root.visible = !!pet; // it never dies, even when they do
@@ -960,7 +985,16 @@ export class Multiplayer {
     const time = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     let html = '';
     const limit = limitFor(this.mode, this.settings);
-    if (this.infection) {
+    if (this.hns) {
+      const team = (r) => this._team(r[0]);
+      const hiding = s.ps.filter((r) => team(r) === SURVIVORS).length;
+      const seeking = s.ps.length - hiding;
+      const count = Math.ceil(this.countdown);
+      const obj = !seeking ? 'Get ready to hide…' : count ? `🙈 The seekers open their eyes in <b>${count}</b>` : 'Seekers 🔎 vs Hiders 🙈 · stay hidden until the time runs out';
+      html = `<div class="mp-score"><span class="blue">${hiding}</span><span class="time">${time}</span><span class="red">${seeking}</span></div>
+        <div class="mp-obj">${obj}</div>
+        <div class="mp-team">${this.seeker ? '<b style="color:#ff5d4d">🔎 SEEKER</b> · find them and tag them (knife)' : '<b style="color:#5ea2ff">🙈 HIDER</b> · stay hidden: you can\'t fight back'}</div>`;
+    } else if (this.infection) {
       const team = (r) => this._team(r[0]);
       const surv = s.ps.filter((r) => team(r) === SURVIVORS).length;
       const inf = s.ps.length - surv;
@@ -1034,7 +1068,8 @@ export class Multiplayer {
     else if (m.winner === 'draw') title = 'DRAW';
     else if (this.infection) {
       won = m.winner === this.myTeam;
-      title = m.winner === INFECTED ? 'THE ZOMBIES GOT EVERYONE' : 'THE SURVIVORS HELD OUT';
+      if (MODES[this.mode]?.hns) title = m.winner === INFECTED ? 'THE SEEKERS FOUND EVERYONE' : 'THE HIDERS STAYED HIDDEN';
+      else title = m.winner === INFECTED ? 'THE ZOMBIES GOT EVERYONE' : 'THE SURVIVORS HELD OUT';
     }
     else if (this.teams) {
       won = m.winner === this.myTeam;
@@ -1136,7 +1171,8 @@ export class Multiplayer {
         .join('');
     } else {
       roster = `<div class="team ffa"><h4>${mode.coop ? 'SQUAD' : 'PLAYERS'}</h4>${l.players.map(player).join('')}</div>`;
-      if (mode.infection) roster += '<p class="muted small">Teams are picked by the game: everyone starts as a survivor.</p>';
+      if (mode.hns) roster += '<p class="muted small">Teams are picked by the game: everyone starts as a hider, then the seekers are picked.</p>';
+      else if (mode.infection) roster += '<p class="muted small">Teams are picked by the game: everyone starts as a survivor.</p>';
     }
     if (admin && mode.teams) roster += `<div class="admin-teams"><span class="muted small">⭐ Admin teams:</span><button class="btn small ghost" data-teamop="shuffle">🔀 SHUFFLE</button><button class="btn small ghost" data-teamop="balance">⚖️ BALANCE</button><button class="btn small ghost" data-teamop="swap">⇄ SWAP SIDES</button></div>`;
     $('lobby-code').textContent = l.code;

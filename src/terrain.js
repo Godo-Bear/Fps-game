@@ -20,6 +20,7 @@ const TERRAIN = {
   forest: { a: 0.8, f: 1.4, ox: -70, oz: 55 },
   docks: { a: 0.45, f: 0.8, ox: 120, oz: 30, island: 116 },
   ember: { a: 1.5, f: 1.3, ox: -30, oz: -95 },
+  village: { a: 0.35, f: 0.8, ox: 15, oz: 60 }, // gentle: hide and seek
 };
 let T = TERRAIN.plains;
 export function setTerrain(id) {

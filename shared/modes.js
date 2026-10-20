@@ -13,6 +13,7 @@ export const MODES = {
   extract: { id: 'extract', name: 'Extraction', short: 'EVAC', teams: false, coop: true, extract: true, desc: 'Co-op vs the zombies with a way out: survive until the helicopter comes, then the whole squad has to hold the landing zone until it can take off.' },
   // only while the admin is hosting an event (admin panel → Events); not in the normal list of modes
   event: { id: 'event', name: 'Event', short: 'EVENT', teams: true, event: true, hidden: true, scoreLimit: 400, desc: 'Red vs Blue vs the zombies, seen from behind your character. Points for every zombie and every enemy you take down, and kills can drop puzzle pieces of new characters.' },
+  hide: { id: 'hide', name: 'Hide and Seek', short: 'H&S', teams: true, infection: true, hns: true, autoTeams: true, map: 'village', desc: "Hiders get a head start to hide while the seekers count with their eyes shut. Seekers tag hiders with the knife, and anyone found joins the seekers. Hiders win if anyone is still hidden when time runs out." },
   infect: { id: 'infect', name: 'Infection', short: 'INF', teams: true, infection: true, autoTeams: true, desc: "After 10 seconds someone turns into a zombie. Anyone a zombie kills joins them. Survivors win if anyone is still standing when time runs out." },
 };
 
@@ -25,6 +26,9 @@ export const GUN_LADDERS = {
 export const SURVIVORS = 'blue';
 export const INFECTED = 'red';
 export const INFECT_DELAY = 10; // seconds before the first zombie is picked
+// Hide and Seek works like infection: hiders are the survivors (blue), seekers the infected (red)
+export const HIDERS = SURVIVORS;
+export const SEEKERS = INFECTED;
 
 // ---- custom match settings: the host picks these in the room lobby, per mode
 const opt = (vals, fmt = String) => vals.map((v) => [v, fmt(v)]);
@@ -55,6 +59,12 @@ export const MODE_SETTINGS = {
   oitc: [LIMIT('🎯 Kills to win', [5, 10, 15, 20], 10), TIME(8, [3, 5, 8, 10]), RESPAWN],
   jugg: [LIMIT('🏆 Points to win', [10, 20, 30], 20), TIME(10, [5, 8, 10, 15]), HP, RESPAWN, DROPS],
   extract: [],
+  hide: [
+    TIME(5, [3, 4, 5, 8, 10]),
+    { key: 'hide', label: '🙈 Time to hide', options: opt([20, 30, 45, 60], (v) => `${v} s`), def: 30 },
+    { key: 'starters', label: '🔎 Seekers at the start', options: opt([1, 2, 3]), def: 1 },
+    { key: 'hints', label: '📡 Hints for the seekers', options: [[0, 'Off'], [60, 'Every 60 s'], [30, 'Every 30 s']], def: 60 },
+  ],
   infect: [
     TIME(4, [2, 3, 4, 5, 8]),
     { key: 'starters', label: '🧟 First zombies', options: opt([1, 2, 3]), def: 1 },
@@ -120,7 +130,7 @@ export function makeRoomCode() {
 
 // Solo play always uses this map; the others are for multiplayer.
 export const SOLO_MAP = 'plains';
-export const MP_MAPS = ['frost', 'forest', 'docks', 'ember'];
+export const MP_MAPS = ['frost', 'forest', 'docks', 'ember', 'village'];
 
 // Maps. Every map keeps the spawns, flags and capture point above clear, so all modes work everywhere.
 export const MAPS = {
@@ -129,6 +139,7 @@ export const MAPS = {
   forest: { name: 'Blackwood Hollow', weathers: ['dusk', 'dusk', 'mist', 'rain', 'storm'] },
   docks: { name: 'Rustwater Docks', weathers: ['harbour', 'harbour', 'seafog', 'rain', 'storm'] },
   ember: { name: 'Ember Canyon', weathers: ['emberdusk', 'emberdusk', 'ashfall', 'smoke'] },
+  village: { name: 'Hideaway Village', weathers: ['sunny', 'sunny', 'overcast', 'rain'] },
 };
 
 // Quick chat wheel (Z): 8 short phrases you can rewrite (Customise). Shown above your head and in chat.

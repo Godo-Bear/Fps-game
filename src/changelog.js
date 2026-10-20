@@ -2,6 +2,18 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.40', date: '20 Oct 2026', title: '🙈 Hide and Seek',
+    items: [
+      'New multiplayer mode: Hide and Seek. Everyone starts hiding; the game picks the seekers, who count with their eyes shut while the rest hide.',
+      'Seekers tag hiders with the knife (one tag and you are found) and every hider found joins the seekers. Hiders win if anyone is still hidden when time runs out.',
+      'Hiders play in third person so they can peek round corners, and seekers can\'t see their names. Now and then the seekers get a hint: a red light near someone\'s hiding place.',
+      'New map: Hideaway Village, made for it. Houses, sheds and outhouses with doors, a hedge maze, corn fields taller than you, bushes you can crouch in, a playground, an orchard and a farm.',
+      'The host picks the time limit, how long everyone gets to hide, how many seekers start and how often the hints come.',
+      'A few fewer ads round the maps.',
+      'Admin: a Hide and Seek card in the Game tab makes a room for it in one click.',
+    ],
+  },
+  {
     v: '5.39', date: '20 Oct 2026', title: '📢 JINtelligence ads around the maps',
     items: [
       'Every map now has JINtelligence ads: big billboards round the edge, poster stands around the middle, banners down the warehouse walls and posters on some house walls.',

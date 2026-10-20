@@ -1797,6 +1797,7 @@ export class Room extends DurableObject {
         if (this.mode === 'event' || MODES[m.mode]?.event) return;
         if (p.id === this.hostId && this.phase === 'lobby' && MODES[m.mode]) {
           this.mode = m.mode;
+          if (MODES[m.mode].map) this.map = MODES[m.mode].map; // hide and seek: the map made for it (the host can still change it)
           this._broadcast(this._lobby());
         }
         break;
@@ -1824,7 +1825,7 @@ export class Room extends DurableObject {
       case 'shield': {
         // force field: 8 seconds of no damage, every 45 seconds
         if (this.phase !== 'playing' || !p.alive || now - (p.lastShield || 0) < 44000) return;
-        if (MODES[this.mode].infection && p.team === INFECTED) return;
+        if ((MODES[this.mode].infection && p.team === INFECTED) || MODES[this.mode].hns) return; // no force fields in hide and seek
         p.lastShield = now;
         p.shieldUntil = now + 8000;
         const msg = JSON.stringify({ t: 'shield', id: p.id });
@@ -2229,7 +2230,7 @@ export class Room extends DurableObject {
   _matchStart() {
     return {
       t: 'start', mode: this.mode, map: this.map, weather: this.match.weather, endsAt: this.match.endsAt, now: Date.now(),
-      structures: [...this.match.structures.values()], settings: this.match.set, jugg: this.match.jugg,
+      structures: [...this.match.structures.values()], settings: this.match.set, jugg: this.match.jugg, seekAt: this.match.seekAt,
       drops: [...this.match.drops.values()].map((d) => this._dropMsg(d)),
     };
   }
@@ -2290,8 +2291,24 @@ export class Room extends DurableObject {
         return;
       }
       m.infected = true;
+      if (MODES[this.mode].hns) {
+        // the seekers count with their eyes shut while everyone hides
+        m.seekAt = now + (m.set.hide || 30) * 1000;
+        m.hintAt = m.seekAt + (m.set.hints || 0) * 1000;
+        this._broadcast({ t: 'seek', at: m.seekAt, now });
+      }
       this._infect(Math.min(m.set.starters || 1, joined.length - 1));
       return;
+    }
+    // hide and seek: now and then the seekers get told roughly where someone is
+    if (MODES[this.mode].hns && m.set.hints && now >= m.hintAt && now >= m.seekAt) {
+      m.hintAt = now + m.set.hints * 1000;
+      const hiders = joined.filter((p) => p.team === SURVIVORS && p.alive);
+      const h = hiders[Math.floor(Math.random() * hiders.length)];
+      if (h) {
+        const msg = { t: 'hint', x: Math.round(h.pos[0] + (Math.random() - 0.5) * 12), z: Math.round(h.pos[2] + (Math.random() - 0.5) * 12) };
+        for (const p of joined) if (p.team === INFECTED) this._send(p, msg);
+      }
     }
     // every zombie left: someone else turns
     if (!joined.some((p) => p.team === INFECTED) && joined.length >= 2) this._infect(1);
@@ -2306,7 +2323,9 @@ export class Room extends DurableObject {
       this._broadcast({ t: 'infected', id: p.id, first: true });
       this._spawn(p);
     }
-    if (picked.length) this._broadcast({ t: 'msg', text: `🧟 ${picked.map((p) => p.name).join(', ')} turned into ${picked.length > 1 ? 'zombies' : 'a zombie'}! RUN!`, big: true, team: INFECTED });
+    if (!picked.length) return;
+    if (MODES[this.mode].hns) this._broadcast({ t: 'msg', text: `🔎 ${picked.map((p) => p.name).join(', ')} ${picked.length > 1 ? 'are seeking' : 'is seeking'}! HIDE!`, big: true, team: INFECTED });
+    else this._broadcast({ t: 'msg', text: `🧟 ${picked.map((p) => p.name).join(', ')} turned into ${picked.length > 1 ? 'zombies' : 'a zombie'}! RUN!`, big: true, team: INFECTED });
   }
 
   _startMatch() {
@@ -2320,7 +2339,8 @@ export class Room extends DurableObject {
       drops: new Map(), // supply drops: id -> { id, x, z, gun, landAt }
       nextDrop: 1,
       dropAt: now + SUPPLY_FIRST * 1000,
-      infectAt: now + INFECT_DELAY * 1000,
+      infectAt: now + (MODES[this.mode].hns ? 1500 : INFECT_DELAY * 1000), // hide and seek picks the seekers at once
+      seekAt: 0, // hide and seek: when the seekers open their eyes
       infected: false,
       jugg: 0,
       juggAt: now + 5000,
@@ -2425,11 +2445,14 @@ export class Room extends DurableObject {
     if (dist > 320) return;
     // infection zombies only have their claws (the knife): close up only
     if (mode.infection && p.team === INFECTED && (!m.melee || dist > 5)) return;
+    // hide and seek: hiders can't hurt anyone, and seekers can't tag anyone until they've finished counting
+    if (mode.hns && (p.team !== INFECTED || now < (this.match.seekAt || Infinity))) return;
     if (now < target.protectUntil || now < (target.shieldUntil || 0) || target.god) return;
     // one in the chamber: every bullet kills (and an admin's one-hit-kill cheat)
     // in a tank (only if they really have one): a quarter of the damage
     const armour = target.flags & TANK_FLAG && target.items?.sp_tank ? TANK_ARMOUR : 1;
-    target.hp -= (mode.oitc && !m.melee) || p.onehit ? target.hp : dmg * armour;
+    // one in the chamber: every bullet kills; hide and seek: one tag and you're found
+    target.hp -= (mode.oitc && !m.melee) || mode.hns || p.onehit ? target.hp : dmg * armour;
     target.lastHurt = now;
     this._send(target, { t: 'hurt', by: p.id, dmg, from: p.pos, hp: Math.max(0, target.hp) });
     if (target.hp > 0) return;
@@ -2468,7 +2491,10 @@ export class Room extends DurableObject {
       this._broadcast(this._lobby());
       this._broadcast({ t: 'infected', id: target.id, by: p.id });
       const left = [...this.players.values()].filter((o) => o.joined && o.team === SURVIVORS);
-      if (left.length === 1) this._broadcast({ t: 'msg', text: `${left[0].name} is the LAST SURVIVOR!`, big: true, team: SURVIVORS });
+      if (mode.hns) {
+        this._broadcast({ t: 'msg', text: `🔎 ${p.name} found ${target.name}! ${left.length} still hiding` });
+        if (left.length === 1) this._broadcast({ t: 'msg', text: `${left[0].name} is the LAST ONE HIDING!`, big: true });
+      } else if (left.length === 1) this._broadcast({ t: 'msg', text: `${left[0].name} is the LAST SURVIVOR!`, big: true, team: SURVIVORS });
     }
     this._checkWin();
   }
