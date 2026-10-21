@@ -1761,6 +1761,10 @@ export class AccountUI {
       <div id="admin-players" class="admin-players muted">Loading…</div>
       <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="40" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
       </div>
+      <div class="acard"><h4>🔑 Set a password <span class="muted small">(a player forgot theirs: give them a new one, then tell them it)</span></h4>
+      <form class="auth inline admin-row" id="admin-setpw"><input name="who" maxlength="120" placeholder="Player name or email" required autocomplete="off" /><input name="pw" maxlength="72" placeholder="New password (6+ characters)" required autocomplete="off" /><button class="btn small">🔑 SET PASSWORD</button></form>
+      <p class="muted small">Works even with a made-up email. It also tells you the email they log in with.</p>
+      </div>
       <div class="acard"><h4>🐺 Wolf companion <span class="muted small">(real money: when someone pays you, give them the wolf here)</span></h4>
       <form class="auth inline admin-row" id="admin-wolf"><input name="u" maxlength="40" placeholder="Player name" required /><button class="btn small" data-on="1">🐺 GIVE WOLF</button><button class="btn small ghost" data-on="0">TAKE WOLF</button></form>
       <form class="auth inline admin-row" id="admin-wolf-lvl"><input name="u" maxlength="40" placeholder="Player name" required /><input name="n" type="number" min="-20" max="20" value="1" placeholder="Levels (minus takes away)" required /><button class="btn small">⏫ ADD WOLF LEVELS</button></form>
@@ -2244,6 +2248,18 @@ export class AccountUI {
         e.target.reset();
         paidFields();
         paidList();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    document.getElementById('admin-setpw').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const who = String(f.get('who')).trim();
+      if (!confirm(`Give ${who} a new password?`)) return;
+      try {
+        msg((await a._api('/admin/set-password', { method: 'POST', body: { who, password: String(f.get('pw')) } })).note);
+        e.target.reset();
       } catch (err) {
         msg(err.message);
       }

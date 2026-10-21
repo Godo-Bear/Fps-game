@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.54', date: '21 Oct 2026', title: 'Admin: set passwords',
+    items: [
+      'Admin: 👥 Players → 🔑 Set a password gives a player who forgot theirs a new one (by player name or email, even a made-up email), and says which email they log in with.',
+    ],
+  },
+  {
     v: '5.53', date: '21 Oct 2026', title: 'More to buy + 50c Deals',
     items: [
       'Lots more cosmetics to unlock by levelling up or buy with coins: 6 avatars (🦈 🐍 🦂 🧙 🏴‍☠️ 🦖), 5 name colours (Ice, Rose, Lime, Ember, Platinum), 6 titles (Sharpshooter, Survivalist, Horde Breaker, Last Stand, Night Owl, Warlord), 3 crosshairs and 5 gun finishes (Urban, Navy, Rose Gold, Carbon, Cobalt).',

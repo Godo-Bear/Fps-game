@@ -1429,6 +1429,50 @@ export class GameDB extends DurableObject {
       this._setConfig('shopEdits', edits);
       return json({ shopEdits: edits, note: body.reset ? 'Back to how it was.' : body.hidden ? 'Taken out of the Shop (anyone who has it keeps it).' : 'Saved.' });
     }
+    // admin: give a player a new password (they forgot it, maybe with a made-up email). By player name or email.
+    // With Supabase logins it needs SUPABASE_SERVICE_ROLE_KEY on the Worker (a secret: never sent to anyone).
+    if (path === '/admin/set-password' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const who = String(body.who || '').trim();
+      const password = String(body.password || '');
+      if (!who) return err('Type their player name or email');
+      if (password.length < 6 || password.length > 72) return err('The new password needs 6 to 72 characters');
+      if (!this.paywall) {
+        // the game's own logins
+        const u = this._byName(who);
+        if (!u) return err('No player with that name', 404);
+        const salt = randomHex(16);
+        this.sql.exec('UPDATE users SET pass_hash = ?, salt = ? WHERE id = ?', await hashPassword(password, salt), salt, u.id);
+        this.sql.exec('DELETE FROM sessions WHERE user_id = ?', u.id);
+        return json({ note: `${u.username}'s password is changed. They log in with the player name ${u.username} and the new password.` });
+      }
+      const key = this.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!key) return err('One-time setup first: add the SUPABASE_SERVICE_ROLE_KEY secret in Cloudflare (ask Claude for the steps)');
+      const base = String(this.env.SUPABASE_URL).replace(/\/+$/, '');
+      const headers = { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json' };
+      let id = null;
+      if (who.includes('@')) {
+        // look through the logins for that email
+        for (let page = 1; page <= 20 && !id; page++) {
+          const r = await fetch(`${base}/auth/v1/admin/users?page=${page}&per_page=1000`, { headers });
+          if (!r.ok) return err(r.status === 401 || r.status === 403 ? 'Supabase said no: check the SUPABASE_SERVICE_ROLE_KEY secret is the service_role (secret) key' : "Couldn't reach Supabase", 502);
+          const users = (await r.json()).users || [];
+          id = users.find((x) => String(x.email || '').toLowerCase() === who.toLowerCase())?.id || null;
+          if (users.length < 1000) break;
+        }
+        if (!id) return err('No login with that email', 404);
+      } else {
+        const u = this._byName(who);
+        if (!u) return err('No player with that name', 404);
+        if (!u.sb_id) return err(`${u.username} has no email login: try their email instead`);
+        id = u.sb_id;
+      }
+      const r = await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, { method: 'PUT', headers, body: JSON.stringify({ password }) });
+      if (!r.ok) return err(r.status === 401 || r.status === 403 ? 'Supabase said no: check the SUPABASE_SERVICE_ROLE_KEY secret is the service_role (secret) key' : `Supabase couldn't change it (${r.status})`, 502);
+      const email = (await r.json().catch(() => ({})))?.email || '';
+      const name = this.sql.exec('SELECT username FROM users WHERE sb_id = ?', id).toArray()[0]?.username;
+      return json({ email, note: `Password changed${name ? ` for ${name}` : ''}. They log in with the email ${email || who} and the new password.` });
+    }
     // admin: the order of the Shop's sections
     if (path === '/admin/shop-order' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);

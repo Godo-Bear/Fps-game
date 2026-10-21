@@ -230,3 +230,15 @@ grant execute on function public.set_my_username(text) to authenticated;
 
 Passwords can't be shown, by anyone: Supabase only keeps a scrambled version that can't be turned back. If a
 player forgets theirs: **Authentication → Users**, click their row, **Send password recovery**.
+
+## Set a player's password from the admin panel (optional, one-time setup)
+
+Players forget passwords (sometimes with made-up emails). Admin panel → 👥 Players → **🔑 Set a password** gives
+them a new one by player name or email. For Supabase logins it needs one more secret on the Worker:
+
+1. Supabase → **Project Settings** (cog, bottom left) → **API Keys** → copy the **service_role** key (on newer
+   projects: **Secret keys** → create or reveal one; it starts `sb_secret_`).
+2. Cloudflare → **Workers & Pages** → **fps-game** → **Settings** → **Variables and Secrets** → **+ Add** →
+   Type **Secret**, name `SUPABASE_SERVICE_ROLE_KEY`, paste the key → **Deploy**.
+
+Keep this key secret: it can change any account. It only ever lives in Cloudflare (never in the game or GitHub).
