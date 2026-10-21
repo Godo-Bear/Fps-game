@@ -60,7 +60,7 @@ const LIVE_MS = 45000;
 const HALLOWEEN_2026_END = Date.UTC(2026, 10, 8);
 const PAID_GIVES = ['none', 'coins', 'candy', 'gun', 'gear', 'cosmetic', 'wolf', 'namecolor', 'nametag'];
 // the Shop's sections, in the order an admin can change (admin: ✏️ EDIT in the Shop)
-const SHOP_SECTIONS = ['halloween', 'paid', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
+const SHOP_SECTIONS = ['halloween', 'paid', 'deals', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
 
 // paid access: a paid_until date means "until the end of that day" (UTC); empty = no end
 const accessEnded = (paidUntil) => {

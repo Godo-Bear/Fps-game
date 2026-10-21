@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.53', date: '21 Oct 2026', title: 'More to buy + 50c Deals',
+    items: [
+      'Lots more cosmetics to unlock by levelling up or buy with coins: 6 avatars (🦈 🐍 🦂 🧙 🏴‍☠️ 🦖), 5 name colours (Ice, Rose, Lime, Ember, Platinum), 6 titles (Sharpshooter, Survivalist, Horde Breaker, Last Stand, Night Owl, Warlord), 3 crosshairs and 5 gun finishes (Urban, Navy, Rose Gold, Carbon, Cobalt).',
+      'New 💵 50c Deals in the Shop: 18 cosmetics you can only get there, 50c each (paid to the owner): avatars 💎 🦄 🚀 🤖 🥷, Neon Cyan, Neon Pink and Silver names, the Supporter, VIP, Big Spender and Legend name tags, Neon and Gold crosshairs, and glowing Diamond, Neon, Galaxy and Royal Gold gun skins.',
+      'Admin: Admin → 💵 Shop has a 50c Deals box to give (or take back) the one someone paid for.',
+    ],
+  },
+  {
     v: '5.52', date: '21 Oct 2026', title: 'Admin: edit the Shop',
     items: [
       'Admin: in the Shop\'s ✏️ EDIT mode every item has ✏️ (change its name, icon, description and price) and 🗑️ (delete it), for the owner\'s specials and the Shop\'s own upgrades, guns and items too. A deleted Shop item can be put back with ↺ PUT BACK, and anyone who already bought something keeps it.',

@@ -1,7 +1,7 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
 import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, EVENT_LEVEL, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, DEALS, DEAL_PRICE, EVENT_LEVEL, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -19,11 +19,11 @@ const PAID_OPTIONS = [
   ...SPECIAL_GEAR.map((g) => [`gear:${g.id}`, `${g.icon} Special gear: ${g.name}`]),
   // every cosmetic there is (the level ones, then the Halloween ones)
   ...Object.entries({ color: ['🎨 Name colour', NAME_COLORS], title: ['🏷️ Name tag', TITLES], avatar: ['🙂 Avatar', AVATARS], crosshair: ['➕ Crosshair', CROSSHAIRS], finish: ['🔫 Gun skin', FINISHES] }).flatMap(([kind, [name, list]]) =>
-    list.map(([id, need, label]) => [`cosmetic:cos_${kind}_${id}`, `${need >= EVENT_LEVEL ? '🎃 ' : ''}${name}: ${kind === 'avatar' || kind === 'title' ? id : label}`]),
+    list.map(([id, need, label]) => [`cosmetic:cos_${kind}_${id}`, `${isDeal(kind, id) ? '💵 ' : need >= EVENT_LEVEL ? '🎃 ' : ''}${name}: ${kind === 'avatar' || kind === 'title' ? id : label}`]),
   ),
   ['none', '✨ Something else (you sort it out)'],
 ];
-const SECTION_NAMES = { halloween: '🎃 Halloween shop', paid: '💵 Specials (your items)', upgrades: 'Upgrades', guns: 'Starting gun', items: 'Items', pets: '🐺 Pets', cosmetics: 'Cosmetics' };
+const SECTION_NAMES = { halloween: '🎃 Halloween shop', paid: '💵 Specials (your items)', deals: '💵 50c Deals', upgrades: 'Upgrades', guns: 'Starting gun', items: 'Items', pets: '🐺 Pets', cosmetics: 'Cosmetics' };
 function paidGives(i) {
   if (i.give === 'coins' || i.give === 'candy') return `${i.amount} ${i.give === 'coins' ? '🪙 coins' : '🍬 candy'}`;
   if (i.give === 'nametag') return `🏷️ Name tag: ${i.what}`;
@@ -628,9 +628,15 @@ export class Account {
   }
   // the order of the Shop's sections (an admin can change it)
   get shopOrder() {
-    const all = ['halloween', 'paid', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
-    const saved = (this.cfg?.shopOrder || []).filter((x) => all.includes(x));
-    return [...new Set([...saved, ...all])];
+    const all = ['halloween', 'paid', 'deals', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
+    const out = [...new Set((this.cfg?.shopOrder || []).filter((x) => all.includes(x)))];
+    // a section newer than the saved order goes in after the one it follows by default
+    all.forEach((id, n) => {
+      if (out.includes(id)) return;
+      const after = n ? out.indexOf(all[n - 1]) : -1;
+      out.splice(after + 1, 0, id);
+    });
+    return out;
   }
   // the admin's changes to the Shop's own items: { id: { name, icon, desc, price, hidden } }
   get shopEdits() {
@@ -1289,9 +1295,10 @@ export class AccountUI {
             // Halloween ones: only for candy, and only shown while it's on (or once you have them)
             const candy = need >= EVENT_LEVEL ? CANDY_SHOP.find(([k, i]) => k === kind && i === id)?.[3] : null;
             if (candy && locked && !isHalloween()) return '';
-            const price = locked && !candy ? cosmeticPrice(kind, id) : null;
-            const tip = locked ? (candy ? 'Halloween: buy it with candy in the Shop' : `Unlocks at level ${need}, or buy it in the shop`) : esc(label || id);
-            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${tip}">${render(id, label, extra, glow)}${locked ? `<i>${candy ? `🎃 🍬${candy}` : `Lv ${need} · 🪙${price}`}</i>` : ''}</button>`;
+            const deal = isDeal(kind, id); // a 50c deal: real money only
+            const price = locked && !candy && !deal ? cosmeticPrice(kind, id) : null;
+            const tip = locked ? (candy ? 'Halloween: buy it with candy in the Shop' : deal ? `${DEAL_PRICE} Deal: buy it in the Shop` : `Unlocks at level ${need}, or buy it in the shop`) : esc(label || id);
+            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${tip}">${render(id, label, extra, glow)}${locked ? `<i>${candy ? `🎃 🍬${candy}` : deal ? `💵 ${DEAL_PRICE}` : `Lv ${need} · 🪙${price}`}</i>` : ''}</button>`;
           })
           .join('')}
       </div>`;
@@ -1516,6 +1523,20 @@ export class AccountUI {
       ${money ? `<p class="small">${a.loggedIn ? `To buy a 💵 one: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and what you're buying. They give it to you, then it shows up on your account.` : 'Log in first: it goes on your account.'}</p>` : ''}
       <div class="shop-grid">${list.map(card).join('')}</div>`;
   }
+  // 50c Deals: cosmetics you can only get for real money (paid to the owner, who gives them out)
+  _deals() {
+    const a = this.account;
+    const note = esc(a.cfg?.payNote || 'paid cash in hand to the site owner');
+    const names = { avatar: 'Avatar', color: 'Name colour', title: 'Name tag', crosshair: 'Crosshair', finish: 'Gun skin' };
+    const cards = DEALS.map(([kind, id, label, color, glow]) => {
+      const owned = !!a.items[cosmeticItemId(kind, id)];
+      const show = kind === 'avatar' ? `<span class="big">${id}</span> ${esc(label)}` : kind === 'title' ? `<b>${esc(id)}</b>` : `<span class="swatch${glow ? ' glow' : ''}" style="background:${kind === 'finish' ? color : id};${glow ? `--glow:${glow}` : ''}"></span>${esc(label)}${glow ? ' <span class="glow-tag">✨ GLOWS</span>' : ''}`;
+      return `<div class="cos-item deal"><span class="muted small">${names[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<span class="pet-price">💵 ${DEAL_PRICE}</span>`}</div>`;
+    }).join('');
+    return `<h4>💵 ${DEAL_PRICE} Deals <span class="muted small">(${DEAL_PRICE} each, real money, ${note} · only here, yours for good)</span></h4>
+      <p class="small">${a.loggedIn ? `To buy one: pay the owner ${DEAL_PRICE} and tell them your player name, <b>${esc(a.name)}</b>, and which one. They give it to you, then wear it from the Locker.` : 'Log in first: it goes on your account.'}</p>
+      <div class="cos-list">${cards}</div>`;
+  }
   _shop() {
     const a = this.account;
     const items = a.items;
@@ -1567,6 +1588,7 @@ export class AccountUI {
     const sections = {
       halloween: () => (isHalloween() ? this._candyShop() : ''),
       paid: () => this._paidShop(edit, editForm, tools),
+      deals: () => this._deals(),
       upgrades: () => `<h4>Upgrades <span class="muted small">(solo runs)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>`,
       guns: () => `<h4>Starting gun <span class="muted small">(Own it, equip it: you spawn holding it in every mode, with unlimited ammo)</span></h4>
@@ -1927,6 +1949,11 @@ export class AccountUI {
         </form>
         <p class="muted small">🪙 Coins: players buy it themselves from the Shop. 💵 Real money: they pay you, then you give it to them below. Name tags and name colours are new ones nobody else has; they wear them from the Locker. "Something else" gives nothing by itself. Same name again replaces that item. Change the Shop's order with ✏️ EDIT in the corner of the Shop.</p>
       </div>
+      <div class="acard"><h4>💵 ${DEAL_PRICE} Deals <span class="muted small">(someone paid you ${DEAL_PRICE}: give them the one they picked)</span></h4>
+        <form class="auth inline admin-row" id="admin-give-deal"><input name="u" maxlength="40" placeholder="Player name" required />
+          <select name="item">${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${{ avatar: '🙂 Avatar', color: '🎨 Name colour', title: '🏷️ Name tag', crosshair: '➕ Crosshair', finish: '🔫 Gun skin' }[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</select>
+          <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE BACK</button></form>
+      </div>
       <div class="acard"><h4>🛒 In the shop now</h4><div id="admin-paid-list" class="admin-players"></div>
         <form class="auth inline admin-row" id="admin-paid-give"><input name="u" maxlength="40" placeholder="Player name" required /><select name="id" id="admin-paid-pick"></select>
           <button class="btn small" data-on="1">🎁 THEY PAID: GIVE IT</button><button class="btn small ghost" data-on="0">TAKE IT BACK</button></form>
@@ -2217,6 +2244,18 @@ export class AccountUI {
         e.target.reset();
         paidFields();
         paidList();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    const dealForm = document.getElementById('admin-give-deal');
+    let dealOn = true;
+    dealForm.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (dealOn = b.dataset.on === '1')));
+    dealForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(dealForm);
+      try {
+        msg((await a.adminPlayer(String(f.get('u')).trim(), 'cosmetic', { item: f.get('item'), on: dealOn })).note);
       } catch (err) {
         msg(err.message);
       }

@@ -31,6 +31,32 @@ export const FINISHES = [
   ['toxic', 15, 'Toxic', '#5fd13a'],
 ];
 
+// More to unlock (or buy with coins), slotted in by level: [id, level, label?, colour?]
+const MORE = {
+  avatar: [['🦈', 4], ['🐍', 6], ['🦂', 9], ['🧙', 11], ['🏴‍☠️', 14], ['🦖', 18]],
+  color: [['#4dd0e1', 4, 'Ice'], ['#ff8fab', 6, 'Rose'], ['#a3e635', 8, 'Lime'], ['#f97316', 11, 'Ember'], ['#e5e7eb', 14, 'Platinum']],
+  title: [['Sharpshooter', 5], ['Survivalist', 7], ['Horde Breaker', 9], ['Last Stand', 11], ['Night Owl', 13], ['Warlord', 18]],
+  crosshair: [['#ff9f1a', 4, 'Orange'], ['#a78bfa', 5, 'Lavender'], ['#00ffa3', 7, 'Mint']],
+  finish: [['urban', 4, 'Urban', '#6b7280'], ['navy', 6, 'Navy', '#1e3a5f'], ['rosegold', 8, 'Rose Gold', '#b76e79'], ['carbon', 10, 'Carbon', '#1f1f1f'], ['cobalt', 13, 'Cobalt', '#2a52be']],
+};
+for (const [kind, rows] of Object.entries(MORE)) {
+  const list = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES }[kind];
+  list.push(...rows);
+  list.sort((a, b) => a[1] - b[1]);
+}
+
+// 50c Deals: cosmetics nobody can unlock, only buy for real money (DEAL_PRICE, paid to the owner, who gives them
+// out from the admin panel). [kind, id, label, colour (name colour, crosshair, finish), glow (a gun skin that glows)]
+export const DEAL_PRICE = '50c';
+export const DEALS = [
+  ['avatar', '💎', 'Diamond'], ['avatar', '🦄', 'Unicorn'], ['avatar', '🚀', 'Rocket'], ['avatar', '🤖', 'Robot'], ['avatar', '🥷', 'Ninja'],
+  ['color', '#00e5ff', 'Neon Cyan'], ['color', '#ff2bd6', 'Neon Pink'], ['color', '#c0c0c0', 'Silver'],
+  ['title', 'Supporter', 'Supporter'], ['title', 'VIP', 'VIP'], ['title', 'Big Spender', 'Big Spender'], ['title', 'Legend', 'Legend'],
+  ['crosshair', '#00e5ff', 'Neon'], ['crosshair', '#ffd700', 'Gold'],
+  ['finish', 'diamond', 'Diamond', '#bfe9ff', '#7fd8ff'], ['finish', 'neon', 'Neon', '#14142a', '#ff2bd6'], ['finish', 'galaxy', 'Galaxy', '#1a1040', '#8a6bff'], ['finish', 'royalgold', 'Royal Gold', '#d4a72c', '#ffd34d'],
+];
+export const isDeal = (kind, id) => DEALS.some(([k, i]) => k === kind && i === id);
+
 // Halloween cosmetics: only with candy (collected during the Halloween event), never by level or coins.
 // Yours for good once bought (or an admin gives them). [kind, id, label, candy, extra (a finish's colour), glow (a gun
 // skin that glows: its colour)]
@@ -50,7 +76,11 @@ export const CANDY_DROPS = { zombie: [0.3, 1], special: [0.6, 2], boss: [1, 15] 
 // the server's limits: about one candy a second at most, and this many in one event
 export const CANDY_RATE = 1.2;
 export const CANDY_EVENT_MAX = 3000;
-// they join the normal lists (out of reach by level) so equipping and showing them works like any other
+// they (and the 50c deals) join the normal lists (out of reach by level) so equipping and showing them works like any other
+for (const [kind, id, label, extra, glow] of DEALS) {
+  const list = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES }[kind];
+  list.push(kind === 'avatar' || kind === 'title' ? [id, EVENT_LEVEL] : kind === 'finish' ? [id, EVENT_LEVEL, label, extra, glow] : [id, EVENT_LEVEL, label]);
+}
 for (const [kind, id, label, , extra, glow] of CANDY_SHOP) {
   const list = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES }[kind];
   list.push(kind === 'avatar' || kind === 'title' ? [id, EVENT_LEVEL] : kind === 'finish' ? [id, EVENT_LEVEL, label, extra, glow] : [id, EVENT_LEVEL, label]);

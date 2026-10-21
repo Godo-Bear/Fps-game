@@ -3934,3 +3934,4 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
   background: rgba(20, 16, 12, 0.9);
   color: #e9d9b8;
 }
+.cos-item.deal { border-color: rgba(120, 220, 140, 0.45); }
