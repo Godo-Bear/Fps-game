@@ -10,9 +10,12 @@ export const PIECE_SETS = [
 ];
 export const pieceId = (char, n) => `piece_${char}_${n}`;
 export const piecesOf = (items, char) => [0, 1, 2, 3].filter((n) => items?.[pieceId(char, n)]);
+// characters only admins can wear (no pieces for them)
+export const ADMIN_CHARS = ['astronaut'];
 // The Survivor is everyone's; the others once all four pieces are found (admins have them all).
 export function charUnlocked(items, char, admin = false) {
   if (char === 'man' || admin) return true;
+  if (ADMIN_CHARS.includes(char)) return false;
   return piecesOf(items, char).length === 4;
 }
 export const anyPieces = (items) => PIECE_SETS.some((s) => piecesOf(items, s.char).length > 0);

@@ -2043,7 +2043,7 @@ export class Room extends DurableObject {
     this._report();
     return {
       t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set, open: !!this.open, bots: this.botFill,
-      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, look: CHARACTERS_LIVE || MODES[this.mode]?.event ? p.look || null : null, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
+      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, look: CHARACTERS_LIVE || MODES[this.mode]?.event || p.admin ? p.look || null : null, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
     };
   }
 

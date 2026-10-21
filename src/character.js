@@ -29,6 +29,12 @@ const CHARACTER_MODELS = {
     gear: ['King_Head_4'], // the crown
     clips: { idle: 'Idle_Gun', run: 'Run', back: 'Run_Back', left: 'Run_Left', right: 'Run_Right', walk: 'Walk', die: 'Death' },
   },
+  // admins only (ADMIN_CHARS)
+  astronaut: {
+    url: '/models/Astronaut by Quaternius - 3hC2i0CTuO.glb',
+    slots: { Grey: 'skin', SciFi_Light_Accent: 'hairColor', SciFi_Main: 'topColor', SciFi_MainDark: 'pants', SciFi_Light: 'hatColor' },
+    clips: { idle: 'Idle_Gun', run: 'Run', back: 'Run_Back', left: 'Run_Left', right: 'Run_Right', walk: 'Walk', die: 'Death' },
+  },
 };
 const HEIGHT = 1.8;
 const templates = {};

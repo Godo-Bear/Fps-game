@@ -147,7 +147,7 @@ export const PET_SPOTS = [['right', 'On my right'], ['left', 'On my left'], ['fr
 // (as a preview) and everyone looks the default. Flip it to launch.
 export const CHARACTERS_LIVE = false;
 
-import { charUnlocked } from './events.js';
+import { ADMIN_CHARS, charUnlocked } from './events.js';
 
 // Your character: free to change. Colours are any hex; the rest pick from these lists. [id, label]
 export const LOOK_SKIN = ['#f3d6c2', '#e8c4a8', '#d8a882', '#c89a78', '#a8754f', '#8d5a3b', '#6a4128', '#4a2c1a'];
@@ -160,22 +160,33 @@ export const LOOK_TOP = [['jacket', 'Jacket'], ['tshirt', 'T-shirt'], ['tank', '
 // Characters: one of the owner's 3D characters (public/models), recoloured. (The blocky soldier is only a
 // stand-in while a character loads, and the look everyone has until the creator launches.)
 // For the 3D ones, hatColor is the colour of their gear (backpack, armour, SWAT kit) and hat 'none' takes it off.
-export const LOOK_MODELS = [['man', 'Survivor'], ['swat', 'SWAT'], ['adventurer', 'Adventurer'], ['king', 'King']];
+export const LOOK_MODELS = [['man', 'Survivor'], ['swat', 'SWAT'], ['adventurer', 'Adventurer'], ['king', 'King'], ['astronaut', '🧑‍🚀 Astronaut']];
 // each 3D character's own colours (what picking it starts from)
 export const MODEL_COLORS = {
   man: { skin: '#a98a66', hairColor: '#3a2f2f', topColor: '#657378', pants: '#3e3a3a', hatColor: '#ab9f9f' },
   adventurer: { skin: '#ba9c79', hairColor: '#412914', topColor: '#3e3921', pants: '#52462c', hatColor: '#6a5a39' },
   swat: { skin: '#ba9c79', hairColor: '#2b2926', topColor: '#474a51', pants: '#474a51', hatColor: '#2b2926' },
   king: { skin: '#ba9c79', hairColor: '#afafaf', topColor: '#383f4f', pants: '#433730', hatColor: '#595a59' },
+  // admins only. skin: the visor, hairColor: the stripes, topColor: the suit, pants: its dark parts, hatColor: the panels
+  astronaut: { skin: '#383838', hairColor: '#93542b', topColor: '#3b4b49', pants: '#2a3538', hatColor: '#a19893' },
 };
+// ready-made colours for the Astronaut (any colour works too)
+export const ASTRONAUT_PRESETS = [
+  ['Classic', MODEL_COLORS.astronaut],
+  ['Moon white', { skin: '#1a2a3a', hairColor: '#2a6ad0', topColor: '#e8e8e8', pants: '#8a8f96', hatColor: '#cfd4da' }],
+  ['Mars red', { skin: '#141210', hairColor: '#e8c020', topColor: '#8a2a24', pants: '#3a1a14', hatColor: '#c86a20' }],
+  ['Gold visor', { skin: '#e8c020', hairColor: '#e8e8e8', topColor: '#e8e8e8', pants: '#555555', hatColor: '#cfd4da' }],
+  ['Stealth', { skin: '#3ab04a', hairColor: '#3ab04a', topColor: '#222222', pants: '#141210', hatColor: '#333333' }],
+  ['Galaxy', { skin: '#b04dff', hairColor: '#ff4dd8', topColor: '#2a1a5a', pants: '#140c30', hatColor: '#6a3a8a' }],
+];
 export const DEFAULT_LOOK = { skin: '#c89a78', hair: 'short', hairColor: '#3a2616', face: 'none', hat: 'helmet', hatColor: '#4a5236', top: 'jacket', topColor: '#3d4234', pants: '#3d4234', model: 'man', ...MODEL_COLORS.man };
 const HEX = /^#[0-9a-f]{6}$/i;
 // a random look (AI bots)
 export function randomLook() {
   const r = (a) => a[Math.floor(Math.random() * a.length)];
-  return cleanLook({ model: r(LOOK_MODELS)[0], skin: r(LOOK_SKIN), hairColor: r(LOOK_HAIR_COLORS.slice(0, 7)), hat: Math.random() < 0.8 ? 'helmet' : 'none', hatColor: r(LOOK_CLOTH), topColor: r(LOOK_CLOTH), pants: r(LOOK_CLOTH) });
+  return cleanLook({ model: r(LOOK_MODELS.filter(([id]) => !ADMIN_CHARS.includes(id)))[0], skin: r(LOOK_SKIN), hairColor: r(LOOK_HAIR_COLORS.slice(0, 7)), hat: Math.random() < 0.8 ? 'helmet' : 'none', hatColor: r(LOOK_CLOTH), topColor: r(LOOK_CLOTH), pants: r(LOOK_CLOTH) });
 }
-// items/admin: only characters you've unlocked (the Survivor, or all four pieces from an event). Leave items out to skip the check.
+// items/admin: only characters you've unlocked (the Survivor, all four pieces from an event, or admin-only ones for admins). Leave items out to skip the check.
 export function cleanLook(input, items = null, admin = false) {
   const out = { ...DEFAULT_LOOK };
   if (!input || typeof input !== 'object') return out;

@@ -1,7 +1,7 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
-import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, RETICLES, COSMETIC_LISTS, crosshairPaint, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, ADMIN_CHARS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, ASTRONAUT_PRESETS, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, RETICLES, COSMETIC_LISTS, crosshairPaint, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { DEAL_ITEMS, SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -1377,14 +1377,19 @@ export class AccountUI {
       `<div class="pick-row look-sw">${list.map((c) => `<button class="pick sw ${L[key] === c ? 'on' : ''}" data-look="${key}" data-v="${c}" style="background:${c}" title="${c}"></button>`).join('')}
         <label class="pick pet-custom" title="Any colour"><input type="color" value="${esc(L[key])}" data-lookc="${key}" /> Custom</label></div>`;
     // what each character's gear is, and whether it can come off
-    const gearName = { man: 'Socks', adventurer: 'Backpack', swat: 'Kit', king: 'Armour and crown' }[L.model] || 'Gear';
+    const gearName = { man: 'Socks', adventurer: 'Backpack', swat: 'Kit', king: 'Armour and crown', astronaut: 'Light panels' }[L.model] || 'Gear';
+    const space = L.model === 'astronaut';
+    // the Astronaut's ready-made colours
+    const presets = space
+      ? `<h5>Colours</h5><div class="pick-row">${ASTRONAUT_PRESETS.map(([n, c], i) => `<button class="pick" data-lookpreset="${i}"><span class="swatch" style="background:${c.topColor}"></span>${n}</button>`).join('')}</div>`
+      : '';
     const gearToggle = L.model === 'adventurer' || L.model === 'king' ? `<div class="pick-row"><button class="pick ${L.hat !== 'none' ? 'on' : ''}" data-look="hat" data-v="helmet">${L.model === 'king' ? 'Crown on' : 'Wearing it'}</button><button class="pick ${L.hat === 'none' ? 'on' : ''}" data-look="hat" data-v="none">${L.model === 'king' ? 'No crown' : 'Off'}</button></div>` : '';
     const note = CHARACTERS_LIVE || !this.account.admin ? 'other players see it online, and your arms match it · 🧩 unlock more in events' : 'ADMIN PREVIEW: players only see it once they find a piece in an event';
     return `<h4>🧍 Character <span class="muted small">(${note})</span></h4>
       <div class="look-box">
         <div class="look-wrap"><canvas id="look-preview" class="look-preview"></canvas><div id="look-loading" class="look-loading hidden">Loading…</div></div>
         <div class="look-opts">
-          <h5>Character</h5><div class="pick-row">${LOOK_MODELS.map(([id, n]) => {
+          <h5>Character</h5><div class="pick-row">${LOOK_MODELS.filter(([id]) => this.account.admin || !ADMIN_CHARS.includes(id)).map(([id, n]) => {
             // locked ones: how many of their 4 puzzle pieces you have (they come from events)
             const open = charUnlocked(this.account.items, id, this.account.admin);
             const set = PIECE_SETS.find((s) => s.char === id);
@@ -1392,10 +1397,11 @@ export class AccountUI {
               ? `<button class="pick ${L.model === id ? 'on' : ''}" data-look="model" data-v="${id}">${n}</button>`
               : `<button class="pick locked" disabled title="Collect all 4 puzzle pieces in an event to unlock">🔒 ${n} <i>🧩 ${piecesOf(this.account.items, id).length}/4${set ? ` · ${set.rarity}` : ''}</i></button>`;
           }).join('')}</div>
-          <h5>Skin</h5>${swatches('skin', LOOK_SKIN)}
-          ${L.model === 'swat' ? '' : `<h5>Hair</h5>${swatches('hairColor', LOOK_HAIR_COLORS)}`}
-          <h5>Top</h5>${swatches('topColor', LOOK_CLOTH)}
-          <h5>Trousers</h5>${swatches('pants', LOOK_CLOTH)}
+          ${presets}
+          <h5>${space ? 'Visor' : 'Skin'}</h5>${swatches('skin', space ? LOOK_CLOTH : LOOK_SKIN)}
+          ${L.model === 'swat' ? '' : `<h5>${space ? 'Stripes' : 'Hair'}</h5>${swatches('hairColor', space ? LOOK_CLOTH : LOOK_HAIR_COLORS)}`}
+          <h5>${space ? 'Suit' : 'Top'}</h5>${swatches('topColor', LOOK_CLOTH)}
+          <h5>${space ? 'Suit (dark parts)' : 'Trousers'}</h5>${swatches('pants', LOOK_CLOTH)}
           <h5>${gearName}</h5>${gearToggle}${L.hat === 'none' && gearToggle ? '' : swatches('hatColor', LOOK_CLOTH)}
           <p class="muted small">Back to its own colours: pick the character again.</p>
         </div>
@@ -1420,10 +1426,10 @@ export class AccountUI {
         canvas.remove(); // no WebGL for a second canvas: the pickers still work
       }
     }
-    const save = async (key, v) => {
+    const save = async (key, v, colors = null) => {
       let look = { ...(this.lookDraft || p.look), [key]: v };
-      // picking a 3D character starts from its own colours
-      if (key === 'model' && MODEL_COLORS[v]) look = { ...look, ...MODEL_COLORS[v], hat: 'helmet' };
+      // picking a 3D character starts from its own colours (or a preset's)
+      if (key === 'model' && MODEL_COLORS[v]) look = { ...look, ...MODEL_COLORS[v], hat: 'helmet', ...colors };
       this.lookDraft = look;
       p.look = look;
       this.lookPreview?.show(look);
@@ -1435,6 +1441,7 @@ export class AccountUI {
       if (this.lookDraft === look) this.lookDraft = null;
     };
     this.body.querySelectorAll('[data-look]').forEach((b) => (b.onclick = (e) => (e.stopPropagation(), save(b.dataset.look, b.dataset.v))));
+    this.body.querySelectorAll('[data-lookpreset]').forEach((b) => (b.onclick = (e) => (e.stopPropagation(), save('model', 'astronaut', ASTRONAUT_PRESETS[+b.dataset.lookpreset][1]))));
     this.body.querySelectorAll('[data-lookc]').forEach((inp) => {
       inp.onclick = (e) => e.stopPropagation();
       inp.oninput = () => this.lookPreview?.show({ ...p.look, [inp.dataset.lookc]: inp.value });
@@ -1813,6 +1820,10 @@ export class AccountUI {
       <div class="acard"><h4>🛡️ Special gear <span class="muted small">(admins only: nobody else has it unless you give it to them, with MANAGE in the Players tab)</span></h4>
         <div class="admin-grid">${SPECIAL_GEAR.map((g) => (a.items[g.item] ? `<button class="btn small ghost" data-mygear="${g.id}" data-on="0">${g.icon} ${g.name.toUpperCase()} ✓ (REMOVE)</button>` : `<button class="btn small" data-mygear="${g.id}" data-on="1">${g.icon} GET THE ${g.name.toUpperCase()}</button>`)).join('')}</div>
         <p class="muted small">The flamethrower and bazooka come into every game you start (unlimited ammo). Press <b>H</b> in a game to get in or out of the tank: WASD to drive, click to fire the cannon; you take a quarter of the damage inside.</p></div>
+      <div class="acard"><h4>🧑‍🚀 Astronaut skin <span class="muted small">(admins only: nobody else can wear it; other players see you in it online)</span></h4>
+        <div class="admin-grid">${a.profile.look?.model === 'astronaut' ? '<button class="btn small ghost" id="admin-astro-off">TAKE IT OFF</button>' : '<button class="btn small" data-astro="0">🧑‍🚀 WEAR IT</button>'}
+        ${ASTRONAUT_PRESETS.map(([n, c], i) => `<button class="btn small ghost" data-astro="${i}"><span class="swatch" style="background:${c.topColor}"></span>${n.toUpperCase()}</button>`).join('')}</div>
+        <p class="muted small">Pick any colour for the visor, stripes, suit and panels in <b>Locker → Character</b>.</p></div>
       <div class="acard"><h4>🔄 Game version <span class="muted small">(players on an old version are restarted onto the new one automatically)</span></h4>
         <p class="muted small">This copy: <b>${esc(act?.build?.().build || '?')}</b>${act?.build?.().at && act.build().build !== 'dev' ? ` · built ${esc(new Date(act.build().at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}` : ''}</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-version">CHECK FOR A NEW VERSION</button></div></div>
@@ -2355,6 +2366,19 @@ export class AccountUI {
         msg(err.message);
       }
     };
+    const wearLook = async (look, note) => {
+      try {
+        await a.saveProfile({ ...a.profile, look });
+        msg(note);
+        this.render();
+      } catch (err) {
+        msg(err.message);
+      }
+    };
+    this.body.querySelectorAll('[data-astro]').forEach((b) =>
+      b.addEventListener('click', () => wearLook({ ...a.profile.look, model: 'astronaut', hat: 'helmet', ...ASTRONAUT_PRESETS[+b.dataset.astro][1] }, 'You are the Astronaut 🧑‍🚀')),
+    );
+    document.getElementById('admin-astro-off')?.addEventListener('click', () => wearLook({ ...a.profile.look, model: 'man', ...MODEL_COLORS.man }, 'Back to the Survivor'));
     this.body.querySelectorAll('[data-mygear]').forEach((b) =>
       b.addEventListener('click', async () => {
         try {

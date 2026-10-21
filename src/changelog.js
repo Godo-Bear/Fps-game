@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.57', date: '21 Oct 2026', title: 'Astronaut skin (admins)',
+    items: [
+      'New: the 🧑‍🚀 Astronaut character, for admins only. Change the visor, stripes, suit and panel colours in Locker → Character, or pick a ready-made look (Moon white, Mars red, Gold visor, Stealth, Galaxy).',
+      'Other players see an admin as the Astronaut in online games.',
+    ],
+  },
+  {
     v: '5.56', date: '21 Oct 2026', title: 'Crosshair shapes',
     items: [
       'New: crosshair shapes (Locker → Crosshair shape): Dot, Circle, T-Shape, Plus Dot, Chevron, X Cross and Brackets unlock as you level up (or buy them with coins).',
