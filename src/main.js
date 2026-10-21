@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CHARACTERS_LIVE, FINISHES, levelFromXp, petHas, petLevel, CANDY_DROPS } from '../shared/cosmetics.js';
+import { CHARACTERS_LIVE, FINISHES, crosshairPaint, levelFromXp, petHas, petLevel, CANDY_DROPS } from '../shared/cosmetics.js';
 import { EVAC_HOLD, INFECTED, JUGG_HP, MAPS, MODES, SOLO_MAP, SURVIVORS, quickWheel } from '../shared/modes.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../shared/achievements.js';
 import { termsHtml } from '../shared/terms.js';
@@ -2612,7 +2612,10 @@ function lock() {
 function applyProfile() {
   const p = account.profile;
   if (CHARACTERS_LIVE || account.admin) setArmLook(p.look);
-  document.documentElement.style.setProperty('--xh', p.crosshair);
+  const paint = crosshairPaint(p.crosshair); // a colour, or a gradient (and one colour of it for outlines)
+  document.documentElement.style.setProperty('--xh', paint.fill);
+  document.documentElement.style.setProperty('--xh-solid', paint.solid);
+  $('crosshair').className = `xh-${p.reticle || 'classic'}${$('crosshair').classList.contains('hidden') ? ' hidden' : ''}`; // its shape
   const fin = FINISHES.find((f) => f[0] === p.finish);
   weapon.setFinish(fin && fin[0] !== 'standard' ? fin[3] : null, fin?.[4] || null); // [4]: a Halloween skin's glow
   // gun mastery skins

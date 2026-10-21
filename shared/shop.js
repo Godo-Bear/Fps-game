@@ -1,5 +1,5 @@
 // Coins and the shop. Shared by the game client and the server so prices always match.
-import { AVATARS, CROSSHAIRS, DEAL_COINS, EVENT_LEVEL, FINISHES, NAME_COLORS, TITLES, isDeal } from './cosmetics.js';
+import { COSMETIC_LISTS, COSMETIC_RE, DEAL_COINS, EVENT_LEVEL, isDeal } from './cosmetics.js';
 
 // Coins earned for a finished game (the server recomputes this from the reported run).
 export function coinsForRun({ mode, wave = 0, kills = 0, headshots = 0, won = false }) {
@@ -32,7 +32,6 @@ export const SHOP = [
 ];
 
 // Any locked cosmetic can also be bought instead of levelling up for it.
-const COSMETIC_LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
 export const cosmeticItemId = (kind, id) => `cos_${kind}_${id}`;
 // the items in the 50c Deals too (bought there for real money, or here for coins)
 export const DEAL_ITEMS = SHOP.filter((d) => d.kind === 'consumable').map((d) => d.id);
@@ -57,7 +56,7 @@ export function shopDef(def, edits = {}) {
 // Price of the next purchase of an item, or null if it can't be bought (maxed, unknown, or an admin took it out).
 export function priceOf(itemId, items = {}, edits = {}) {
   const have = items[itemId] || 0;
-  const cos = /^cos_(avatar|color|title|crosshair|finish)_(.+)$/.exec(itemId);
+  const cos = COSMETIC_RE.exec(itemId);
   if (cos) return have ? null : cosmeticPrice(cos[1], cos[2]);
   const found = SHOP.find((s) => s.id === itemId);
   if (!found) return null;

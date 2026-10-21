@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, unlocked, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun, CANDY_EVENT_MAX, CANDY_RATE, candyPrice } from '../shared/cosmetics.js';
+import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, COSMETIC_RE, cleanProfile, unlocked, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun, CANDY_EVENT_MAX, CANDY_RATE, candyPrice } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { SPECIAL_GEAR, TANK_ARMOUR, TANK_FLAG } from '../shared/gear.js';
 import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_PRESETS, EVENT_THEMES, SCHEDULE_MINUTES, halloweenEnd, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
@@ -1205,7 +1205,7 @@ export class GameDB extends DurableObject {
       } else if (action === 'cosmetic') {
         // give (or take) any cosmetic: the Halloween gun skins and the rest of the candy shop too
         const id = String(body.item || '');
-        const m = /^cos_(avatar|color|title|crosshair|finish)_(.+)$/.exec(id);
+        const m = COSMETIC_RE.exec(id);
         if (!m || !unlocked(m[1], m[2], Infinity)) return err('Unknown item');
         const items = this._items(u);
         if (body.on) items[id] = 1;
@@ -1410,7 +1410,7 @@ export class GameDB extends DurableObject {
       }
       if (item.give === 'gear' && !SPECIAL_GEAR.some((g) => g.id === item.what)) return err('Pick which special gear');
       if (item.give === 'gun' && !SHOP.some((d) => d.kind === 'gun' && d.id === item.what)) return err('Pick which gun');
-      if (item.give === 'cosmetic' && !/^cos_(avatar|color|title|crosshair|finish)_.+$/.test(item.what)) return err('Pick which cosmetic');
+      if (item.give === 'cosmetic' && !COSMETIC_RE.test(item.what)) return err('Pick which cosmetic');
       const at = list.findIndex((i) => i.id === item.id);
       if (at >= 0) list[at] = item;
       else if (list.length >= 30) return err('The shop has 30 of these already: take one out first');

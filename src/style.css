@@ -3935,3 +3935,119 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
   color: #e9d9b8;
 }
 .cos-item.deal { border-color: rgba(120, 220, 140, 0.45); }
+
+/* crosshair shapes (Locker → Crosshair shape): classes on #crosshair, and on .xh-demo for the little previews.
+   --xh is the colour (or a gradient), --xh-solid one plain colour of it for outlines. */
+.xh-demo {
+  position: relative;
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  vertical-align: middle;
+}
+.xh-demo > b {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: scale(0.8);
+}
+.xh-demo > b > i {
+  position: absolute;
+  background: var(--xh, #fff);
+  box-shadow: 0 0 2px #000;
+}
+.xh-demo > b > i:nth-child(1), .xh-demo > b > i:nth-child(2) { width: 2px; height: 8px; left: -1px; }
+.xh-demo > b > i:nth-child(3), .xh-demo > b > i:nth-child(4) { height: 2px; width: 8px; top: -1px; }
+.xh-demo > b > i:nth-child(1) { top: -12px; }
+.xh-demo > b > i:nth-child(2) { top: 4px; }
+.xh-demo > b > i:nth-child(3) { left: -12px; }
+.xh-demo > b > i:nth-child(4) { left: 4px; }
+[class*='xh-']::before,
+[class*='xh-']::after {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+/* a centre dot */
+.xh-dot::after, .xh-circle::after, .xh-plusdot::after, .xh-diamond::after, .xh-sniper::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--xh, #fff);
+  box-shadow: 0 0 2px #000;
+}
+.xh-dot > i, .xh-circle > i, .xh-diamond > i, .xh-skull > i, .xh-pumpkin > i, .xh-bat > i, .xh-triangle > i, .xh-brackets > i { display: none; }
+/* a ring */
+.xh-circle::before, .xh-sniper::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--xh-solid, #fff);
+  box-shadow: 0 0 2px #000, inset 0 0 2px #000;
+}
+.xh-sniper::before { width: 34px; height: 34px; }
+.xh-sniper > i:nth-child(1) { top: calc(-22px - var(--spread, 0px)); height: 14px; }
+.xh-sniper > i:nth-child(2) { top: calc(8px + var(--spread, 0px)); height: 14px; }
+.xh-sniper > i:nth-child(3) { left: calc(-22px - var(--spread, 0px)); width: 14px; }
+.xh-sniper > i:nth-child(4) { left: calc(8px + var(--spread, 0px)); width: 14px; }
+.xh-tshape > i:nth-child(1) { display: none; }
+/* chevron: a V pointing up */
+.xh-chevron > i:nth-child(1), .xh-chevron > i:nth-child(2) { display: none; }
+.xh-chevron > i:nth-child(3) { left: -7px !important; top: 1px !important; width: 9px !important; transform: rotate(-45deg); }
+.xh-chevron > i:nth-child(4) { left: -2px !important; top: 1px !important; width: 9px !important; transform: rotate(45deg); }
+#crosshair.xh-xcross { transform: scale(var(--xh-size, 1)) rotate(45deg); }
+.xh-demo > b.xh-xcross { transform: scale(0.8) rotate(45deg); }
+/* brackets: [ ] */
+.xh-brackets::before {
+  content: '';
+  width: 20px;
+  height: 16px;
+  border-left: 2px solid var(--xh-solid, #fff);
+  border-right: 2px solid var(--xh-solid, #fff);
+  box-shadow: 0 0 2px #000;
+}
+.xh-brackets::after { content: ''; width: 3px; height: 3px; background: var(--xh, #fff); }
+/* diamond: a turned square */
+.xh-diamond::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--xh-solid, #fff);
+  transform: translate(-50%, -50%) rotate(45deg);
+  box-shadow: 0 0 2px #000;
+}
+/* star: the cross plus two diagonals */
+.xh-star::before, .xh-star::after {
+  content: '';
+  width: 2px;
+  height: 22px;
+  background: var(--xh, #fff);
+  box-shadow: 0 0 2px #000;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.xh-star::after { transform: translate(-50%, -50%) rotate(-45deg); }
+/* triangle */
+.xh-triangle::before {
+  content: '';
+  width: 14px;
+  height: 12px;
+  background: var(--xh, #fff);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  filter: drop-shadow(0 0 1px #000);
+}
+/* picture ones */
+.xh-skull::before, .xh-pumpkin::before, .xh-bat::before {
+  font-size: 18px;
+  line-height: 1;
+  filter: drop-shadow(0 0 2px #000);
+}
+.xh-skull::before { content: '💀'; }
+.xh-pumpkin::before { content: '🎃'; }
+.xh-bat::before { content: '🦇'; }

@@ -2,6 +2,15 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.56', date: '21 Oct 2026', title: 'Crosshair shapes',
+    items: [
+      'New: crosshair shapes (Locker → Crosshair shape): Dot, Circle, T-Shape, Plus Dot, Chevron, X Cross and Brackets unlock as you level up (or buy them with coins).',
+      'Special shapes in the 💵 50c Deals (or 2500 coins): Diamond, Star, Triangle, Skull and Sniper Scope, plus Rainbow, Fire, Ice Cold and Venom crosshair colours.',
+      'More crosshair colours to unlock: Sunset and Ocean (they fade from one colour to another).',
+      'Halloween: 🎃 Pumpkin and 🦇 Bat crosshairs in the Halloween shop.',
+    ],
+  },
+  {
     v: '5.55', date: '21 Oct 2026', title: 'New run items',
     items: [
       'New items in the Shop next to the Revive Token, each used up at the start of your next run: 💥 Damage Boost (1500), 🛡️ Armour Plating (1500), 👟 Sprint Boots (1200), 🌿 Med Patch (1200), 💣 Grenade Crate (1000) and 🧨 Explosive Ammo (3000).',

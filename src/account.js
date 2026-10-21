@@ -1,7 +1,7 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
 import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, RETICLES, COSMETIC_LISTS, crosshairPaint, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { DEAL_ITEMS, SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -18,11 +18,25 @@ const PAID_OPTIONS = [
   ...SHOP.filter((d) => d.kind === 'gun').map((d) => [`gun:${d.id}`, `🔫 Gun: ${d.name}`]),
   ...SPECIAL_GEAR.map((g) => [`gear:${g.id}`, `${g.icon} Special gear: ${g.name}`]),
   // every cosmetic there is (the level ones, then the Halloween ones)
-  ...Object.entries({ color: ['🎨 Name colour', NAME_COLORS], title: ['🏷️ Name tag', TITLES], avatar: ['🙂 Avatar', AVATARS], crosshair: ['➕ Crosshair', CROSSHAIRS], finish: ['🔫 Gun skin', FINISHES] }).flatMap(([kind, [name, list]]) =>
+  ...Object.entries({ color: ['🎨 Name colour', NAME_COLORS], title: ['🏷️ Name tag', TITLES], avatar: ['🙂 Avatar', AVATARS], crosshair: ['➕ Crosshair colour', CROSSHAIRS], reticle: ['🎯 Crosshair shape', RETICLES], finish: ['🔫 Gun skin', FINISHES] }).flatMap(([kind, [name, list]]) =>
     list.map(([id, need, label]) => [`cosmetic:cos_${kind}_${id}`, `${isDeal(kind, id) ? '💵 ' : need >= EVENT_LEVEL ? '🎃 ' : ''}${name}: ${kind === 'avatar' || kind === 'title' ? id : label}`]),
   ),
   ['none', '✨ Something else (you sort it out)'],
 ];
+// how a cosmetic shows in the shops: its picture (or colour swatch, or crosshair shape) and name
+const KIND_NAMES = { avatar: 'Avatar', color: 'Name colour', title: 'Name tag', crosshair: 'Crosshair colour', finish: 'Gun skin', reticle: 'Crosshair shape' };
+const xhDemo = (shape, colour = '#ffffff') => {
+  const paint = crosshairPaint(colour);
+  return `<span class="xh-demo" style="--xh:${paint.fill};--xh-solid:${paint.solid}"><b class="xh-${esc(shape)}"><i></i><i></i><i></i><i></i></b></span>`;
+};
+function cosShow(kind, id, label, color, glow, myColour) {
+  if (kind === 'avatar') return `<span class="big">${id}</span>`;
+  if (kind === 'title') return `<b>${esc(id)}</b>`;
+  if (kind === 'reticle') return `${xhDemo(id, myColour)}${esc(label)}`;
+  if (kind === 'crosshair') return `<span class="swatch" style="background:${crosshairPaint(id).fill}"></span>${esc(label)}`;
+  if (kind === 'color') return `<span class="swatch" style="background:${id}"></span>${esc(label)}`;
+  return `<span class="swatch${glow ? ' glow' : ''}" style="background:${color};${glow ? `--glow:${glow}` : ''}"></span>${esc(label)}${glow ? ' <span class="glow-tag">✨ GLOWS</span>' : ''}`;
+}
 const SECTION_NAMES = { halloween: '🎃 Halloween shop', paid: '💵 Specials (your items)', deals: '💵 50c Deals', upgrades: 'Upgrades', guns: 'Starting gun', items: 'Items', pets: '🐺 Pets', cosmetics: 'Cosmetics' };
 function paidGives(i) {
   if (i.give === 'coins' || i.give === 'candy') return `${i.amount} ${i.give === 'coins' ? '🪙 coins' : '🍬 candy'}`;
@@ -1308,7 +1322,8 @@ export class AccountUI {
       ${section('avatar', 'Avatar', AVATARS, (id) => `<span class="big">${id}</span>`)}
       ${section('color', 'Name colour', [...NAME_COLORS, ...(Array.isArray(a.items.ccolors) ? a.items.ccolors : []).map((c) => [c, 0, 'Special'])], (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
       ${section('title', 'Title (name tag)', [...TITLES, ...(Array.isArray(a.items.ctitles) ? a.items.ctitles : []).map((t) => [t, 0])], (id) => esc(id))}
-      ${section('crosshair', 'Crosshair', CROSSHAIRS, (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
+      ${section('crosshair', 'Crosshair colour', CROSSHAIRS, (id, label) => `<span class="swatch" style="background:${crosshairPaint(id).fill}"></span>${label}`)}
+      ${section('reticle', 'Crosshair shape', RETICLES, (id, label) => `${xhDemo(id, p.crosshair)}${label}`)}
       ${section('finish', 'Gun finish', FINISHES, (id, label, color, glow) => `<span class="swatch${glow ? ' glow' : ''}" style="background:${color};${glow ? `--glow:${glow}` : ''}"></span>${label}`)}
       ${this._petPicker(p)}
       <h4>Quick chat wheel <span class="muted small">(press Z in game · up to ${QUICK_LEN} letters each · leave one empty for the default)</span></h4>
@@ -1488,11 +1503,10 @@ export class AccountUI {
   // the Halloween shop: cosmetics for candy, while the event's on
   _candyShop() {
     const a = this.account;
-    const names = { avatar: 'Avatar', color: 'Name colour', title: 'Title', crosshair: 'Crosshair', finish: 'Gun finish' };
     const cards = CANDY_SHOP.map(([kind, id, label, price, color, glow]) => {
       const owned = !!a.items[cosmeticItemId(kind, id)] || a.unlockLevel >= EVENT_LEVEL;
-      const show = kind === 'avatar' ? `<span class="big">${id}</span>` : kind === 'color' || kind === 'crosshair' ? `<span class="swatch" style="background:${id}"></span>${esc(label)}` : kind === 'finish' ? `<span class="swatch${glow ? ' glow' : ''}" style="background:${color};${glow ? `--glow:${glow}` : ''}"></span>${esc(label)}${glow ? ' <span class="glow-tag">✨ GLOWS</span>' : ''}` : `<b>${esc(id)}</b>`;
-      return `<div class="cos-item candy"><span class="muted small">${glow ? 'Halloween gun skin' : names[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-candy="${cosmeticItemId(kind, id)}" ${a.candy < price ? 'disabled' : ''}>🍬 ${price}</button>`}</div>`;
+      const show = cosShow(kind, id, label, color, glow, a.profile.crosshair);
+      return `<div class="cos-item candy"><span class="muted small">${glow ? 'Halloween gun skin' : KIND_NAMES[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-candy="${cosmeticItemId(kind, id)}" ${a.candy < price ? 'disabled' : ''}>🍬 ${price}</button>`}</div>`;
     }).join('');
     return `<div class="candy-shop"><div class="shop-head"><span class="coins big">🍬 ${a.candy}</span>
         <span><b>🎃 HALLOWEEN SHOP</b> <span class="muted">· only while Halloween is on${a.season ? ` (until the end of ${esc(new Date(a.season.endsAt - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' }))})` : ''} · zombies drop candy (bosses a big pile) · yours for good · Halloween guns (${HALLOWEEN_GUNS.map((g) => GUNS[g].icon).join(' ')}) hide around the maps</span></span></div>
@@ -1528,7 +1542,6 @@ export class AccountUI {
   _deals() {
     const a = this.account;
     const note = esc(a.cfg?.payNote || 'paid cash in hand to the site owner');
-    const names = { avatar: 'Avatar', color: 'Name colour', title: 'Name tag', crosshair: 'Crosshair', finish: 'Gun skin' };
     const items = DEAL_ITEMS.map((id) => shopDef(SHOP.find((d) => d.id === id), a.shopEdits))
       .filter((d) => !d.hidden)
       .map((d) => {
@@ -1538,8 +1551,8 @@ export class AccountUI {
       .join('');
     const cards = DEALS.map(([kind, id, label, color, glow]) => {
       const owned = !!a.items[cosmeticItemId(kind, id)];
-      const show = kind === 'avatar' ? `<span class="big">${id}</span> ${esc(label)}` : kind === 'title' ? `<b>${esc(id)}</b>` : `<span class="swatch${glow ? ' glow' : ''}" style="background:${kind === 'finish' ? color : id};${glow ? `--glow:${glow}` : ''}"></span>${esc(label)}${glow ? ' <span class="glow-tag">✨ GLOWS</span>' : ''}`;
-      return `<div class="cos-item deal"><span class="muted small">${names[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-buy="${cosmeticItemId(kind, id)}" ${a.coins < DEAL_COINS ? 'disabled' : ''}>🪙 ${DEAL_COINS}</button> <span class="pet-price">💵 ${DEAL_PRICE}</span>`}</div>`;
+      const show = kind === 'avatar' ? `<span class="big">${id}</span> ${esc(label)}` : cosShow(kind, id, label, color, glow, a.profile.crosshair);
+      return `<div class="cos-item deal"><span class="muted small">${KIND_NAMES[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-buy="${cosmeticItemId(kind, id)}" ${a.coins < DEAL_COINS ? 'disabled' : ''}>🪙 ${DEAL_COINS}</button> <span class="pet-price">💵 ${DEAL_PRICE}</span>`}</div>`;
     }).join('');
     return `<h4>💵 ${DEAL_PRICE} Deals <span class="muted small">(each one ${DEAL_PRICE} of real money, ${note}, or buy it with coins)</span></h4>
       <p class="small">${a.loggedIn ? `For ${DEAL_PRICE}: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and which one. They give it to you. Or press the 🪙 button to buy it with coins.` : 'Log in first: it goes on your account.'}</p>
@@ -1582,15 +1595,15 @@ export class AccountUI {
       if (def.hidden) button = '<span class="maxed">TAKEN OUT</span>';
       return `<div class="shop-card ${def.hidden ? 'gone' : ''}">${tools(`shop:${def.id}`, def.hidden)}<div class="si">${esc(def.icon)}</div><div class="sn">${esc(def.name)}</div><div class="sd">${esc(def.desc)}</div>${status}${button}</div>`;
     };
-    const lists = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
-    const names = { avatar: 'Avatar', color: 'Name colour', title: 'Title', crosshair: 'Crosshair', finish: 'Gun finish' };
+    const lists = COSMETIC_LISTS;
+    const names = KIND_NAMES;
     const cosmetics = Object.entries(lists)
       .flatMap(([kind, list]) =>
         list
           .filter(([id, need]) => need > a.unlockLevel && need < EVENT_LEVEL && !items[cosmeticItemId(kind, id)])
           .map(([id, need, label, color]) => {
             const price = cosmeticPrice(kind, id);
-            const show = kind === 'avatar' ? `<span class="big">${id}</span>` : kind === 'color' || kind === 'crosshair' ? `<span class="swatch" style="background:${id}"></span>${esc(label)}` : kind === 'finish' ? `<span class="swatch" style="background:${color}"></span>${esc(label)}` : esc(id);
+            const show = cosShow(kind, id, label, color, null, a.profile.crosshair);
             return `<div class="cos-item"><span class="muted small">${names[kind]}</span> ${show} <button class="btn small" data-buy="${cosmeticItemId(kind, id)}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button></div>`;
           })
       )
@@ -1608,7 +1621,7 @@ export class AccountUI {
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>`,
       pets: () => `<h4>🐺 Pets <span class="muted small">(real money)</span></h4>
       ${this._petPicker({ ...a.profile }, true)}`,
-      cosmetics: () => `<h4>Cosmetics: name colours, name tags (titles), avatars, crosshairs, gun finishes <span class="muted small">(skip the level requirement)</span></h4>
+      cosmetics: () => `<h4>Cosmetics: name colours, name tags (titles), avatars, crosshair colours and shapes, gun finishes <span class="muted small">(skip the level requirement)</span></h4>
       <div class="cos-list">${cosmetics || `<p class="muted">You own every cosmetic!${a.admin ? ' (Admins have them all: players see the ones they haven\'t unlocked here.)' : ''}</p>`}</div>`,
     };
     const order = a.shopOrder;
@@ -1931,7 +1944,7 @@ export class AccountUI {
       <div class="acard"><h4>🎁 Give Halloween stuff <span class="muted small">(to anyone: candy, gun skins and the rest of the Halloween shop)</span></h4>
         <form class="auth inline admin-row" id="admin-give-candy"><input name="u" maxlength="40" placeholder="Player name" required /><input name="n" type="number" placeholder="Candy (minus takes away)" required /><button class="btn small">🍬 GIVE CANDY</button></form>
         <form class="auth inline admin-row" id="admin-give-cos"><input name="u" maxlength="40" placeholder="Player name" required />
-          <select name="item">${CANDY_SHOP.map(([kind, id, label, , , glow]) => `<option value="${cosmeticItemId(kind, id)}">${kind === 'finish' ? `🔫 Gun skin: ${esc(label)}${glow ? ' (glows)' : ''}` : `${{ avatar: 'Avatar', color: 'Name colour', title: 'Title', crosshair: 'Crosshair' }[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}`}</option>`).join('')}</select>
+          <select name="item">${CANDY_SHOP.map(([kind, id, label, , , glow]) => `<option value="${cosmeticItemId(kind, id)}">${kind === 'finish' ? `🔫 Gun skin: ${esc(label)}${glow ? ' (glows)' : ''}` : `${KIND_NAMES[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}`}</option>`).join('')}</select>
           <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE</button></form>
       </div>
       <div class="acard"><h4>ℹ️ How it works</h4>
@@ -1966,7 +1979,7 @@ export class AccountUI {
       </div>
       <div class="acard"><h4>💵 ${DEAL_PRICE} Deals <span class="muted small">(someone paid you ${DEAL_PRICE}: give them the one they picked)</span></h4>
         <form class="auth inline admin-row" id="admin-give-deal"><input name="u" maxlength="40" placeholder="Player name" required />
-          <select name="item">${DEAL_ITEMS.map((id) => SHOP.find((d) => d.id === id)).map((d) => `<option value="item:${d.id}">${d.icon} Run item: ${esc(d.name)} (+1)</option>`).join('')}${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${{ avatar: '🙂 Avatar', color: '🎨 Name colour', title: '🏷️ Name tag', crosshair: '➕ Crosshair', finish: '🔫 Gun skin' }[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</select>
+          <select name="item">${DEAL_ITEMS.map((id) => SHOP.find((d) => d.id === id)).map((d) => `<option value="item:${d.id}">${d.icon} Run item: ${esc(d.name)} (+1)</option>`).join('')}${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${KIND_NAMES[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</select>
           <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE BACK</button></form>
       </div>
       <div class="acard"><h4>🛒 In the shop now</h4><div id="admin-paid-list" class="admin-players"></div>

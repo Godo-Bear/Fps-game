@@ -30,17 +30,30 @@ export const FINISHES = [
   ['arctic', 7, 'Arctic', '#d7dde2'], ['crimson', 9, 'Crimson', '#8e2a24'], ['gold', 12, 'Gold', '#d4a72c'],
   ['toxic', 15, 'Toxic', '#5fd13a'],
 ];
+// Crosshair shapes (the colour is the crosshair colour above). [id, level, label]
+export const RETICLES = [
+  ['classic', 1, 'Classic'], ['dot', 2, 'Dot'], ['circle', 3, 'Circle'], ['tshape', 5, 'T-Shape'], ['plusdot', 6, 'Plus Dot'],
+  ['chevron', 8, 'Chevron'], ['xcross', 10, 'X Cross'], ['brackets', 12, 'Brackets'],
+];
+// how a crosshair colour paints: { fill (a colour or a gradient), solid (one colour, for outlines) }
+export function crosshairPaint(id) {
+  const fill = CROSSHAIRS.find((r) => r[0] === id)?.[3] || id;
+  return { fill, solid: /#[0-9a-f]{6}/i.exec(fill)?.[0] || '#ffffff' };
+}
+// every kind of cosmetic and its list
+export const COSMETIC_LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES, reticle: RETICLES };
+export const COSMETIC_RE = /^cos_(avatar|color|title|crosshair|finish|reticle)_(.+)$/;
 
 // More to unlock (or buy with coins), slotted in by level: [id, level, label?, colour?]
 const MORE = {
   avatar: [['🦈', 4], ['🐍', 6], ['🦂', 9], ['🧙', 11], ['🏴‍☠️', 14], ['🦖', 18]],
   color: [['#4dd0e1', 4, 'Ice'], ['#ff8fab', 6, 'Rose'], ['#a3e635', 8, 'Lime'], ['#f97316', 11, 'Ember'], ['#e5e7eb', 14, 'Platinum']],
   title: [['Sharpshooter', 5], ['Survivalist', 7], ['Horde Breaker', 9], ['Last Stand', 11], ['Night Owl', 13], ['Warlord', 18]],
-  crosshair: [['#ff9f1a', 4, 'Orange'], ['#a78bfa', 5, 'Lavender'], ['#00ffa3', 7, 'Mint']],
+  crosshair: [['#ff9f1a', 4, 'Orange'], ['#a78bfa', 5, 'Lavender'], ['#00ffa3', 7, 'Mint'], ['sunset', 9, 'Sunset', 'linear-gradient(180deg, #ffd34d, #ff4f6a)'], ['ocean', 11, 'Ocean', 'linear-gradient(180deg, #5ff2ff, #2a52be)']],
   finish: [['urban', 4, 'Urban', '#6b7280'], ['navy', 6, 'Navy', '#1e3a5f'], ['rosegold', 8, 'Rose Gold', '#b76e79'], ['carbon', 10, 'Carbon', '#1f1f1f'], ['cobalt', 13, 'Cobalt', '#2a52be']],
 };
 for (const [kind, rows] of Object.entries(MORE)) {
-  const list = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES }[kind];
+  const list = COSMETIC_LISTS[kind];
   list.push(...rows);
   list.sort((a, b) => a[1] - b[1]);
 }
@@ -54,6 +67,9 @@ export const DEALS = [
   ['color', '#00e5ff', 'Neon Cyan'], ['color', '#ff2bd6', 'Neon Pink'], ['color', '#c0c0c0', 'Silver'],
   ['title', 'Supporter', 'Supporter'], ['title', 'VIP', 'VIP'], ['title', 'Big Spender', 'Big Spender'], ['title', 'Legend', 'Legend'],
   ['crosshair', '#00e5ff', 'Neon'], ['crosshair', '#ffd700', 'Gold'],
+  ['crosshair', 'rainbow', 'Rainbow', 'linear-gradient(90deg, #ff3b3b, #ffd93b, #3bff6b, #3bc8ff, #b03bff)'], ['crosshair', 'fire', 'Fire', 'linear-gradient(180deg, #ffe066, #ff5500)'],
+  ['crosshair', 'icecold', 'Ice Cold', 'linear-gradient(180deg, #ffffff, #3bc8ff)'], ['crosshair', 'venom', 'Venom', 'linear-gradient(180deg, #d4ff3b, #1f8a00)'],
+  ['reticle', 'diamond', 'Diamond'], ['reticle', 'star', 'Star'], ['reticle', 'triangle', 'Triangle'], ['reticle', 'skull', 'Skull'], ['reticle', 'sniper', 'Sniper Scope'],
   ['finish', 'diamond', 'Diamond', '#bfe9ff', '#7fd8ff'], ['finish', 'neon', 'Neon', '#14142a', '#ff2bd6'], ['finish', 'galaxy', 'Galaxy', '#1a1040', '#8a6bff'], ['finish', 'royalgold', 'Royal Gold', '#d4a72c', '#ffd34d'],
 ];
 export const isDeal = (kind, id) => DEALS.some(([k, i]) => k === kind && i === id);
@@ -70,6 +86,7 @@ export const CANDY_SHOP = [
   ['title', 'Ghoul', 'Ghoul', 80], ['title', 'Candy Hoarder', 'Candy Hoarder', 120], ['title', 'Night Stalker', 'Night Stalker', 150], ['title', 'Pumpkin King', 'Pumpkin King', 250],
   ['color', '#ff7a1a', 'Pumpkin', 60], ['color', '#9b5cff', 'Haunted', 60], ['color', '#7dff3a', 'Slime', 60],
   ['crosshair', '#ff7a1a', 'Jack-o\'-lantern', 30], ['crosshair', '#b06bff', 'Witchy', 30],
+  ['reticle', 'pumpkin', 'Pumpkin', 80], ['reticle', 'bat', 'Bat', 80],
 ];
 export const candyPrice = (itemId) => CANDY_SHOP.find(([kind, id]) => `cos_${kind}_${id}` === itemId)?.[3] ?? null;
 // how much candy a kill drops: [chance, how many]
@@ -79,11 +96,11 @@ export const CANDY_RATE = 1.2;
 export const CANDY_EVENT_MAX = 3000;
 // they (and the 50c deals) join the normal lists (out of reach by level) so equipping and showing them works like any other
 for (const [kind, id, label, extra, glow] of DEALS) {
-  const list = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES }[kind];
-  list.push(kind === 'avatar' || kind === 'title' ? [id, EVENT_LEVEL] : kind === 'finish' ? [id, EVENT_LEVEL, label, extra, glow] : [id, EVENT_LEVEL, label]);
+  const list = COSMETIC_LISTS[kind];
+  list.push(kind === 'avatar' || kind === 'title' ? [id, EVENT_LEVEL] : kind === 'finish' ? [id, EVENT_LEVEL, label, extra, glow] : [id, EVENT_LEVEL, label, extra]);
 }
 for (const [kind, id, label, , extra, glow] of CANDY_SHOP) {
-  const list = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES }[kind];
+  const list = COSMETIC_LISTS[kind];
   list.push(kind === 'avatar' || kind === 'title' ? [id, EVENT_LEVEL] : kind === 'finish' ? [id, EVENT_LEVEL, label, extra, glow] : [id, EVENT_LEVEL, label]);
 }
 
@@ -177,9 +194,9 @@ export function cleanLook(input, items = null, admin = false) {
   return out;
 }
 
-export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', finish: 'standard', pet: 'none', petColor: '#8a8f96', petSpot: 'right', look: DEFAULT_LOOK };
+export const DEFAULT_PROFILE = { avatar: '🧟', color: '#e9d9b8', title: 'Survivor', crosshair: '#ffffff', reticle: 'classic', finish: 'standard', pet: 'none', petColor: '#8a8f96', petSpot: 'right', look: DEFAULT_LOOK };
 
-const LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
+const LISTS = COSMETIC_LISTS;
 
 // Unlocked by level, or bought in the shop (items[`cos_kind_id`]).
 export function unlocked(kind, id, level, items = {}) {
