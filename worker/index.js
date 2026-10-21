@@ -56,6 +56,8 @@ const ONLINE_MS = 3 * 60000;
 const LIVE_MS = 45000;
 // weeks since 5 Jan 2026 (a Monday): the weekly challenge resets every Monday 00:00 UTC
 // what an admin's real-money shop item gives when they hand it out
+// the end of Halloween 2026's season: the end of 7 November (UTC)
+const HALLOWEEN_2026_END = Date.UTC(2026, 10, 8);
 const PAID_GIVES = ['none', 'coins', 'candy', 'gun', 'gear', 'cosmetic', 'wolf'];
 
 // paid access: a paid_until date means "until the end of that day" (UTC); empty = no end
@@ -312,7 +314,15 @@ export class GameDB extends DurableObject {
 
   // the season the admin started (Halloween: the whole game themed, candy, its shop and guns), or null once it's over
   _season() {
-    const s = this._config('season');
+    let s = this._config('season');
+    // Halloween 2026 starts by itself (the owner asked for it on straight away) and runs to a week after Halloween,
+    // unless an admin has started or ended one already
+    if (!s && Date.now() < HALLOWEEN_2026_END) {
+      const now = Date.now();
+      s = { id: now, theme: 'halloween', by: 'War Grounds', startedAt: now, endsAt: HALLOWEEN_2026_END };
+      this._setConfig('season', s);
+      this._setConfig('announce', { id: now, text: '🎃 HALLOWEEN IS HERE! Every map has gone spooky, zombies drop 🍬 candy, Halloween guns are hiding around the maps and the 🎃 Halloween shop is open (top of the Shop) with gun skins you can only get now. On until 7 November.', from: 'War Grounds', at: now });
+    }
     return s && s.theme && s.endsAt > Date.now() ? s : null;
   }
   // is Halloween on (a Halloween event or the season)
@@ -1292,7 +1302,7 @@ export class GameDB extends DurableObject {
       if (!me.admin) return err('Admins only', 403);
       if (body.action === 'stop') {
         const was = this._season();
-        this.sql.exec("DELETE FROM config WHERE key = 'season'");
+        this._setConfig('season', { off: true }); // kept, so the automatic one doesn't start again
         return json({ season: null, note: was ? 'The Halloween season is over.' : 'No season was on.' });
       }
       const now = Date.now();

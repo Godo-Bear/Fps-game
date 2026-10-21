@@ -1718,7 +1718,7 @@ export class AccountUI {
         <div class="admin-grid"><button class="btn small" id="admin-sched-now">▶ START IT NOW (UNTIL HALF PAST)</button></div>
         <p class="muted small">It starts on the hour (5:00, 6:00…) and ends at half past (5:30, 6:30…). Late, or want it early? START IT NOW runs it straight away until the next half past. END THE EVENT NOW (above) stops this hour's one; it comes back next hour. An event you start by hand always wins.</p>
       </div>
-      <div class="acard"><h4>🎃 Halloween season <span class="muted small">(nobody sees it until you start it)</span></h4>
+      <div class="acard"><h4>🎃 Halloween season <span class="muted small">(on for everyone until the end of 7 November; END stops it, START brings it back)</span></h4>
         <div id="admin-season-status" class="muted small">${a.season ? `<b class="hot">🟢 ON</b> until the end of ${esc(new Date(a.season.endsAt - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' }))}` : 'Off.'}</div>
         <form class="auth inline admin-row" id="admin-season"><label class="small">until the end of <input name="until" type="date" value="${new Date(halloweenEnd() - 1).toISOString().slice(0, 10)}" /></label>
           <label class="small"><input type="checkbox" name="announce" checked /> Announce it</label>

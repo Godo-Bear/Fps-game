@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.49', date: '21 Oct 2026', title: '🎃 Halloween is here!',
+    items: [
+      'Every map has gone spooky until the end of 7 November: a foggy purple night with jack-o\'-lanterns, graveyards, cauldrons, scarecrows, ghosts and bats, and zombies in pumpkin heads and witch hats.',
+      'Zombies drop 🍬 candy (bosses drop a big pile). Spend it in the 🎃 Halloween shop at the top of the Shop on things you can only get now, including glowing gun skins: Jack-o\'-Fire, Ectoplasm, Blood Moon and Phantom.',
+      'Halloween guns turn up around the maps: the 🎃 Pumpkin Launcher (fires exploding jack-o\'-lanterns), the 🔮 Hex Rifle (shots go through enemies) and the 💀 Bone Breaker shotgun.',
+    ],
+  },
+  {
     v: '5.48', date: '21 Oct 2026', title: '🧩 Outfit Hunt every hour',
     items: [
       'The Outfit Hunt event (third person, Red vs Blue vs the zombies, collect puzzle pieces to unlock SWAT, Adventurer and King) now runs every hour on the hour until half past: 5:00 to 5:30, 6:00 to 6:30, and so on. Press JOIN EVENT in Multiplayer while it is on.',
