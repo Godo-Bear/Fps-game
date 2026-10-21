@@ -13,14 +13,21 @@ import { isHalloween } from './halloween.js';
 
 // what an admin's real-money shop item can give: [value for the form, label]. value is give or give:what
 const PAID_OPTIONS = [
+  ['nametag', '🏷️ A new name tag (type it below)'], ['namecolor', '🎨 A new name colour (pick it below)'],
   ['coins', '🪙 Coins (how many below)'], ['candy', '🍬 Candy (how many below)'], ['wolf', '🐺 The wolf companion'],
   ...SHOP.filter((d) => d.kind === 'gun').map((d) => [`gun:${d.id}`, `🔫 Gun: ${d.name}`]),
   ...SPECIAL_GEAR.map((g) => [`gear:${g.id}`, `${g.icon} Special gear: ${g.name}`]),
-  ...CANDY_SHOP.map(([kind, id, label]) => [`cosmetic:cos_${kind}_${id}`, `🎃 ${kind === 'finish' ? 'Gun skin' : kind[0].toUpperCase() + kind.slice(1)}: ${kind === 'avatar' ? `${id} ` : ''}${label}`]),
+  // every cosmetic there is (the level ones, then the Halloween ones)
+  ...Object.entries({ color: ['🎨 Name colour', NAME_COLORS], title: ['🏷️ Name tag', TITLES], avatar: ['🙂 Avatar', AVATARS], crosshair: ['➕ Crosshair', CROSSHAIRS], finish: ['🔫 Gun skin', FINISHES] }).flatMap(([kind, [name, list]]) =>
+    list.map(([id, need, label]) => [`cosmetic:cos_${kind}_${id}`, `${need >= EVENT_LEVEL ? '🎃 ' : ''}${name}: ${kind === 'avatar' || kind === 'title' ? id : label}`]),
+  ),
   ['none', '✨ Something else (you sort it out)'],
 ];
+const SECTION_NAMES = { halloween: '🎃 Halloween shop', paid: '💵 Specials (your items)', upgrades: 'Upgrades', guns: 'Starting gun', items: 'Items', pets: '🐺 Pets', cosmetics: 'Cosmetics' };
 function paidGives(i) {
   if (i.give === 'coins' || i.give === 'candy') return `${i.amount} ${i.give === 'coins' ? '🪙 coins' : '🍬 candy'}`;
+  if (i.give === 'nametag') return `🏷️ Name tag: ${i.what}`;
+  if (i.give === 'namecolor') return '🎨 A new name colour';
   return (PAID_OPTIONS.find(([v]) => v === (i.what ? `${i.give}:${i.what}` : i.give))?.[1] || '').replace(/ \(.*\)$/, '');
 }
 
@@ -618,6 +625,26 @@ export class Account {
   // the admin's real-money shop items: [{ id, name, icon, price, desc, give, amount, what }]
   get paidItems() {
     return this.cfg?.paidItems || [];
+  }
+  // the order of the Shop's sections (an admin can change it)
+  get shopOrder() {
+    const all = ['halloween', 'paid', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
+    const saved = (this.cfg?.shopOrder || []).filter((x) => all.includes(x));
+    return [...new Set([...saved, ...all])];
+  }
+  async adminShopOrder(sections) {
+    const r = await this._api('/admin/shop-order', { method: 'POST', body: { sections } });
+    if (this.cfg) this.cfg.shopOrder = r.shopOrder;
+    this._changed();
+    return r;
+  }
+  // a coin item from the admin's specials
+  async buyCustom(id) {
+    if (!this.user) throw new Error('Log in to buy it: it goes on your account');
+    const { user } = await this._api('/shop/custom', { method: 'POST', body: { id } });
+    this.user = user;
+    this._changed();
+    return this.paidItems.find((i) => i.id === id) || {};
   }
   async adminPaidItems(body) {
     const r = await this._api('/admin/paid-items', { method: 'POST', body });
@@ -1262,8 +1289,8 @@ export class AccountUI {
       <div class="preview">${nameTag({ username: a.name, profile: p })} <span class="ac-title">${esc(p.title)}</span></div>
       ${this._lookPicker(p)}
       ${section('avatar', 'Avatar', AVATARS, (id) => `<span class="big">${id}</span>`)}
-      ${section('color', 'Name colour', NAME_COLORS, (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
-      ${section('title', 'Title', TITLES, (id) => esc(id))}
+      ${section('color', 'Name colour', [...NAME_COLORS, ...(Array.isArray(a.items.ccolors) ? a.items.ccolors : []).map((c) => [c, 0, 'Special'])], (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
+      ${section('title', 'Title (name tag)', [...TITLES, ...(Array.isArray(a.items.ctitles) ? a.items.ctitles : []).map((t) => [t, 0])], (id) => esc(id))}
       ${section('crosshair', 'Crosshair', CROSSHAIRS, (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
       ${section('finish', 'Gun finish', FINISHES, (id, label, color, glow) => `<span class="swatch${glow ? ' glow' : ''}" style="background:${color};${glow ? `--glow:${glow}` : ''}"></span>${label}`)}
       ${this._petPicker(p)}
@@ -1456,17 +1483,27 @@ export class AccountUI {
       <div class="cos-list">${cards}</div></div>`;
   }
   // the admin's real-money items: paid to the owner in person, who hands them out
-  _paidShop() {
+  // the admin's shop items: coin ones (buy them here) and real-money ones (paid to the owner, who hands them out)
+  _paidShop(edit) {
     const a = this.account;
-    if (!a.paidItems.length) return '';
+    if (!a.paidItems.length) return edit ? '<h4>💵 Specials</h4><p class="muted small">Nothing yet: add items in Admin → 💵 Shop.</p>' : '';
     const note = esc(a.cfg?.payNote || 'paid cash in hand to the site owner');
-    const cards = a.paidItems.map((i) => {
+    const list = a.paidItems;
+    const card = (i) => {
+      const n = list.indexOf(i);
       const have = a.items[`paid_${i.id}`] || 0;
-      return `<div class="shop-card"><div class="si">${esc(i.icon)}</div><div class="sn">${esc(i.name)}</div><div class="sd">${esc(i.desc || paidGives(i))}</div>${have ? `<div class="owned-count">Bought${have > 1 ? ` ×${have}` : ''} ✓</div>` : ''}<span class="pet-price">${esc(i.price)}</span></div>`;
-    });
-    return `<h4>💵 Real money <span class="muted small">(${note})</span></h4>
-      <p class="small">${a.loggedIn ? `To buy one: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and what you're buying. They give it to you, then it shows up on your account.` : 'Log in first: it goes on your account.'}</p>
-      <div class="shop-grid">${cards.join('')}</div>`;
+      const once = i.give !== 'coins' && i.give !== 'candy' && i.give !== 'none';
+      const swatch = i.give === 'namecolor' ? `<span class="swatch" style="background:${esc(i.what)}"></span>` : '';
+      const buy = i.currency === 'coins'
+        ? have && once ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-custom="${esc(i.id)}" ${a.coins < i.coins ? 'disabled' : ''}>🪙 ${i.coins}</button>`
+        : `<span class="pet-price">💵 ${esc(i.price)}</span>`;
+      const move = edit ? `<div class="shop-move"><button class="chipbtn" data-pmove="${n}" data-d="-1" ${n ? '' : 'disabled'} title="Move left">◀</button><button class="chipbtn" data-pmove="${n}" data-d="1" ${n < list.length - 1 ? '' : 'disabled'} title="Move right">▶</button></div>` : '';
+      return `<div class="shop-card">${move}<div class="si">${esc(i.icon)}</div><div class="sn">${swatch}${esc(i.name)}</div><div class="sd">${esc(i.desc || paidGives(i))}</div>${have && i.currency !== 'coins' ? `<div class="owned-count">Bought${have > 1 ? ` ×${have}` : ''} ✓</div>` : ''}${buy}</div>`;
+    };
+    const money = list.some((i) => i.currency !== 'coins');
+    return `<h4>💵 Specials ${money ? `<span class="muted small">(💵 ones: real money, ${note})</span>` : ''}</h4>
+      ${money ? `<p class="small">${a.loggedIn ? `To buy a 💵 one: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and what you're buying. They give it to you, then it shows up on your account.` : 'Log in first: it goes on your account.'}</p>` : ''}
+      <div class="shop-grid">${list.map(card).join('')}</div>`;
   }
   _shop() {
     const a = this.account;
@@ -1502,24 +1539,77 @@ export class AccountUI {
           })
       )
       .join('');
+    // the sections, in the order an admin set (✏️ EDIT)
+    const edit = a.admin && this.shopEdit;
+    const sections = {
+      halloween: () => (isHalloween() ? this._candyShop() : ''),
+      paid: () => this._paidShop(edit),
+      upgrades: () => `<h4>Upgrades <span class="muted small">(solo runs)</span></h4>
+      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>`,
+      guns: () => `<h4>Starting gun <span class="muted small">(Own it, equip it: you spawn holding it in every mode, with unlimited ammo)</span></h4>
+      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>`,
+      items: () => `<h4>Items</h4>
+      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>`,
+      pets: () => `<h4>🐺 Pets <span class="muted small">(real money)</span></h4>
+      ${this._petPicker({ ...a.profile }, true)}`,
+      cosmetics: () => `<h4>Cosmetics: name colours, name tags (titles), avatars, crosshairs, gun finishes <span class="muted small">(skip the level requirement)</span></h4>
+      <div class="cos-list">${cosmetics || `<p class="muted">You own every cosmetic!${a.admin ? ' (Admins have them all: players see the ones they haven\'t unlocked here.)' : ''}</p>`}</div>`,
+    };
+    const order = a.shopOrder;
     this.body.innerHTML = `
-      ${isHalloween() ? this._candyShop() : ''}
       <div class="shop-head"><span class="coins big">🪙 ${a.coins}</span>
-        <span class="muted">Earn coins from kills, headshots and waves in solo, and from kills and wins online.</span></div>
+        <span class="muted">Earn coins from kills, headshots and waves in solo, and from kills and wins online.</span>
+        ${a.admin ? `<button class="btn small ${edit ? '' : 'ghost'} shop-edit" id="shop-edit">${edit ? '✓ DONE' : '✏️ EDIT'}</button>` : ''}</div>
       <div id="shop-msg" class="msg"></div>
-      <h4>Upgrades <span class="muted small">(solo runs)</span></h4>
-      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>
-      <h4>Starting gun <span class="muted small">(Own it, equip it: you spawn holding it in every mode, with unlimited ammo)</span></h4>
-      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>
-      <h4>Items</h4>
-      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
-      ${this._paidShop()}
-      <h4>🐺 Pets <span class="muted small">(real money)</span></h4>
-      ${this._petPicker({ ...a.profile }, true)}
-      <h4>Cosmetics <span class="muted small">(skip the level requirement)</span></h4>
-      <div class="cos-list">${cosmetics || '<p class="muted">You own every cosmetic!</p>'}</div>
+      ${edit ? '<p class="muted small">⭐ Moving things changes the Shop for everyone straight away: ▲ ▼ move a section, ◀ ▶ move a special.</p>' : ''}
+      ${order.map((id, n) => {
+        const html = sections[id]?.() || '';
+        if (!html && !edit) return '';
+        const bar = edit ? `<div class="shop-sec-bar"><b>${SECTION_NAMES[id]}</b><button class="chipbtn" data-smove="${n}" data-d="-1" ${n ? '' : 'disabled'}>▲</button><button class="chipbtn" data-smove="${n}" data-d="1" ${n < order.length - 1 ? '' : 'disabled'}>▼</button></div>` : '';
+        return `<div class="shop-sec ${edit ? 'editing' : ''}">${bar}${html || '<p class="muted small">(empty right now)</p>'}</div>`;
+      }).join('')}
       ${a.loggedIn ? '' : '<p class="muted small">Guest: coins and purchases are saved in this browser. Log in to keep them on your account.</p>'}`;
     const msg = (t) => (document.getElementById('shop-msg').textContent = t);
+    const editBtn = document.getElementById('shop-edit');
+    if (editBtn) editBtn.onclick = () => {
+      this.shopEdit = !this.shopEdit;
+      this.render();
+    };
+    const moved = (list, n, d) => {
+      const out = [...list];
+      [out[n], out[n + d]] = [out[n + d], out[n]];
+      return out;
+    };
+    this.body.querySelectorAll('[data-smove]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          await a.adminShopOrder(moved(order, Number(b.dataset.smove), Number(b.dataset.d)));
+          this.render();
+        } catch (err) {
+          msg(err.message);
+        }
+      }),
+    );
+    this.body.querySelectorAll('[data-pmove]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          await a.adminPaidItems({ action: 'order', ids: moved(a.paidItems.map((i) => i.id), Number(b.dataset.pmove), Number(b.dataset.d)) });
+          this.render();
+        } catch (err) {
+          msg(err.message);
+        }
+      }),
+    );
+    this.body.querySelectorAll('[data-custom]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          const def = await a.buyCustom(b.dataset.custom);
+          msg(def.give === 'nametag' || def.give === 'namecolor' || def.give === 'cosmetic' ? '✨ Yours! Wear it from the Locker.' : 'Bought!');
+        } catch (err) {
+          msg(err.message);
+        }
+      }),
+    );
     this.body.querySelectorAll('[data-candy]').forEach((b) =>
       b.addEventListener('click', async () => {
         try {
@@ -1762,17 +1852,21 @@ export class AccountUI {
       </div>
     </section>
     <section class="asec" data-sec="shop">
-      <div class="acard"><h4>💵 Sell something for real money <span class="muted small">(it shows in everyone's Shop; they pay you, you give it to them below)</span></h4>
+      <div class="acard"><h4>💵 Sell something <span class="muted small">(for real money or coins: it shows in everyone's Shop)</span></h4>
         <form class="auth inline admin-row" id="admin-paid-add">
           <input name="icon" maxlength="8" placeholder="Icon (emoji)" value="💵" style="width:5.5em" />
-          <input name="name" maxlength="40" placeholder="Name, e.g. Coin Pack" required />
-          <input name="price" maxlength="20" placeholder="Price, e.g. $1" required style="width:7em" />
-          <select name="give" title="What they get when you give it to them">${PAID_OPTIONS.map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join('')}</select>
-          <input name="amount" type="number" min="0" placeholder="How many (coins/candy)" style="width:12em" />
+          <input name="name" maxlength="40" placeholder="Name, e.g. Gold Name Tag" required />
+          <select name="currency" title="Paid with"><option value="money">💵 Real money</option><option value="coins">🪙 Coins (they buy it themselves)</option></select>
+          <input name="price" maxlength="20" placeholder="Price, e.g. $1" style="width:7em" />
+          <input name="coins" type="number" min="1" placeholder="Coins" style="width:7em" class="hidden" />
+          <select name="give" title="What they get">${PAID_OPTIONS.map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join('')}</select>
+          <input name="tag" maxlength="24" placeholder="The name tag, e.g. Zombie King" />
+          <label class="small hidden" data-colorpick>colour <input name="color" type="color" value="#ff5df2" /></label>
+          <input name="amount" type="number" min="0" placeholder="How many" style="width:8em" class="hidden" />
           <input name="desc" maxlength="200" placeholder="What it is (shown in the Shop)" />
           <button class="btn small">➕ ADD TO SHOP</button>
         </form>
-        <p class="muted small">"Something else" gives nothing by itself: use it for anything you sort out yourself. Players see the price and "pay the owner and tell them your player name". Same name again replaces that item.</p>
+        <p class="muted small">🪙 Coins: players buy it themselves from the Shop. 💵 Real money: they pay you, then you give it to them below. Name tags and name colours are new ones nobody else has; they wear them from the Locker. "Something else" gives nothing by itself. Same name again replaces that item. Change the Shop's order with ✏️ EDIT in the corner of the Shop.</p>
       </div>
       <div class="acard"><h4>🛒 In the shop now</h4><div id="admin-paid-list" class="admin-players"></div>
         <form class="auth inline admin-row" id="admin-paid-give"><input name="u" maxlength="40" placeholder="Player name" required /><select name="id" id="admin-paid-pick"></select>
@@ -2026,15 +2120,35 @@ export class AccountUI {
       );
     };
     paidList();
-    document.getElementById('admin-paid-add').addEventListener('submit', async (e) => {
+    const paidForm = document.getElementById('admin-paid-add');
+    // only the boxes that fit what it gives and how it's paid for
+    const paidFields = () => {
+      const give = paidForm.give.value;
+      const coins = paidForm.currency.value === 'coins';
+      paidForm.price.classList.toggle('hidden', coins);
+      paidForm.coins.classList.toggle('hidden', !coins);
+      paidForm.tag.classList.toggle('hidden', give !== 'nametag');
+      paidForm.querySelector('[data-colorpick]').classList.toggle('hidden', give !== 'namecolor');
+      paidForm.amount.classList.toggle('hidden', give !== 'coins' && give !== 'candy');
+    };
+    paidForm.give.onchange = paidFields;
+    paidForm.currency.onchange = () => {
+      if (['💵', '🪙'].includes(paidForm.icon.value)) paidForm.icon.value = paidForm.currency.value === 'coins' ? '🪙' : '💵';
+      paidFields();
+    };
+    paidFields();
+    paidForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = new FormData(e.target);
-      const [give, what = ''] = String(f.get('give')).split(':');
+      let [give, what = ''] = String(f.get('give')).split(':');
+      if (give === 'nametag') what = String(f.get('tag') || '').trim();
+      if (give === 'namecolor') what = String(f.get('color'));
       const name = String(f.get('name')).trim();
       const same = a.paidItems.find((i) => i.name.toLowerCase() === name.toLowerCase());
       try {
-        msg((await a.adminPaidItems({ action: 'add', id: same?.id, name, icon: f.get('icon'), price: f.get('price'), desc: f.get('desc'), give, what, amount: Number(f.get('amount')) || 0 })).note);
+        msg((await a.adminPaidItems({ action: 'add', id: same?.id, name, icon: f.get('icon'), currency: f.get('currency'), coins: Number(f.get('coins')) || 0, price: f.get('price'), desc: f.get('desc'), give, what, amount: Number(f.get('amount')) || 0 })).note);
         e.target.reset();
+        paidFields();
         paidList();
       } catch (err) {
         msg(err.message);

@@ -58,7 +58,9 @@ const LIVE_MS = 45000;
 // what an admin's real-money shop item gives when they hand it out
 // the end of Halloween 2026's season: the end of 7 November (UTC)
 const HALLOWEEN_2026_END = Date.UTC(2026, 10, 8);
-const PAID_GIVES = ['none', 'coins', 'candy', 'gun', 'gear', 'cosmetic', 'wolf'];
+const PAID_GIVES = ['none', 'coins', 'candy', 'gun', 'gear', 'cosmetic', 'wolf', 'namecolor', 'nametag'];
+// the Shop's sections, in the order an admin can change (admin: ✏️ EDIT in the Shop)
+const SHOP_SECTIONS = ['halloween', 'paid', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
 
 // paid access: a paid_until date means "until the end of that day" (UTC); empty = no end
 const accessEnded = (paidUntil) => {
@@ -344,10 +346,39 @@ export class GameDB extends DurableObject {
     return this._event()?.theme === 'halloween' || this._season()?.theme === 'halloween';
   }
 
-  // the admin's real-money shop items (paid to the owner in person; the admin gives them out)
+  // the admin's shop items: real money (paid to the owner in person; the admin gives them out) or coins (bought
+  // straight from the Shop)
   _paidItems() {
     const list = this._config('paidItems', []);
     return Array.isArray(list) ? list : [];
+  }
+  // what one of them gives (on) or takes back (off)
+  _grantPaid(u, def, on, coinsPaid = 0) {
+    const items = this._items(u);
+    let coins = (u.coins || 0) - coinsPaid;
+    const sign = on ? 1 : -1;
+    const own = (key) => {
+      if (!key) return;
+      if (on) items[key] = 1;
+      else delete items[key];
+    };
+    // a list of custom name colours / name tags
+    const listed = (key, v) => {
+      const list = (Array.isArray(items[key]) ? items[key] : []).filter((x) => x !== v);
+      if (on) list.push(v);
+      items[key] = list;
+    };
+    if (def.give === 'coins') coins = Math.max(0, coins + sign * def.amount);
+    else if (def.give === 'candy') items.candy = Math.max(0, (items.candy || 0) + sign * def.amount);
+    else if (def.give === 'gun' || def.give === 'cosmetic') own(def.what);
+    else if (def.give === 'gear') own(SPECIAL_GEAR.find((x) => x.id === def.what)?.item);
+    else if (def.give === 'wolf') own(PET_ITEM);
+    else if (def.give === 'namecolor') listed('ccolors', def.what);
+    else if (def.give === 'nametag') listed('ctitles', def.what);
+    // how many times they've bought it (shows as owned in their shop)
+    items[`paid_${def.id}`] = Math.max(0, (items[`paid_${def.id}`] || 0) + sign);
+    if (!items[`paid_${def.id}`]) delete items[`paid_${def.id}`];
+    this.sql.exec('UPDATE users SET items = ?, coins = ? WHERE id = ?', JSON.stringify(items), coins, u.id);
   }
 
   _updates() {
@@ -645,6 +676,7 @@ export class GameDB extends DurableObject {
         season: this._season(),
         hwEvent: this._hwEvent(),
         paidItems: this._paidItems(),
+        shopOrder: this._config('shopOrder', SHOP_SECTIONS),
         features: this._features(),
       });
     }
@@ -1183,23 +1215,7 @@ export class GameDB extends DurableObject {
         // they paid the owner for one of the real-money shop items: they get what it gives (or it's taken back)
         const def = this._paidItems().find((i) => i.id === body.id);
         if (!def) return err('That shop item is gone');
-        const items = this._items(u);
-        let coins = u.coins || 0;
-        const sign = body.on ? 1 : -1;
-        const own = (key) => {
-          if (!key) return;
-          if (body.on) items[key] = 1;
-          else delete items[key];
-        };
-        if (def.give === 'coins') coins = Math.max(0, coins + sign * def.amount);
-        else if (def.give === 'candy') items.candy = Math.max(0, (items.candy || 0) + sign * def.amount);
-        else if (def.give === 'gun' || def.give === 'cosmetic') own(def.what);
-        else if (def.give === 'gear') own(SPECIAL_GEAR.find((x) => x.id === def.what)?.item);
-        else if (def.give === 'wolf') own(PET_ITEM);
-        // how many times they've bought it (shows as owned in their shop)
-        items[`paid_${def.id}`] = Math.max(0, (items[`paid_${def.id}`] || 0) + sign);
-        if (!items[`paid_${def.id}`]) delete items[`paid_${def.id}`];
-        this.sql.exec('UPDATE users SET items = ?, coins = ? WHERE id = ?', JSON.stringify(items), coins, u.id);
+        this._grantPaid(u, def, !!body.on);
         note = body.on ? `${u.username} got ${def.icon} ${def.name}.` : `Took ${def.icon} ${def.name} back from ${u.username}.`;
       } else return err('Unknown action');
       const after = this._byName(u.username);
@@ -1345,18 +1361,42 @@ export class GameDB extends DurableObject {
         this._setConfig('paidItems', list);
         return json({ paidItems: list, note: 'Taken out of the shop. Anyone who bought it keeps what it gave them.' });
       }
+      // a new order (admin: ✏️ EDIT in the Shop)
+      if (body.action === 'order') {
+        const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+        list = [...ids.map((id) => list.find((i) => i.id === id)).filter(Boolean), ...list.filter((i) => !ids.includes(i.id))];
+        this._setConfig('paidItems', list);
+        return json({ paidItems: list, note: 'Saved the new order.' });
+      }
       const clean = (v, n) => String(v || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, n);
       const item = {
-        id: /^[a-z0-9]{4,12}$/.test(body.id) ? body.id : Math.random().toString(36).slice(2, 10),
+        // (an id only when changing one: a missing one isn't the text "undefined")
+        id: typeof body.id === 'string' && /^[a-z0-9]{4,12}$/.test(body.id) ? body.id : Math.random().toString(36).slice(2, 10),
         name: clean(body.name, 40),
-        icon: clean(body.icon, 8) || '💵',
+        icon: clean(body.icon, 8) || (body.currency === 'coins' ? '🪙' : '💵'),
+        currency: body.currency === 'coins' ? 'coins' : 'money',
+        coins: Math.max(0, Math.min(10000000, Math.floor(Number(body.coins) || 0))),
         price: clean(body.price, 20),
         desc: clean(body.desc, 200),
         give: PAID_GIVES.includes(body.give) ? body.give : 'none',
         amount: Math.max(0, Math.min(10000000, Math.floor(Number(body.amount) || 0))),
         what: clean(body.what, 40),
       };
+      if (item.currency === 'coins') {
+        if (!item.coins) return err('How many coins does it cost?');
+        item.price = `${item.coins} coins`;
+        if (item.give === 'none') return err('Coin items need something to give');
+      }
       if (!item.name || !item.price) return err('It needs a name and a price');
+      if (item.give === 'namecolor') {
+        if (!/^#[0-9a-f]{6}$/i.test(item.what)) return err('Pick the name colour');
+        item.what = item.what.toLowerCase();
+      }
+      if (item.give === 'nametag') {
+        item.what = clean(item.what, 24);
+        if (!item.what) return err('Type the name tag');
+        if (nameBlocked(item.what, this._words())) return err('That name tag has a blocked word');
+      }
       if (item.give === 'gear' && !SPECIAL_GEAR.some((g) => g.id === item.what)) return err('Pick which special gear');
       if (item.give === 'gun' && !SHOP.some((d) => d.kind === 'gun' && d.id === item.what)) return err('Pick which gun');
       if (item.give === 'cosmetic' && !/^cos_(avatar|color|title|crosshair|finish)_.+$/.test(item.what)) return err('Pick which cosmetic');
@@ -1365,7 +1405,26 @@ export class GameDB extends DurableObject {
       else if (list.length >= 30) return err('The shop has 30 of these already: take one out first');
       else list.push(item);
       this._setConfig('paidItems', list);
-      return json({ paidItems: list, item, note: `${item.icon} ${item.name} (${item.price}) is in the shop. When someone pays you, give it to them here.` });
+      return json({ paidItems: list, item, note: `${item.icon} ${item.name} (${item.price}) is in the shop.${item.currency === 'coins' ? ' Players buy it with their coins.' : ' When someone pays you, give it to them here.'}` });
+    }
+    // admin: the order of the Shop's sections
+    if (path === '/admin/shop-order' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const want = Array.isArray(body.sections) ? body.sections.filter((x) => SHOP_SECTIONS.includes(x)) : [];
+      const order = [...new Set([...want, ...SHOP_SECTIONS])];
+      this._setConfig('shopOrder', order);
+      return json({ shopOrder: order, note: 'Saved the Shop order for everyone.' });
+    }
+    // a coin item an admin put in the Shop: bought straight away
+    if (path === '/shop/custom' && method === 'POST') {
+      const def = this._paidItems().find((i) => i.id === body.id);
+      if (!def || def.currency !== 'coins') return err('That item is not for sale');
+      const items = this._items(me);
+      if (['namecolor', 'nametag', 'cosmetic', 'gun', 'gear', 'wolf'].includes(def.give) && items[`paid_${def.id}`]) return err('You have it already');
+      if ((me.coins || 0) < def.coins) return err('Not enough coins');
+      this._grantPaid(me, def, true, def.coins);
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ user: this._publicUser(user, true) });
     }
     // admin: host an event (every server: players join from the menu), or end it
     if (path === '/admin/event' && method === 'POST') {

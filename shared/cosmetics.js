@@ -163,6 +163,9 @@ export function cleanProfile(input, level, items = {}) {
     for (const kind of Object.keys(LISTS)) {
       if (typeof input[kind] === 'string' && unlocked(kind, input[kind], level, items)) out[kind] = input[kind];
     }
+    // name colours and name tags bought from the admin's shop items
+    if (Array.isArray(items.ccolors) && items.ccolors.includes(input.color)) out.color = input.color;
+    if (Array.isArray(items.ctitles) && items.ctitles.includes(input.title)) out.title = input.title;
     if (input.pet === 'wolf' && ownsWolf(level, items)) out.pet = 'wolf';
     if (typeof input.petColor === 'string' && /^#[0-9a-f]{6}$/i.test(input.petColor)) out.petColor = input.petColor.toLowerCase();
     if (PET_SPOTS.some(([id]) => id === input.petSpot)) out.petSpot = input.petSpot;

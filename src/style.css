@@ -3889,3 +3889,26 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
   box-shadow: 0 0 18px rgba(255, 138, 26, 0.55);
   margin-top: 8px;
 }
+
+/* the Shop's admin edit mode */
+.shop-head { position: relative; }
+.shop-edit { margin-left: auto; }
+.shop-sec.editing {
+  border: 1px dashed rgba(255, 211, 77, 0.5);
+  border-radius: 8px;
+  padding: 6px 10px 10px;
+  margin-bottom: 10px;
+}
+.shop-sec-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ffd34d;
+}
+.shop-sec-bar b { margin-right: auto; }
+.shop-move {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 4px;
+}

@@ -2,6 +2,16 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.51', date: '21 Oct 2026', title: 'Shop specials',
+    items: [
+      'The Shop has a 💵 Specials section with items from the owner: some bought with coins straight from the Shop, some with real money (paid to the owner).',
+      'New name tags and name colours you can only get there. Wear them from the Locker (Title and Name colour).',
+      'Admin: adding a second item to the Shop no longer replaces the first one.',
+      'Admin: items can cost coins (players buy them themselves) or real money, and can give a new name tag, a new name colour, or any cosmetic in the game.',
+      'Admin: ✏️ EDIT in the corner of the Shop moves its sections up and down and the specials left and right, for everyone.',
+    ],
+  },
+  {
     v: '5.50', date: '21 Oct 2026', title: 'Two event buttons',
     items: [
       'Multiplayer now has a button for each event: 🧩 JOIN EVENT for the third-person Outfit Hunt (every hour, :00 to :30, with the next start time shown while it is off), and 🎃 JOIN THE HALLOWEEN EVENT, open the whole time Halloween is on.',
