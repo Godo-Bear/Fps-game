@@ -2568,6 +2568,19 @@ export class Room extends DurableObject {
       case 'ping':
         this._send(p, { t: 'pong', at: m.at });
         break;
+      case 'away': {
+        // events: one player's game moves the zombies for everyone. If their game is hidden (another tab, phone
+        // locked) it stops, and the zombies would freeze, so someone whose game is showing takes over.
+        p.away = !!m.on;
+        if (!MODES[this.mode]?.event) break;
+        const host = this.players.get(this.hostId);
+        const next = this._humans().find((o) => !o.away);
+        if (host?.away && next && next !== host) {
+          this.hostId = next.id;
+          this._broadcast(this._lobby());
+        }
+        break;
+      }
     }
   }
 
@@ -2583,7 +2596,7 @@ export class Room extends DurableObject {
     }
     this._dropFlag(p);
     if (this.hostId === p.id) {
-      const next = this._humans()[0];
+      const next = this._humans().find((o) => !o.away) || this._humans()[0];
       this.hostId = next ? next.id : 0;
     }
     if (![...this.players.values()].some((o) => !o.bot)) {

@@ -5348,7 +5348,15 @@ function worldTick(dt) {
       ev.wasSim = true;
       for (const z of zombies.list) zombies.nextId = Math.max(zombies.nextId, z.id || 0);
     }
-    if (!simHost()) ev.wasSim = false;
+    if (!simHost() && ev.wasSim) {
+      // someone else moves the zombies now (our game was hidden): ours follow theirs from here
+      ev.wasSim = false;
+      for (const z of zombies.list) {
+        z.net = z.root.position.clone();
+        z.netYaw = z.root.rotation.y;
+        z.puppet = true;
+      }
+    }
     if (simHost()) {
       if (!(cheatsOn() && cheats.freeze)) zombies.update(dt, zombieTargets(), zombieHooks);
       eventDirector(dt);
@@ -5602,7 +5610,11 @@ account.onAnnounce = (a, seen) => {
     el.classList.add('hidden');
   };
 };
-document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && account.pollUnread());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') account.pollUnread();
+  // events: a hidden game can't move the zombies, so the server hands that to someone else
+  if (isEvent()) mp.send({ t: 'away', on: document.hidden });
+});
 // a new version went live: everyone restarts onto it (straight away on the menu, after a short countdown mid-game)
 function newVersionPop(build) {
   let el = $('version-pop');

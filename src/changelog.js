@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.62', date: '21 Oct 2026', title: 'Event zombies fixed',
+    items: ["Fixed: in events with friends the zombies could freeze. One player's game moves the zombies for everyone, and if that player switched tabs or locked their phone the zombies stopped. Now someone else takes over straight away."],
+  },
+  {
     v: '5.61', date: '21 Oct 2026', title: 'Halloween special zombies',
     items: [
       'New Halloween zombies with their own tricks (solo, co-op and the Halloween match, while Halloween is on):',
