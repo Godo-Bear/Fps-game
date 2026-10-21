@@ -356,6 +356,22 @@ export class GameDB extends DurableObject {
     return { id: user.id, email: user.email || '', paid: !!row?.has_paid && !expired, expired, paidUntil: row?.paid_until || null, profile: !!row };
   }
 
+  // copies the player name into the owner's Supabase profiles table (the username column), so the dashboard
+  // shows names next to emails. Uses the player's own login, through set_my_username (docs/SUPABASE_SETUP.md),
+  // which can only change that one column of their own row. If the owner hasn't added it yet, nothing happens.
+  async _supabaseName(accessToken, username) {
+    try {
+      const base = String(this.env.SUPABASE_URL).replace(/\/+$/, '');
+      await fetch(`${base}/rest/v1/rpc/set_my_username`, {
+        method: 'POST',
+        headers: { apikey: this.env.SUPABASE_ANON_KEY, authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ name: String(username).slice(0, 40) }),
+      });
+    } catch {
+      /* the name just doesn't show in Supabase */
+    }
+  }
+
   async _auth(request) {
     const h = request.headers.get('authorization') || '';
     const m = /^Bearer ([a-f0-9]{64})$/.exec(h);
@@ -580,6 +596,7 @@ export class GameDB extends DurableObject {
       if (user.banned) return json({ error: 'This account has been banned', banned: true }, 403);
       this.sql.exec('UPDATE users SET paid = 1, paid_until = ?, last_seen = ?, last_ip = ? WHERE id = ?', sb.paidUntil, Date.now(), ip, user.id);
       user = this.sql.exec('SELECT * FROM users WHERE id = ?', user.id).toArray()[0];
+      await this._supabaseName(body.access_token, user.username);
       return json({ token: await this._session(user), user: { ...this._publicUser(user, true), email: sb.email, paidUntil: sb.paidUntil } });
     }
 

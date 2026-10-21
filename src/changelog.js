@@ -4,6 +4,7 @@ export const CHANGELOG = [
   {
     v: '5.45', date: '21 Oct 2026', title: 'Admin: guns in every mode',
     items: [
+      'Admin: player names can now show next to emails in Supabase (one-time setup, see the guide).',
       'Admin: admins keep their own guns (the rifle, their starting gun and special gear) in every mode, on top of what the mode gives: Gun Game, One in the Chamber, Juggernaut, Infection (even as a zombie) and Hide and Seek (hider or seeker, even while counting). They can pick up guns there too.',
     ],
   },

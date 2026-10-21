@@ -205,3 +205,28 @@ To stop it later: `select cron.unschedule('switch-off-expired');`
   can't log in, open the Supabase dashboard and click **Restore project**.
 - **Turning it all off**: delete `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Cloudflare and redeploy. The game goes
   back to normal player name + password accounts.
+
+
+## Show player names in Supabase (optional)
+
+The game's player names live on the game's own server, so Supabase only shows emails. To see each player's
+name next to their email in **Table Editor → profiles**, run this once (save it as **"Show player names"**, as a
+**new query**). After that, every player's name is filled in the next time they log in.
+
+```sql
+-- the player's name, copied in by the game when they log in
+alter table public.profiles add column if not exists username text;
+
+-- lets a logged-in player set ONLY their own name (nothing else on their row, so not has_paid)
+create or replace function public.set_my_username(name text)
+returns void
+language sql
+security definer set search_path = public
+as $$
+  update public.profiles set username = left(name, 40) where id = auth.uid();
+$$;
+grant execute on function public.set_my_username(text) to authenticated;
+```
+
+Passwords can't be shown, by anyone: Supabase only keeps a scrambled version that can't be turned back. If a
+player forgets theirs: **Authentication → Users**, click their row, **Send password recovery**.
