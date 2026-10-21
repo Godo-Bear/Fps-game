@@ -3491,6 +3491,16 @@ body.infected #game::after {
   border-radius: 8px;
   padding: 10px;
 }
+.look-hint {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.6;
+  pointer-events: none;
+}
 .look-preview {
   width: 200px;
   height: 290px;

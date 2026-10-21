@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.59', date: '21 Oct 2026', title: 'Turn your character',
+    items: ['Drag your character (mouse or finger) in the Locker, or in the home-screen line-up, to turn it around and see it from every side.'],
+  },
+  {
     v: '5.58', date: '21 Oct 2026', title: 'Smoother waves, faster running, pieces only in the event',
     items: [
       'Less lag in late waves: waves have fewer zombies (at most 28, and at most 16 up at once), but each one is tougher as the waves go on.',

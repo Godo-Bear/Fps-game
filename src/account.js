@@ -1387,7 +1387,7 @@ export class AccountUI {
     const note = CHARACTERS_LIVE || !this.account.admin ? 'other players see it online, and your arms match it · 🧩 unlock more in events' : 'ADMIN PREVIEW: players only see it once they find a piece in an event';
     return `<h4>🧍 Character <span class="muted small">(${note})</span></h4>
       <div class="look-box">
-        <div class="look-wrap"><canvas id="look-preview" class="look-preview"></canvas><div id="look-loading" class="look-loading hidden">Loading…</div></div>
+        <div class="look-wrap"><canvas id="look-preview" class="look-preview"></canvas><div id="look-loading" class="look-loading hidden">Loading…</div><div class="look-hint">↔ drag to turn</div></div>
         <div class="look-opts">
           <h5>Character</h5><div class="pick-row">${LOOK_MODELS.filter(([id]) => this.account.admin || !ADMIN_CHARS.includes(id)).map(([id, n]) => {
             // locked ones: how many of their 4 puzzle pieces you have (they come from events)

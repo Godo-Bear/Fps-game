@@ -466,6 +466,31 @@ export class CharacterPreview {
     this.spin = 0.5;
     this.char = null;
     this.alive = true;
+    // drag (mouse or finger) to turn the character; it starts spinning by itself again a moment after
+    this.heldT = 0;
+    let dragX = null;
+    canvas.style.touchAction = 'pan-y';
+    canvas.style.cursor = 'grab';
+    canvas.addEventListener('pointerdown', (e) => {
+      dragX = e.clientX;
+      this.heldT = 150;
+      canvas.setPointerCapture?.(e.pointerId);
+      canvas.style.cursor = 'grabbing';
+      e.stopPropagation();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (dragX === null) return;
+      this.spin += (e.clientX - dragX) * 0.012;
+      dragX = e.clientX;
+      this.heldT = 150;
+    });
+    const drop = () => {
+      dragX = null;
+      canvas.style.cursor = 'grab';
+    };
+    canvas.addEventListener('pointerup', drop);
+    canvas.addEventListener('pointercancel', drop);
+    canvas.addEventListener('click', (e) => e.stopPropagation());
     const loop = () => {
       if (!this.alive) return;
       // off the page: wait a moment (the Locker may be putting it back), then let it go
@@ -475,7 +500,8 @@ export class CharacterPreview {
         return requestAnimationFrame(loop);
       }
       this.offT = 0;
-      this.spin += this.spinSpeed ?? 0.012; // 0: stands still facing you (the home-screen line-up)
+      if (this.heldT > 0) this.heldT--; // just turned by hand: hold still for a moment
+      else this.spin += this.spinSpeed ?? 0.012; // 0: stands still facing you (the home-screen line-up)
       if (this.char) this.char.root.rotation.y = this.spin;
       this.char?.mixer?.update(1 / 60);
       this.renderer.render(this.scene, this.camera);
