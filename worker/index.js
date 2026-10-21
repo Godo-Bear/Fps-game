@@ -677,6 +677,7 @@ export class GameDB extends DurableObject {
         hwEvent: this._hwEvent(),
         paidItems: this._paidItems(),
         shopOrder: this._config('shopOrder', SHOP_SECTIONS),
+        shopEdits: this._config('shopEdits', {}),
         features: this._features(),
       });
     }
@@ -919,7 +920,7 @@ export class GameDB extends DurableObject {
     };
     if (path === '/shop/buy' && method === 'POST') {
       const items = this._items(me);
-      const price = typeof body.item === 'string' ? priceOf(body.item, items) : null;
+      const price = typeof body.item === 'string' ? priceOf(body.item, items, this._config('shopEdits', {})) : null;
       if (price === null) return err("That can't be bought");
       if ((me.coins || 0) < price) return err('Not enough coins');
       items[body.item] = (items[body.item] || 0) + 1;
@@ -1406,6 +1407,27 @@ export class GameDB extends DurableObject {
       else list.push(item);
       this._setConfig('paidItems', list);
       return json({ paidItems: list, item, note: `${item.icon} ${item.name} (${item.price}) is in the shop.${item.currency === 'coins' ? ' Players buy it with their coins.' : ' When someone pays you, give it to them here.'}` });
+    }
+    // admin: change one of the Shop's own items (name, icon, description, price) or take it out (hidden), or put
+    // it back how it was (reset)
+    if (path === '/admin/shop-item' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const def = SHOP.find((d) => d.id === body.id);
+      if (!def) return err('Unknown item');
+      const edits = this._config('shopEdits', {});
+      if (body.reset) delete edits[def.id];
+      else {
+        const clean = (v, n) => String(v || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, n);
+        const e = { ...(edits[def.id] || {}) };
+        if ('name' in body) e.name = clean(body.name, 40);
+        if ('icon' in body) e.icon = clean(body.icon, 8);
+        if ('desc' in body) e.desc = clean(body.desc, 200);
+        if ('price' in body) e.price = Math.max(0, Math.min(10000000, Math.floor(Number(body.price) || 0)));
+        if ('hidden' in body) e.hidden = !!body.hidden;
+        edits[def.id] = e;
+      }
+      this._setConfig('shopEdits', edits);
+      return json({ shopEdits: edits, note: body.reset ? 'Back to how it was.' : body.hidden ? 'Taken out of the Shop (anyone who has it keeps it).' : 'Saved.' });
     }
     // admin: the order of the Shop's sections
     if (path === '/admin/shop-order' && method === 'POST') {

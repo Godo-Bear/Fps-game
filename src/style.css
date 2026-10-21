@@ -3912,3 +3912,25 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
   width: 100%;
   margin-bottom: 4px;
 }
+.shop-tools {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  width: 100%;
+  margin-bottom: 4px;
+}
+.shop-card.gone { opacity: 0.45; }
+.shop-form {
+  gap: 6px;
+  border: 1px solid rgba(255, 211, 77, 0.6);
+}
+.shop-form input,
+.shop-form textarea {
+  width: 100%;
+  font: inherit;
+  padding: 4px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(233, 217, 184, 0.3);
+  background: rgba(20, 16, 12, 0.9);
+  color: #e9d9b8;
+}

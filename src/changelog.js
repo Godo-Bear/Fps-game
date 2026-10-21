@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.52', date: '21 Oct 2026', title: 'Admin: edit the Shop',
+    items: [
+      'Admin: in the Shop\'s ✏️ EDIT mode every item has ✏️ (change its name, icon, description and price) and 🗑️ (delete it), for the owner\'s specials and the Shop\'s own upgrades, guns and items too. A deleted Shop item can be put back with ↺ PUT BACK, and anyone who already bought something keeps it.',
+      'Admin: the admin panel\'s 💵 Shop list has ✏️ EDIT and 🗑️ DELETE on each special.',
+    ],
+  },
+  {
     v: '5.51', date: '21 Oct 2026', title: 'Shop specials',
     items: [
       'The Shop has a 💵 Specials section with items from the owner: some bought with coins straight from the Shop, some with real money (paid to the owner).',

@@ -2,7 +2,7 @@ import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
 import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, EVENT_LEVEL, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
-import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
+import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
@@ -565,7 +565,7 @@ export class Account {
     }
     const g = this.guest;
     g.items = g.items || {};
-    const price = priceOf(itemId, g.items);
+    const price = priceOf(itemId, g.items, this.shopEdits);
     if (price === null) throw new Error("That can't be bought");
     if ((g.coins || 0) < price) throw new Error('Not enough coins');
     g.coins -= price;
@@ -631,6 +631,16 @@ export class Account {
     const all = ['halloween', 'paid', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
     const saved = (this.cfg?.shopOrder || []).filter((x) => all.includes(x));
     return [...new Set([...saved, ...all])];
+  }
+  // the admin's changes to the Shop's own items: { id: { name, icon, desc, price, hidden } }
+  get shopEdits() {
+    return this.cfg?.shopEdits || {};
+  }
+  async adminShopItem(body) {
+    const r = await this._api('/admin/shop-item', { method: 'POST', body });
+    if (this.cfg) this.cfg.shopEdits = r.shopEdits;
+    this._changed();
+    return r;
   }
   async adminShopOrder(sections) {
     const r = await this._api('/admin/shop-order', { method: 'POST', body: { sections } });
@@ -1484,12 +1494,13 @@ export class AccountUI {
   }
   // the admin's real-money items: paid to the owner in person, who hands them out
   // the admin's shop items: coin ones (buy them here) and real-money ones (paid to the owner, who hands them out)
-  _paidShop(edit) {
+  _paidShop(edit, editForm, tools) {
     const a = this.account;
     if (!a.paidItems.length) return edit ? '<h4>💵 Specials</h4><p class="muted small">Nothing yet: add items in Admin → 💵 Shop.</p>' : '';
     const note = esc(a.cfg?.payNote || 'paid cash in hand to the site owner');
     const list = a.paidItems;
     const card = (i) => {
+      if (edit && this.shopEditing === `paid:${i.id}`) return editForm(`paid:${i.id}`, { icon: i.icon, name: i.name, desc: i.desc, price: i.currency === 'coins' ? i.coins : i.price, money: i.currency !== 'coins', priceLabel: i.currency === 'coins' ? 'Price (coins)' : 'Price (real money, e.g. $2)' });
       const n = list.indexOf(i);
       const have = a.items[`paid_${i.id}`] || 0;
       const once = i.give !== 'coins' && i.give !== 'candy' && i.give !== 'none';
@@ -1498,7 +1509,7 @@ export class AccountUI {
         ? have && once ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-custom="${esc(i.id)}" ${a.coins < i.coins ? 'disabled' : ''}>🪙 ${i.coins}</button>`
         : `<span class="pet-price">💵 ${esc(i.price)}</span>`;
       const move = edit ? `<div class="shop-move"><button class="chipbtn" data-pmove="${n}" data-d="-1" ${n ? '' : 'disabled'} title="Move left">◀</button><button class="chipbtn" data-pmove="${n}" data-d="1" ${n < list.length - 1 ? '' : 'disabled'} title="Move right">▶</button></div>` : '';
-      return `<div class="shop-card">${move}<div class="si">${esc(i.icon)}</div><div class="sn">${swatch}${esc(i.name)}</div><div class="sd">${esc(i.desc || paidGives(i))}</div>${have && i.currency !== 'coins' ? `<div class="owned-count">Bought${have > 1 ? ` ×${have}` : ''} ✓</div>` : ''}${buy}</div>`;
+      return `<div class="shop-card">${tools(`paid:${i.id}`)}${move}<div class="si">${esc(i.icon)}</div><div class="sn">${swatch}${esc(i.name)}</div><div class="sd">${esc(i.desc || paidGives(i))}</div>${have && i.currency !== 'coins' ? `<div class="owned-count">Bought${have > 1 ? ` ×${have}` : ''} ✓</div>` : ''}${buy}</div>`;
     };
     const money = list.some((i) => i.currency !== 'coins');
     return `<h4>💵 Specials ${money ? `<span class="muted small">(💵 ones: real money, ${note})</span>` : ''}</h4>
@@ -1508,9 +1519,21 @@ export class AccountUI {
   _shop() {
     const a = this.account;
     const items = a.items;
-    const card = (def) => {
+    const edit = a.admin && this.shopEdit;
+    // an edit form in place of a card (admin: ✏️), for one of the Shop's items or a special
+    const editForm = (key, f) => `<form class="shop-card shop-form" data-editform="${esc(key)}">
+        <input name="icon" maxlength="8" value="${esc(f.icon)}" placeholder="Icon" />
+        <input name="name" maxlength="40" value="${esc(f.name)}" placeholder="Name" required />
+        <textarea name="desc" maxlength="200" rows="2" placeholder="Description">${esc(f.desc || '')}</textarea>
+        <label class="small">${esc(f.priceLabel)} <input name="price" ${f.money ? 'maxlength="20"' : 'type="number" min="1"'} value="${esc(f.price)}" /></label>
+        <div><button class="btn small">💾 SAVE</button> <button type="button" class="btn small ghost" data-editcancel>CANCEL</button></div></form>`;
+    const tools = (key, hidden) => (edit ? `<div class="shop-tools">${hidden ? `<button class="chipbtn" data-restore="${esc(key)}" title="Put it back in the Shop">↺ PUT BACK</button>` : `<button class="chipbtn" data-edit="${esc(key)}" title="Edit">✏️</button><button class="chipbtn" data-del="${esc(key)}" title="Delete">🗑️</button>`}</div>` : '');
+    const card = (raw) => {
+      const def = shopDef(raw, a.shopEdits);
+      if (def.hidden && !edit) return '';
+      if (edit && this.shopEditing === `shop:${def.id}`) return editForm(`shop:${def.id}`, { icon: def.icon, name: def.name, desc: def.desc, price: def.kind === 'upgrade' ? def.base : def.price, priceLabel: def.kind === 'upgrade' ? 'Price of level 1 (each level costs more)' : 'Price (coins)' });
       const have = items[def.id] || 0;
-      const price = priceOf(def.id, items);
+      const price = priceOf(def.id, items, a.shopEdits);
       let status = '';
       let button = '';
       if (def.kind === 'upgrade') {
@@ -1524,7 +1547,8 @@ export class AccountUI {
         status = `<div class="owned-count">You have ${have}</div>`;
         button = price === null ? '<span class="maxed">MAX</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
       }
-      return `<div class="shop-card"><div class="si">${def.icon}</div><div class="sn">${esc(def.name)}</div><div class="sd">${esc(def.desc)}</div>${status}${button}</div>`;
+      if (def.hidden) button = '<span class="maxed">TAKEN OUT</span>';
+      return `<div class="shop-card ${def.hidden ? 'gone' : ''}">${tools(`shop:${def.id}`, def.hidden)}<div class="si">${esc(def.icon)}</div><div class="sn">${esc(def.name)}</div><div class="sd">${esc(def.desc)}</div>${status}${button}</div>`;
     };
     const lists = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
     const names = { avatar: 'Avatar', color: 'Name colour', title: 'Title', crosshair: 'Crosshair', finish: 'Gun finish' };
@@ -1540,10 +1564,9 @@ export class AccountUI {
       )
       .join('');
     // the sections, in the order an admin set (✏️ EDIT)
-    const edit = a.admin && this.shopEdit;
     const sections = {
       halloween: () => (isHalloween() ? this._candyShop() : ''),
-      paid: () => this._paidShop(edit),
+      paid: () => this._paidShop(edit, editForm, tools),
       upgrades: () => `<h4>Upgrades <span class="muted small">(solo runs)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>`,
       guns: () => `<h4>Starting gun <span class="muted small">(Own it, equip it: you spawn holding it in every mode, with unlimited ammo)</span></h4>
@@ -1561,7 +1584,7 @@ export class AccountUI {
         <span class="muted">Earn coins from kills, headshots and waves in solo, and from kills and wins online.</span>
         ${a.admin ? `<button class="btn small ${edit ? '' : 'ghost'} shop-edit" id="shop-edit">${edit ? '✓ DONE' : '✏️ EDIT'}</button>` : ''}</div>
       <div id="shop-msg" class="msg"></div>
-      ${edit ? '<p class="muted small">⭐ Moving things changes the Shop for everyone straight away: ▲ ▼ move a section, ◀ ▶ move a special.</p>' : ''}
+      ${edit ? '<p class="muted small">⭐ Changes are for everyone straight away: ▲ ▼ move a section, ◀ ▶ move a special, ✏️ edits an item, 🗑️ deletes it (Shop items you delete can be put back).</p>' : ''}
       ${order.map((id, n) => {
         const html = sections[id]?.() || '';
         if (!html && !edit) return '';
@@ -1598,6 +1621,42 @@ export class AccountUI {
         } catch (err) {
           msg(err.message);
         }
+      }),
+    );
+    // admin: edit / delete / put back (shop:<id> is one of the Shop's own items, paid:<id> a special)
+    const run = async (fn) => {
+      try {
+        msg((await fn())?.note || '');
+        this.render();
+      } catch (err) {
+        msg(err.message);
+      }
+    };
+    const special = (key) => a.paidItems.find((i) => `paid:${i.id}` === key);
+    this.body.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => ((this.shopEditing = b.dataset.edit), this.render())));
+    this.body.querySelectorAll('[data-editcancel]').forEach((b) => (b.onclick = () => ((this.shopEditing = null), this.render())));
+    this.body.querySelectorAll('[data-del]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.del;
+        const sp = special(key);
+        if (!confirm(`Delete ${sp ? sp.name : shopDef(SHOP.find((d) => `shop:${d.id}` === key), a.shopEdits).name} from the Shop? (Anyone who bought it keeps it.)`)) return;
+        run(() => (sp ? a.adminPaidItems({ action: 'remove', id: sp.id }) : a.adminShopItem({ id: key.slice(5), hidden: true })));
+      }),
+    );
+    this.body.querySelectorAll('[data-restore]').forEach((b) => (b.onclick = () => run(() => a.adminShopItem({ id: b.dataset.restore.slice(5), hidden: false }))));
+    this.body.querySelectorAll('[data-editform]').forEach((form) =>
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const key = form.dataset.editform;
+        const f = new FormData(form);
+        const set = { name: String(f.get('name')).trim(), icon: String(f.get('icon')).trim(), desc: String(f.get('desc')).trim() };
+        const sp = special(key);
+        this.shopEditing = null;
+        run(() =>
+          sp
+            ? a.adminPaidItems({ action: 'add', ...sp, ...set, price: sp.currency === 'coins' ? sp.price : String(f.get('price')), coins: sp.currency === 'coins' ? Number(f.get('price')) : sp.coins })
+            : a.adminShopItem({ id: key.slice(5), ...set, price: Number(f.get('price')) }),
+        );
       }),
     );
     this.body.querySelectorAll('[data-custom]').forEach((b) =>
@@ -2104,12 +2163,20 @@ export class AccountUI {
     const paidList = () => {
       const list = a.paidItems;
       document.getElementById('admin-paid-list').innerHTML = list.length
-        ? list.map((i) => `<div class="admin-player"><span>${esc(i.icon)} <b>${esc(i.name)}</b> · ${esc(i.price)} · <span class="muted small">${esc(paidGives(i))}</span></span><button class="btn small ghost" data-paidrm="${esc(i.id)}">REMOVE</button></div>`).join('')
+        ? list.map((i) => `<div class="admin-player"><span>${esc(i.icon)} <b>${esc(i.name)}</b> · ${esc(i.price)} · <span class="muted small">${esc(paidGives(i))}</span></span><span><button class="btn small" data-paidedit="${esc(i.id)}">✏️ EDIT</button> <button class="btn small ghost" data-paidrm="${esc(i.id)}">🗑️ DELETE</button></span></div>`).join('')
         : '<p class="muted small">Nothing yet: add something above.</p>';
       document.getElementById('admin-paid-pick').innerHTML = list.map((i) => `<option value="${esc(i.id)}">${esc(i.icon)} ${esc(i.name)} (${esc(i.price)})</option>`).join('');
+      // edit it right in the Shop (edit mode, its form open)
+      this.body.querySelectorAll('[data-paidedit]').forEach((b) =>
+        b.addEventListener('click', () => {
+          this.shopEdit = true;
+          this.shopEditing = `paid:${b.dataset.paidedit}`;
+          this.open('shop');
+        }),
+      );
       this.body.querySelectorAll('[data-paidrm]').forEach((b) =>
         b.addEventListener('click', async () => {
-          if (!confirm('Take it out of the shop?')) return;
+          if (!confirm('Delete it from the Shop? (Anyone who bought it keeps it.)')) return;
           try {
             msg((await a.adminPaidItems({ action: 'remove', id: b.dataset.paidrm })).note);
             paidList();

@@ -32,13 +32,27 @@ export function cosmeticPrice(kind, id) {
   return row && row[1] > 1 && row[1] < EVENT_LEVEL ? row[1] * 120 : null; // Halloween ones: candy only
 }
 
-// Price of the next purchase of an item, or null if it can't be bought (maxed, unknown).
-export function priceOf(itemId, items = {}) {
+// A Shop item with the admin's changes (edits: { id: { name, icon, desc, price, hidden } }; price is the
+// first level's price for upgrades).
+export function shopDef(def, edits = {}) {
+  const e = edits?.[def.id];
+  if (!e) return def;
+  const out = { ...def };
+  for (const k of ['name', 'icon', 'desc']) if (e[k]) out[k] = e[k];
+  if (e.price > 0) out[def.kind === 'upgrade' ? 'base' : 'price'] = e.price;
+  out.hidden = !!e.hidden;
+  return out;
+}
+
+// Price of the next purchase of an item, or null if it can't be bought (maxed, unknown, or an admin took it out).
+export function priceOf(itemId, items = {}, edits = {}) {
   const have = items[itemId] || 0;
   const cos = /^cos_(avatar|color|title|crosshair|finish)_(.+)$/.exec(itemId);
   if (cos) return have ? null : cosmeticPrice(cos[1], cos[2]);
-  const def = SHOP.find((s) => s.id === itemId);
-  if (!def) return null;
+  const found = SHOP.find((s) => s.id === itemId);
+  if (!found) return null;
+  const def = shopDef(found, edits);
+  if (def.hidden) return null;
   if (def.kind === 'gun') return have ? null : def.price;
   if (have >= def.max) return null;
   if (def.kind === 'upgrade') return def.base * (have + 1);
