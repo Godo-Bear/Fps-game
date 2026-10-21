@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.64', date: '21 Oct 2026', title: 'Late waves run smoothly, scarier Witch and Reaper',
+    items: [
+      'Much less lag in late waves (wave 50, 75 and up): at most 2 bosses at once (they get tougher instead of more of them), bosses call in fewer extra zombies, and Halloween bosses no longer carry real lights (they made the game stutter).',
+      '🧙 The Witch glows purple with glowing eyes and sparks swirling around her.',
+      '💀 The Reaper is bigger and nearly black, with red eyes, trailing black smoke and embers.',
+    ],
+  },
+  {
     v: '5.63', date: '21 Oct 2026', title: 'Spookier Halloween zombies',
     items: [
       'The Halloween special zombies always use the 3D zombie models now (even with the old block zombies picked in Settings).',

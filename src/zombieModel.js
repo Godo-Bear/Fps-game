@@ -21,7 +21,7 @@ const MODELS = [
 const HEIGHT = 1.85; // metres tall at zombie scale 1 (the block zombies are about this tall)
 
 // a gentle colour per kind of zombie, on top of its own skin and clothes
-const TINT = { walker: 0xffffff, runner: 0xfff0ec, brute: 0xd2d8c8, crawler: 0xf2f0e0, spitter: 0xe4ffd8, bloater: 0xf6ffd0, pumpkin: 0xffd8b0, phantom: 0xe0dcff, witch: 0xb8e0a8, reaper: 0x707070 };
+const TINT = { walker: 0xffffff, runner: 0xfff0ec, brute: 0xd2d8c8, crawler: 0xf2f0e0, spitter: 0xe4ffd8, bloater: 0xf6ffd0, pumpkin: 0xffd8b0, phantom: 0xe0dcff, witch: 0x7aa860, reaper: 0x2a2a2e };
 
 // ---- looks: every zombie gets its own skin, clothes, build, gear and way of walking
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -324,6 +324,13 @@ export function attachZombieModel(z) {
   mat.color.setHex(BV ? z.skinMat.color.getHex() : TINT[z.typeId] ?? 0xffffff);
   if (BV) mat.color.lerp(new THREE.Color(0xffffff), 0.45);
   mat.emissive = new THREE.Color(z.baseEmissive);
+  // the Witch: sickly green with a purple glow; the Reaper: nearly black with a dark red glow
+  if (T === 'witch') mat.emissive.setHex(0x2a0a4a);
+  if (T === 'reaper') {
+    mat.map = null;
+    mat.emissive.setHex(0x120000);
+    mat.color.setHex(0x1a1a1e);
+  }
   if (z.type.ghost) {
     // the Phantom: a pale, glowing, see-through zombie
     mat.map = null;
@@ -435,7 +442,7 @@ function dressUp(z, b) {
   const onHead = (obj, y) => wear(z, b.Head, obj, cx, y, cz);
 
   // glowing eyes for the special ones: red runners, green mutants, orange brutes, the boss's own colour
-  const eyeColor = z.mutated ? 0x6dff2a : BV ? z.bossEyes : T === 'runner' ? 0xff2a1a : T === 'brute' ? 0xff8a1c : T === 'spitter' ? 0x8dff4a : null;
+  const eyeColor = z.mutated ? 0x6dff2a : BV ? z.bossEyes : T === 'runner' ? 0xff2a1a : T === 'brute' ? 0xff8a1c : T === 'spitter' ? 0x8dff4a : T === 'witch' ? 0xc04dff : T === 'reaper' ? 0xff1a1a : T === 'phantom' ? 0x8a3cff : null;
   if (eyeColor) {
     for (const sx of [-1, 1]) wear(z, b.Head, piece(GEAR.box, eyeColor, r * 0.3, r * 0.15, r * 0.1, true), cx + sx * r * 0.36, topY - hh * 0.42, front - r * 0.02);
   }
@@ -483,7 +490,7 @@ function dressUp(z, b) {
   const roll = Math.random();
   const ZT = z.type;
   const pumpkin = ZT.pumpkinHead || (isHalloween() && !ZT.hw && (BV || roll < 0.4));
-  if (pumpkin) onHead(wrap(jackOLantern(r * (BV ? 3.4 : 2.7), { light: !!BV })), topY - hh * 0.55);
+  if (pumpkin) onHead(wrap(jackOLantern(r * (BV ? 3.4 : 2.7))), topY - hh * 0.55); // (no real light: lights coming and going make the game stutter)
   const witch = ZT.witchHat || (isHalloween() && !ZT.hw && !pumpkin && roll < 0.7);
   if (witch) {
     const h = witchHat();

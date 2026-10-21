@@ -197,7 +197,9 @@ function waveConfig(n) {
     tough: n <= 2 ? 1 : Math.min(3, 1 + (raw / total - 1) * 0.45),
     maxAlive: Math.min(8 + n, 16),
     interval: Math.max(0.3, 1.3 - n * 0.07),
-    boss: n % 5 === 0 ? 1 + Math.floor(n / 10) : 0,
+    // at most 2 bosses at once (lots of them lag): the ones a late wave "wanted" go into their health instead
+    boss: n % 5 === 0 ? Math.min(2, 1 + Math.floor(n / 10)) : 0,
+    bossTough: n % 5 === 0 ? (1 + Math.floor(n / 10)) / Math.min(2, 1 + Math.floor(n / 10)) : 1,
   };
 }
 
@@ -412,6 +414,7 @@ function updateWave(dt) {
       const variant = game.bossToSpawn < game.cfg.boss ? BOSS_IDS[Math.floor(Math.random() * BOSS_IDS.length)] : game.bossVariant || 'abomination';
       const b = zombies.spawn('boss', game.wave, spawnAnchor(), game.wave >= 10, variant);
       if (game.night) nightBuff(b);
+      toughen(b, cfg.bossTough);
       roomZombieHp(b);
       game.bossToSpawn--;
       bossBanner(variant);
@@ -2123,7 +2126,7 @@ function bossBanner(variant) {
 
 // Bosses calling in help: summoned zombies crawl out of the ground around them.
 function summonAround(z, type, n) {
-  if (zombies.aliveCount > 60) return;
+  if (zombies.aliveCount > 24) return; // (more would lag)
   for (let i = 0; i < n; i++) {
     const s = zombies.spawn(type, game.wave, z.root.position, false);
     const a = Math.random() * Math.PI * 2;

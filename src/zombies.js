@@ -61,7 +61,7 @@ export const ZOMBIE_TYPES = {
     skin: [0x6aa05a, 0x7ab06a], shirt: [0x2a1a3a, 0x1a1a1a], pants: [0x1a1424], eyes: 0xb06bff, ranged: true, hex: true, healer: true, witchHat: true, hw: true,
   },
   reaper: {
-    name: 'Reaper', hp: 240, speed: 2.4, damage: 30, scale: 1.25, radius: 0.5, range: 2.3, cooldown: 1.3, score: 50,
+    name: 'Reaper', hp: 240, speed: 2.4, damage: 30, scale: 1.35, radius: 0.5, range: 2.3, cooldown: 1.3, score: 50,
     skin: [0x3a3a3a], shirt: [0x141214], pants: [0x141214], eyes: 0xff2a2a, lunge: true, scythe: true, hw: true,
   },
 };
@@ -143,7 +143,7 @@ class Zombie {
     this.skinMat = new THREE.MeshStandardMaterial({ color: pick(T.skin), roughness: 0.9, flatShading: true });
     this.shirtMat = new THREE.MeshStandardMaterial({ color: pick(T.shirt), roughness: 1, flatShading: true });
     this.pantsMat = new THREE.MeshStandardMaterial({ color: pick(T.pants), roughness: 1, flatShading: true });
-    this.baseEmissive = T.ghost ? 0x3a2a9a : mutated ? 0x1c4a06 : 0x000000; // the Phantom glows a ghostly purple
+    this.baseEmissive = T.ghost ? 0x3a2a9a : T.hw && typeId === 'witch' ? 0x2a0a4a : T.hw && typeId === 'reaper' ? 0x120000 : mutated ? 0x1c4a06 : 0x000000; // the Phantom glows a ghostly purple
     this.mats = [this.skinMat, this.shirtMat, this.pantsMat];
     const eyeMat = new THREE.MeshBasicMaterial({ color: mutated && !BV ? 0x6dff2a : BV ? BV.eyes : isHalloween() && T.eyes === 0xffd34d ? 0xff8a1a : T.eyes });
     if (BV) this.skinMat.color.setHex(BV.skin);
@@ -210,7 +210,7 @@ class Zombie {
     // Halloween: some wear a jack-o'-lantern (every boss does)
     const roll = Math.random();
     if (T.pumpkinHead || (isHalloween() && !T.hw && (variant || roll < 0.4))) {
-      const p = jackOLantern(variant ? 0.75 : T.pumpkinHead ? 0.68 : 0.55, { light: !!variant });
+      const p = jackOLantern(variant ? 0.75 : T.pumpkinHead ? 0.68 : 0.55); // (no real light: lights coming and going make the game stutter)
       p.position.y = 0.05;
       head.add(p);
     } else if (T.witchHat || (isHalloween() && !T.hw && roll < 0.7)) {
@@ -518,6 +518,18 @@ export class ZombieManager {
     z.body.position.y = 0.35 + Math.sin(z.ghostT * 2.2 + z.phase) * 0.12;
     const rp = z.root.position;
     if (Math.random() < dt * 10) this.effects.burst(new THREE.Vector3(rp.x + rand(-0.3, 0.3), rp.y + 0.4, rp.z + rand(-0.3, 0.3)), { count: 1, color: [0xb06bff, 0xe8d8ff], speed: 0.3, size: 0.14, life: 0.9, grav: -0.6, up: 0.4 });
+  }
+  // the Witch: purple sparks swirling around her; the Reaper: black smoke and red embers trailing off it
+  _auraFx(z, dt) {
+    if (Math.random() > dt * 9) return;
+    const rp = z.root.position;
+    z.auraA = (z.auraA || 0) + 1.3;
+    if (z.type.healer) {
+      const a = z.auraA;
+      this.effects.burst(new THREE.Vector3(rp.x + Math.cos(a) * 0.7, rp.y + 0.6 + Math.random() * 1.2, rp.z + Math.sin(a) * 0.7), { count: 1, color: [0xc04dff, 0x7dff3a, 0xe8d8ff], speed: 0.2, size: 0.1, life: 0.8, grav: -1.2, up: 0.5 });
+    } else {
+      this.effects.burst(new THREE.Vector3(rp.x + rand(-0.4, 0.4), rp.y + rand(0.2, 1.6) * z.scale, rp.z + rand(-0.4, 0.4)), { count: 1, color: Math.random() < 0.7 ? [0x101012, 0x2a2a2e] : [0xff2a1a, 0xff6a1a], speed: 0.3, size: 0.2, life: 1, grav: -0.8, up: 0.6 });
+    }
   }
   _puff(at) {
     this.effects.burst(new THREE.Vector3(at.x, at.y + 1, at.z), { count: 18, color: [0xb06bff, 0x6a2aff, 0xe8d8ff], speed: 2.2, size: 0.18, life: 0.6, grav: -1, up: 1 });
@@ -912,6 +924,7 @@ export class ZombieManager {
       animateZombieModel(z, dt, { moving, speed: z.speed * speedMul, attacking: z.windup > 0 && !T.bloated });
       // the Phantom floats off the ground, bobbing, and leaves a faint purple trail
       if (T.ghost) this._ghostFx(z, dt);
+      else if (T.healer || T.lunge) this._auraFx(z, dt);
       // runners kick up dust: you can see the fast ones coming
       if (z.typeId === 'runner' && moving && Math.random() < dt * 7) this.effects.dust(new THREE.Vector3(rp.x + rand(-0.3, 0.3), rp.y + 0.1, rp.z + rand(-0.3, 0.3)));
 
@@ -1203,6 +1216,7 @@ export class ZombieManager {
       const sw = speed > 0.3 ? Math.sin(z.phase) : 0;
       animateZombieModel(z, dt, { moving: speed > 0.3, speed });
       if (z.type.ghost) this._ghostFx(z, dt);
+      else if (z.type.healer || z.type.lunge) this._auraFx(z, dt);
       if (z.type.crawl) {
         z.armL.rotation.x = -1.6 + sw * 0.7;
         z.armR.rotation.x = -1.6 - sw * 0.7;
