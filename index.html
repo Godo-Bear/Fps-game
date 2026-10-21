@@ -198,8 +198,11 @@
           <button class="btn small">JOIN</button>
         </form>
         <!-- the admin's event (admin panel → Events): everyone plays in one room; greyed out when there's no event -->
-        <button id="mp-event" class="btn event-btn" disabled>🎉 JOIN EVENT</button>
+        <button id="mp-event" class="btn event-btn" disabled>🧩 JOIN EVENT</button>
         <div id="mp-event-info" class="muted small"></div>
+        <!-- the Halloween match: its own button, only while Halloween is on -->
+        <button id="mp-event-hw" class="btn event-btn halloween hidden">🎃 JOIN THE HALLOWEEN EVENT</button>
+        <div id="mp-event-hw-info" class="muted small hidden"></div>
         <div id="mp-error" class="msg"></div>
         <!-- public rooms (private ones only by code): click the host to join -->
         <div class="mp-servers-head"><h4>🌍 Open servers</h4><a href="#" id="mp-servers-refresh" class="small">refresh</a></div>

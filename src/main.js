@@ -2774,7 +2774,7 @@ const pieceMarkMat = (() => {
 })();
 // a kill might drop a piece (rarer for plain zombies, always for a boss), boosted by the admin's drop rate
 function eventDropChance(kind, x, z) {
-  const boost = account.event?.boost || 1;
+  const boost = account.eventFor(mp.lobby?.code)?.boost || 1; // this room's event: the Halloween one or the main one
   if (Math.random() > Math.min(1, (DROP_CHANCE[kind] || 0) * boost)) return;
   if (ev.drops.length >= 4) return;
   const g = new THREE.Group();
@@ -2905,26 +2905,41 @@ function updateMyAvatar(dt) {
   a.root.visible = (thirdPerson() || (player.dead && !!a.model && isEvent())) && !tank.on;
 }
 
-// the Join Event button (Multiplayer, under the room code): lit up while the admin's event is on, greyed out otherwise
+// the Join Event buttons (Multiplayer, under the room code): the main event (the hourly Outfit Hunt, third person),
+// lit up while it's on, and the Halloween match, shown all through Halloween
+const fmtLeft = (endsAt) => {
+  const left = Math.max(0, endsAt - Date.now());
+  const h = Math.floor(left / 3600000);
+  const m = Math.ceil((left % 3600000) / 60000);
+  if (h >= 48) return `Ends in ${Math.floor(h / 24)} days ${h % 24}h`;
+  return `Ends in ${h ? `${h}h ` : ''}${m}m`;
+};
 function renderEventCard() {
   const btn = $('mp-event');
   const info = $('mp-event-info');
   const e = account.event;
   btn.disabled = !e;
   btn.classList.toggle('live', !!e);
+  const pieces = `Your pieces: <b>${totalPieces(account.items)}/${PIECE_COUNT}</b>`;
   if (!e) {
-    btn.textContent = '🎉 JOIN EVENT';
-    info.textContent = 'No event on right now. Keep an eye out!';
-    return;
+    btn.textContent = '🧩 JOIN EVENT (THIRD PERSON)';
+    // the hourly one: back on the hour
+    const next = new Date(Math.ceil(Date.now() / 3600000) * 3600000);
+    info.innerHTML = `Not on right now: the third-person Outfit Hunt is on every hour from :00 to :30 (next at <b>${next.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</b>).`;
+  } else {
+    btn.textContent = `🧩 JOIN EVENT: ${e.name} (third person)`;
+    info.innerHTML = `Red vs Blue vs the zombies, up to ${EVENT_MAX_PLAYERS} a match, seen from behind your character · 🧩 pieces unlock new characters${e.boost > 1 ? ` · <b>${e.boost}× drops!</b>` : ''}<br/>${e.endsAt ? `${fmtLeft(e.endsAt)} · ` : ''}${pieces}`;
   }
-  const left = e.endsAt ? Math.max(0, e.endsAt - Date.now()) : 0;
-  const h = Math.floor(left / 3600000);
-  const m = Math.ceil((left % 3600000) / 60000);
-  btn.textContent = `🎉 JOIN EVENT: ${e.name}`;
-  info.innerHTML = `Red vs Blue vs the zombies, up to  a match · 🧩 pieces unlock new characters${e.boost > 1 ? ` · <b>${e.boost}× drops!</b>` : ''}<br/>${e.endsAt ? `Ends in ${h ? `${h}h ` : ''}${m}m · ` : ''}Your pieces: <b>${totalPieces(account.items)}/${PIECE_COUNT}</b>`;
+  const hw = account.hwEvent;
+  $('mp-event-hw').classList.toggle('hidden', !hw);
+  $('mp-event-hw-info').classList.toggle('hidden', !hw);
+  if (hw) {
+    $('mp-event-hw').classList.add('live');
+    $('mp-event-hw-info').innerHTML = `🎃 Halloween Night: Red vs Blue vs the pumpkin-head zombies, third person, <b>${hw.boost}× piece drops</b> and candy · open all through Halloween · ${fmtLeft(hw.endsAt)}`;
+  }
 }
-async function joinEvent() {
-  if (!account.event) return;
+async function joinEvent(which = null) {
+  if (!(which === 'halloween' ? account.hwEvent : account.event)) return;
   if (!account.loggedIn) return accountUI.open('login');
   $('mp-error').textContent = 'Joining the event…';
   // the server picks a room with space (or opens a new one); if it filled up meanwhile, ask for another
@@ -2933,7 +2948,7 @@ async function joinEvent() {
   for (let i = 0; i < 4; i++) {
     let code;
     try {
-      code = (await account.eventRoom(full)).code;
+      code = (await account.eventRoom(full, which)).code;
     } catch (e) {
       err = e.message;
       break;
@@ -2944,7 +2959,8 @@ async function joinEvent() {
   }
   $('mp-error').textContent = err || '';
 }
-$('mp-event').addEventListener('click', joinEvent);
+$('mp-event-hw').addEventListener('click', () => joinEvent('halloween'));
+$('mp-event').addEventListener('click', () => joinEvent());
 
 // the server list (Multiplayer): every public room, by its host. Private rooms only show to people with the code.
 async function renderServers() {

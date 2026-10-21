@@ -3881,3 +3881,11 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
   padding: 8px 8px 8px;
   position: relative;
 }
+
+/* the Halloween match's own Join button */
+.event-btn.halloween.live {
+  background: linear-gradient(180deg, #ff8a1a, #c25a10);
+  color: #1a0a20;
+  box-shadow: 0 0 18px rgba(255, 138, 26, 0.55);
+  margin-top: 8px;
+}

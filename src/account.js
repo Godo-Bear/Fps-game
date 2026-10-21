@@ -481,11 +481,15 @@ export class Account {
       return this._setUnread({});
     }
     try {
-      const { unread, requests, timeoutMins, groupUnread, announce, event, season, paidItems, features } = await this._api('/messages/unread');
+      const { unread, requests, timeoutMins, groupUnread, announce, event, season, hwEvent, paidItems, features } = await this._api('/messages/unread');
       this._setEvent(event || null);
       if (this.cfg) {
         if (features) this.cfg.features = features; // a feature an admin just deployed
         if (paidItems) this.cfg.paidItems = paidItems;
+        if (JSON.stringify(hwEvent || null) !== JSON.stringify(this.cfg.hwEvent || null)) {
+          this.cfg.hwEvent = hwEvent || null;
+          this._changed();
+        }
         if (JSON.stringify(season || null) !== JSON.stringify(this.cfg.season || null)) {
           this.cfg.season = season || null;
           this._changed();
@@ -591,6 +595,15 @@ export class Account {
     const e = this.liveEvent !== undefined ? this.liveEvent : this.cfg?.event || null;
     return e && (!e.endsAt || e.endsAt > Date.now()) ? e : null;
   }
+  // the Halloween match, open all through the Halloween season (its own JOIN button), or null
+  get hwEvent() {
+    const e = this.cfg?.hwEvent;
+    return e && e.endsAt > Date.now() ? e : null;
+  }
+  // the event a match room belongs to: the Halloween one, or the main one
+  eventFor(code) {
+    return code && this.hwEvent?.rooms?.includes(code) ? this.hwEvent : this.event;
+  }
   // the season the admin started (Halloween until a week after), or null
   get season() {
     const s = this.cfg?.season;
@@ -625,8 +638,8 @@ export class Account {
     return r;
   }
   // which event room to join (the server fills one before opening the next)
-  eventRoom(full = []) {
-    return this._api('/event/room', { method: 'POST', body: { full } });
+  eventRoom(full = [], which = null) {
+    return this._api('/event/room', { method: 'POST', body: { full, which } });
   }
   async adminEvent(body) {
     const r = await this._api('/admin/event', { method: 'POST', body });

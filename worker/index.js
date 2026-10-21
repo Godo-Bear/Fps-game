@@ -325,6 +325,20 @@ export class GameDB extends DurableObject {
     }
     return s && s.theme && s.endsAt > Date.now() ? s : null;
   }
+  // the Halloween match: its own event (rooms, pieces) open all through the Halloween season, next to the main one
+  _hwEvent() {
+    const season = this._season();
+    if (season?.theme !== 'halloween') return null;
+    let e = this._config('hwEvent');
+    if (e?.id === season.id && e.endsAt === season.endsAt) return e;
+    if (!e || e.id !== season.id) {
+      const first = makeRoomCode();
+      e = { id: season.id, name: 'Halloween Night', theme: 'halloween', boost: 2, by: season.by, startedAt: season.startedAt, pieces: 0, room: first, rooms: [first] };
+    }
+    e.endsAt = season.endsAt; // ends with the season
+    this._setConfig('hwEvent', e);
+    return e;
+  }
   // is Halloween on (a Halloween event or the season)
   _halloween() {
     return this._event()?.theme === 'halloween' || this._season()?.theme === 'halloween';
@@ -629,6 +643,7 @@ export class GameDB extends DurableObject {
         wolfLevelPrice: this._wolfPrice('wolfLevelPrice'),
         event: this._event(),
         season: this._season(),
+        hwEvent: this._hwEvent(),
         paidItems: this._paidItems(),
         features: this._features(),
       });
@@ -1213,8 +1228,10 @@ export class GameDB extends DurableObject {
     // ---- events
     // which event room to join: the fullest one that still has space, or a brand new one when they're all full
     if (path === '/event/room' && method === 'POST') {
-      const ev = this._event();
-      if (!ev) return err('No event is on right now');
+      // which: 'halloween' for the Halloween match (on all through the season), otherwise the main event
+      const key = body.which === 'halloween' ? 'hwEvent' : 'event';
+      const ev = key === 'hwEvent' ? this._hwEvent() : this._event();
+      if (!ev) return err(key === 'hwEvent' ? 'Halloween is over' : 'No event is on right now');
       const now = Date.now();
       ev.rooms = Array.isArray(ev.rooms) ? ev.rooms : ev.room ? [ev.room] : [];
       const full = new Set(Array.isArray(body.full) ? body.full.map(String) : []); // rooms that just turned this player away
@@ -1233,13 +1250,16 @@ export class GameDB extends DurableObject {
       if (!best) {
         best = makeRoomCode();
         ev.rooms.push(best);
-        this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
+        this._setConfig(key, ev);
       }
       return json({ code: best, rooms: ev.rooms.length });
     }
     // a puzzle piece picked up in an event match: the server picks which one
     if (path === '/event/piece' && method === 'POST') {
-      const ev = this._event();
+      // the Halloween match's rooms are its own; any other event room belongs to the main event
+      const hw = this._hwEvent();
+      const key = hw?.rooms?.includes(me.room) ? 'hwEvent' : 'event';
+      const ev = key === 'hwEvent' ? hw : this._event();
       if (!ev) return err('No event is on right now');
       const room = me.room ? this.rooms.get(me.room) : null;
       if (!room || room.mode !== 'event') return err('Pieces only come from event matches');
@@ -1257,7 +1277,7 @@ export class GameDB extends DurableObject {
       else coins += DUPLICATE_COINS; // every piece found already: coins instead
       this.sql.exec('UPDATE users SET items = ?, coins = ? WHERE id = ?', JSON.stringify(items), coins, me.id);
       ev.pieces = (ev.pieces || 0) + 1;
-      this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
+      this._setConfig(key, ev);
       const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
       return json({ piece, coins: piece ? 0 : DUPLICATE_COINS, user: this._publicUser(user, true) });
     }
@@ -1602,7 +1622,7 @@ export class GameDB extends DurableObject {
       const groupUnread = this.sql
         .exec('SELECT COUNT(*) AS n FROM group_messages g JOIN chat_members c ON c.grp = g.grp WHERE c.user = ? AND g.id > c.last_read AND g.sender != ?', me.id, me.id)
         .one().n;
-      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce(), event: this._event(), season: this._season(), paidItems: this._paidItems(), features: this._features() });
+      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce(), event: this._event(), season: this._season(), hwEvent: this._hwEvent(), paidItems: this._paidItems(), features: this._features() });
     }
     if (path === '/messages' && (method === 'GET' || method === 'POST')) {
       const name = method === 'GET' ? url.searchParams.get('with') : body.to;

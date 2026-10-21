@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.50', date: '21 Oct 2026', title: 'Two event buttons',
+    items: [
+      'Multiplayer now has a button for each event: 🧩 JOIN EVENT for the third-person Outfit Hunt (every hour, :00 to :30, with the next start time shown while it is off), and 🎃 JOIN THE HALLOWEEN EVENT, open the whole time Halloween is on.',
+      'The Halloween event is its own match: Red vs Blue vs the pumpkin-head zombies, with double puzzle-piece drops and candy.',
+    ],
+  },
+  {
     v: '5.49', date: '21 Oct 2026', title: '🎃 Halloween is here!',
     items: [
       'Every map has gone spooky until the end of 7 November: a foggy purple night with jack-o\'-lanterns, graveyards, cauldrons, scarecrows, ghosts and bats, and zombies in pumpkin heads and witch hats.',
