@@ -49,7 +49,7 @@ export const ZOMBIE_TYPES = {
   },
   // ---- Halloween specials (only while Halloween is on; keep them last: the order is sent online)
   pumpkin: {
-    name: 'Pumpkin Bomber', hp: 90, speed: 3.1, damage: 34, scale: 1.05, radius: 0.5, range: 1.8, cooldown: 1, score: 35,
+    name: 'Pumpkin Bomber', hp: 90, speed: 3.1, damage: 34, scale: 1.12, radius: 0.5, range: 1.8, cooldown: 1, score: 35,
     skin: [0x8a7a50], shirt: [0x3a2410, 0x2a1a0a], pants: [0x1f1a12], eyes: 0xff8a1a, bloated: true, pumpkinHead: true, hw: true,
   },
   phantom: {
@@ -143,7 +143,7 @@ class Zombie {
     this.skinMat = new THREE.MeshStandardMaterial({ color: pick(T.skin), roughness: 0.9, flatShading: true });
     this.shirtMat = new THREE.MeshStandardMaterial({ color: pick(T.shirt), roughness: 1, flatShading: true });
     this.pantsMat = new THREE.MeshStandardMaterial({ color: pick(T.pants), roughness: 1, flatShading: true });
-    this.baseEmissive = T.ghost ? 0x3a2a9a : T.hw && typeId === 'witch' ? 0x2a0a4a : T.hw && typeId === 'reaper' ? 0x120000 : mutated ? 0x1c4a06 : 0x000000; // the Phantom glows a ghostly purple
+    this.baseEmissive = T.ghost ? 0x3a2a9a : T.hw && typeId === 'witch' ? 0x2a0a4a : T.hw && typeId === 'pumpkin' ? 0x4a1800 : T.hw && typeId === 'reaper' ? 0x120000 : mutated ? 0x1c4a06 : 0x000000; // the Phantom glows a ghostly purple
     this.mats = [this.skinMat, this.shirtMat, this.pantsMat];
     const eyeMat = new THREE.MeshBasicMaterial({ color: mutated && !BV ? 0x6dff2a : BV ? BV.eyes : isHalloween() && T.eyes === 0xffd34d ? 0xff8a1a : T.eyes });
     if (BV) this.skinMat.color.setHex(BV.skin);
@@ -521,8 +521,16 @@ export class ZombieManager {
   }
   // the Witch: purple sparks swirling around her; the Reaper: black smoke and red embers trailing off it
   _auraFx(z, dt) {
-    if (Math.random() > dt * 9) return;
     const rp = z.root.position;
+    // the Pumpkin Bomber: its head is on fire, and sparks fly off the lit fuse (faster when it's about to blow)
+    if (z.type.pumpkinHead) {
+      if (Math.random() > dt * (z.windup > 0 ? 40 : 14)) return;
+      const top = rp.y + 2.05 * z.scale;
+      this.effects.burst(new THREE.Vector3(rp.x + rand(-0.2, 0.2), top, rp.z + rand(-0.2, 0.2)), { count: 2, color: [0xff8a1a, 0xffd23a, 0xff4a10], speed: 0.5, size: 0.16, life: 0.5, grav: -4, up: 1.4 });
+      if (Math.random() < 0.3) this.effects.burst(new THREE.Vector3(rp.x, top + 0.2, rp.z), { count: 1, color: [0x2a2a2a, 0x3a3a3a], speed: 0.3, size: 0.22, life: 1, grav: -1.5, up: 0.8 });
+      return;
+    }
+    if (Math.random() > dt * 9) return;
     z.auraA = (z.auraA || 0) + 1.3;
     if (z.type.healer) {
       const a = z.auraA;
@@ -924,7 +932,7 @@ export class ZombieManager {
       animateZombieModel(z, dt, { moving, speed: z.speed * speedMul, attacking: z.windup > 0 && !T.bloated });
       // the Phantom floats off the ground, bobbing, and leaves a faint purple trail
       if (T.ghost) this._ghostFx(z, dt);
-      else if (T.healer || T.lunge) this._auraFx(z, dt);
+      else if (T.healer || T.lunge || T.pumpkinHead) this._auraFx(z, dt);
       // runners kick up dust: you can see the fast ones coming
       if (z.typeId === 'runner' && moving && Math.random() < dt * 7) this.effects.dust(new THREE.Vector3(rp.x + rand(-0.3, 0.3), rp.y + 0.1, rp.z + rand(-0.3, 0.3)));
 
@@ -1216,7 +1224,7 @@ export class ZombieManager {
       const sw = speed > 0.3 ? Math.sin(z.phase) : 0;
       animateZombieModel(z, dt, { moving: speed > 0.3, speed });
       if (z.type.ghost) this._ghostFx(z, dt);
-      else if (z.type.healer || z.type.lunge) this._auraFx(z, dt);
+      else if (z.type.healer || z.type.lunge || z.type.pumpkinHead) this._auraFx(z, dt);
       if (z.type.crawl) {
         z.armL.rotation.x = -1.6 + sw * 0.7;
         z.armR.rotation.x = -1.6 - sw * 0.7;

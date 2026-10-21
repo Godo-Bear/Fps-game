@@ -7,6 +7,7 @@ export const CHANGELOG = [
       'Much less lag in late waves (wave 50, 75 and up): at most 2 bosses at once (they get tougher instead of more of them), bosses call in fewer extra zombies, and Halloween bosses no longer carry real lights (they made the game stutter).',
       '🧙 The Witch glows purple with glowing eyes and sparks swirling around her.',
       '💀 The Reaper is bigger and nearly black, with red eyes, trailing black smoke and embers.',
+      '🎃 The Pumpkin Bomber is bigger and charred, glowing like hot coals, with a bigger pumpkin head on fire. Its sparks go wild just before it blows up.',
     ],
   },
   {
