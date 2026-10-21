@@ -290,7 +290,8 @@ export class GameDB extends DurableObject {
   }
   _schedule() {
     const s = this._config('schedule', {});
-    return { on: !!s.on, preset: Number(s.preset) || 0, at: Math.max(0, Math.min(59, Math.floor(Number(s.at) || 0))), announce: s.announce !== false, skip: s.skip || 0 };
+    // on unless an admin turned it off (the owner asked for it to run from the start); always on the hour, :00 to :30
+    return { on: s.on !== false, preset: Number(s.preset) || 0, at: 0, announce: s.announce !== false, skip: s.skip || 0 };
   }
   // puts an event on (replacing any other) and tells everyone if asked
   _startEvent({ name, theme = null, boost = 1, startedAt = Date.now(), endsAt = 0, by, scheduled = false, announce = true }) {
@@ -1353,19 +1354,24 @@ export class GameDB extends DurableObject {
         const boost = DROP_BOOSTS.some(([v]) => v === Number(body.boost)) ? Number(body.boost) : 1;
         const now = Date.now();
         const theme = EVENT_THEMES.includes(body.theme) ? body.theme : null; // e.g. halloween: how every map looks while it's on
-        const ev = this._startEvent({ name, theme, boost, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, by: me.username, announce: body.announce !== false });
-        return json({ note: `${name} is live${minutes ? ` for ${minutes >= 60 ? `${minutes / 60} hour(s)` : `${minutes} minutes`}` : ' until you end it'}.`, event: ev });
+        // halfPast: until the next half past the hour (START IT NOW on the hourly event, so it still ends on time)
+        let endsAt = minutes ? now + minutes * 60000 : 0;
+        if (body.halfPast) {
+          endsAt = Math.floor(now / 3600000) * 3600000 + SCHEDULE_MINUTES * 60000;
+          if (endsAt <= now) endsAt += 3600000;
+        }
+        const ev = this._startEvent({ name, theme, boost, startedAt: now, endsAt, by: me.username, announce: body.announce !== false });
+        return json({ note: body.halfPast ? `${name} is live until half past.` : `${name} is live${minutes ? ` for ${minutes >= 60 ? `${minutes / 60} hour(s)` : `${minutes} minutes`}` : ' until you end it'}.`, event: ev });
       }
       // the hourly event: on/off, which one, which minute
       if (body.action === 'schedule') {
         const s = this._schedule();
         if ('on' in body) s.on = !!body.on;
         if ('preset' in body && EVENT_PRESETS[Number(body.preset)]) s.preset = Number(body.preset);
-        if ('at' in body) s.at = Math.max(0, Math.min(59, Math.floor(Number(body.at) || 0)));
         if ('announce' in body) s.announce = !!body.announce;
         this._setConfig('schedule', s);
         const p = EVENT_PRESETS[s.preset];
-        return json({ schedule: s, event: this._event(), note: s.on ? `${p.name} now runs every hour at :${String(s.at).padStart(2, '0')} for ${SCHEDULE_MINUTES} minutes.` : 'The hourly event is off.' });
+        return json({ schedule: s, event: this._event(), note: s.on ? `${p.name} now runs every hour, from :00 to :${SCHEDULE_MINUTES}.` : 'The hourly event is off.' });
       }
       // how it's going: event rooms and the players in them
       const rooms = [...this.rooms.values()].filter((r) => r.mode === 'event' && Date.now() - r.at < 90000);

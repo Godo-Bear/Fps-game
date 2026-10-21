@@ -1708,16 +1708,15 @@ export class AccountUI {
         <p class="muted small" id="admin-event-desc">${esc(EVENT_PRESETS[0].desc)}</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-event-stop">⏹ END THE EVENT NOW</button></div>
       </div>
-      <div class="acard"><h4>⏰ Every hour <span class="muted small">(the third-person piece hunt by itself: ${SCHEDULE_MINUTES} minutes on, then a ${60 - SCHEDULE_MINUTES}-minute break, every hour, never stopping until you turn it off)</span></h4>
+      <div class="acard"><h4>⏰ Every hour <span class="muted small">(the third-person piece hunt by itself: on the hour to half past, then a break, every hour, never stopping until you turn it off)</span></h4>
         <div id="admin-sched-status" class="muted small"></div>
         <form class="auth inline admin-row" id="admin-sched">
           <select name="preset" title="Which event">${EVENT_PRESETS.map((p, i) => `<option value="${i}">${p.theme === 'halloween' ? '🎃' : '🧩'} ${esc(p.name)}</option>`).join('')}</select>
-          <label class="small">at minute <input name="at" type="number" min="0" max="59" value="0" style="width:4.5em" /></label>
           <label class="small"><input type="checkbox" name="announce" checked /> Announce each one</label>
           <button class="btn small" data-on="1">⏰ TURN ON</button><button class="btn small ghost" data-on="0">TURN OFF</button>
         </form>
-        <div class="admin-grid"><button class="btn small" id="admin-sched-now">▶ START IT NOW (${SCHEDULE_MINUTES} MIN)</button></div>
-        <p class="muted small">Late, or want it early? START IT NOW runs the picked event for ${SCHEDULE_MINUTES} minutes straight away. END THE EVENT NOW (above) stops this hour's one; it comes back next hour. An event you start by hand always wins.</p>
+        <div class="admin-grid"><button class="btn small" id="admin-sched-now">▶ START IT NOW (UNTIL HALF PAST)</button></div>
+        <p class="muted small">It starts on the hour (5:00, 6:00…) and ends at half past (5:30, 6:30…). Late, or want it early? START IT NOW runs it straight away until the next half past. END THE EVENT NOW (above) stops this hour's one; it comes back next hour. An event you start by hand always wins.</p>
       </div>
       <div class="acard"><h4>🎃 Halloween season <span class="muted small">(nobody sees it until you start it)</span></h4>
         <div id="admin-season-status" class="muted small">${a.season ? `<b class="hot">🟢 ON</b> until the end of ${esc(new Date(a.season.endsAt - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' }))}` : 'Off.'}</div>
@@ -1914,7 +1913,6 @@ export class AccountUI {
       const el = document.getElementById('admin-sched-status');
       if (!el || !s) return;
       sched.preset.value = String(s.preset);
-      sched.at.value = String(s.at);
       sched.announce.checked = s.announce;
       const p = EVENT_PRESETS[s.preset] || EVENT_PRESETS[0];
       // the next one (or this one, while it's on), in your time
@@ -1929,7 +1927,7 @@ export class AccountUI {
     sched.addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const r = await a.adminEvent({ action: 'schedule', on: schedOn, preset: Number(sched.preset.value), at: Number(sched.at.value), announce: sched.announce.checked });
+        const r = await a.adminEvent({ action: 'schedule', on: schedOn, preset: Number(sched.preset.value), announce: sched.announce.checked });
         msg(r.note);
         showSched(r.schedule);
         evStatus();
@@ -1941,7 +1939,7 @@ export class AccountUI {
       const p = EVENT_PRESETS[Number(sched.preset.value)] || EVENT_PRESETS[0];
       if (a.event && !confirm(`${a.event.name} is already on. Replace it with ${p.name} for ${SCHEDULE_MINUTES} minutes?`)) return;
       try {
-        msg((await a.adminEvent({ action: 'start', name: p.name, theme: p.theme || null, minutes: SCHEDULE_MINUTES, boost: p.boost, announce: sched.announce.checked })).note);
+        msg((await a.adminEvent({ action: 'start', name: p.name, theme: p.theme || null, minutes: SCHEDULE_MINUTES, halfPast: true, boost: p.boost, announce: sched.announce.checked })).note);
         evStatus();
       } catch (err) {
         msg(err.message);

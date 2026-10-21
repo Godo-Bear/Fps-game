@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.48', date: '21 Oct 2026', title: '🧩 Outfit Hunt every hour',
+    items: [
+      'The Outfit Hunt event (third person, Red vs Blue vs the zombies, collect puzzle pieces to unlock SWAT, Adventurer and King) now runs every hour on the hour until half past: 5:00 to 5:30, 6:00 to 6:30, and so on. Press JOIN EVENT in Multiplayer while it is on.',
+      'Admin: Events → Every hour is on from the start (TURN OFF stops it); START IT NOW runs it until the next half past.',
+    ],
+  },
+  {
     v: '5.47', date: '21 Oct 2026', title: 'Skins in the lobby',
     items: [
       'The home-screen line-up now shows you (and your party) wearing your character skin, like Fortnite: SWAT, Adventurer or King, once you have unlocked one with event puzzle pieces. Players without a skin still show just their name.',

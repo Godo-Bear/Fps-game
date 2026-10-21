@@ -60,9 +60,9 @@ export const EVENT_THEMES = ['halloween'];
 // Event rooms hold this many; when one fills up, the next player opens a new one (same event, same drops).
 export const EVENT_MAX_PLAYERS = 20;
 
-// The hourly event (admin panel → Events → Every hour): the picked event (Outfit Hunt to start with) runs for
-// SCHEDULE_MINUTES from minute `at` of every hour (UTC, so the same minute everywhere but half-hour time zones),
-// then a break until the next hour, for good (until the admin turns it off). An event the admin starts by hand
+// The hourly event (admin panel → Events → Every hour): the picked event (Outfit Hunt to start with) runs from
+// every hour on the hour to SCHEDULE_MINUTES past (5:00-5:30, 6:00-6:30…; UTC hours, the same everywhere but
+// half-hour time zones), then a break until the next hour. On from the start, for good (until the admin turns it off). An event the admin starts by hand
 // wins while it's on.
 export const SCHEDULE_MINUTES = 30;
 
