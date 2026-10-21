@@ -147,8 +147,8 @@ function loadMap(id) {
   if (!zombies) {
     zombies = new ZombieManager(scene, world, effects, audio);
     // co-op host: show the acid to everyone else too
-    zombies.onGlob = (f, v) => {
-      if (isCoop() && mp.isHost()) mp.relay('all', { k: 'glob', f: [f.x, f.y, f.z], v: [v.x, v.y, v.z] });
+    zombies.onGlob = (f, v, hex) => {
+      if (isCoop() && mp.isHost()) mp.relay('all', { k: 'glob', f: [f.x, f.y, f.z], v: [v.x, v.y, v.z], h: hex ? 1 : 0 });
     };
   }
   zombies.world = world;
@@ -242,6 +242,28 @@ function waveDeck(n, total, pressure) {
   return deck;
 }
 const nextType = (n) => (game.deck?.length ? game.deck.pop() : pickType(n));
+
+// Halloween: some zombies are Halloween specials instead (more of them as the waves go on). [type, first wave]
+const HW_SPECIALS = [['pumpkin', 2], ['phantom', 3], ['witch', 4], ['reaper', 5]];
+const HW_INTRO = {
+  pumpkin: '🎃 Pumpkin Bomber: it runs at you and blows up in fire. Shoot it from far away!',
+  phantom: '👻 Phantom: it vanishes and appears right next to you',
+  witch: '🧙 Witch: she throws hexes and heals the zombies near her. Kill her first!',
+  reaper: '💀 Reaper: it dashes at you and swings its scythe',
+};
+const hwSeen = new Set();
+function hwType(type, n) {
+  if (!isHalloween() || type === 'boss') return type;
+  const open = HW_SPECIALS.filter(([, first]) => n >= first);
+  if (!open.length || Math.random() > Math.min(0.35, 0.12 + n * 0.015)) return type;
+  return open[Math.floor(Math.random() * open.length)][0];
+}
+// the first time you meet each one, say what it does
+function hwIntro(z) {
+  if (!HW_INTRO[z.typeId] || hwSeen.has(z.typeId)) return;
+  hwSeen.add(z.typeId);
+  subBanner(HW_INTRO[z.typeId], 3.2);
+}
 const mutatedChance = (n) => (n >= 6 ? Math.min(0.25, 0.08 + (n - 6) * 0.012) : n >= 3 ? 0.03 : 0);
 
 // ---------------------------------------------------------------- night waves
@@ -376,7 +398,8 @@ function updateWave(dt) {
     game.spawnT -= dt;
     const alive = zombies.aliveCount;
     if (game.spawnT <= 0 && game.toSpawn > 0 && alive < cfg.maxAlive) {
-      const z = zombies.spawn(game.night ? nightType(game.wave) : nextType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave) + (game.night ? NIGHT.mutated : 0));
+      const z = zombies.spawn(hwType(game.night ? nightType(game.wave) : nextType(game.wave), game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave) + (game.night ? NIGHT.mutated : 0));
+      hwIntro(z);
       if (game.night) nightBuff(z);
       toughen(z, cfg.tough);
       roomZombieHp(z);
@@ -654,7 +677,7 @@ function updateEvac(dt) {
   evac.spawnT -= dt;
   if (evac.spawnT <= 0 && zombies.aliveCount < 24) {
     evac.spawnT = 0.9;
-    const z = zombies.spawn(pickType(game.wave + 2), game.wave + 2, spawnAnchor(), Math.random() < 0.25);
+    const z = zombies.spawn(hwType(pickType(game.wave + 2), game.wave + 2), game.wave + 2, spawnAnchor(), Math.random() < 0.25);
     roomZombieHp(z);
   }
   const squad = [];
@@ -1182,7 +1205,9 @@ function resetMapProps() {
 // Bloaters burst in a cloud of toxic gunk, whether they die or reach you.
 function bloaterBurst(z) {
   const p = new THREE.Vector3(z.root.position.x, z.centerY, z.root.position.z);
-  explodeAt(p, 4.5, 70, { color: [0x8dff4a, 0x5ac020, 0xc8ff6a], hurtsPlayer: true });
+  // the Pumpkin Bomber goes up in a bigger ball of fire
+  if (z.typeId === 'pumpkin') explodeAt(p, 5.5, 80, { color: [0xff8a1a, 0xffd23a, 0xff4a10, 0x3a1a08], hurtsPlayer: true });
+  else explodeAt(p, 4.5, 70, { color: [0x8dff4a, 0x5ac020, 0xc8ff6a], hurtsPlayer: true });
 }
 
 // ---------------------------------------------------------------- grenades
@@ -1900,15 +1925,17 @@ function worldKill(z, mut) {
 function onKill(z, head, src = null) {
   rewardKill({ type: z.typeId, mut: z.mutated, head, src, x: z.root.position.x, y: z.root.position.y, z: z.root.position.z, bounty: z.bounty });
 }
+// kills worth more points and candy (the Halloween specials too)
+const SPECIAL_KILLS = ['brute', 'bloater', 'spitter', 'pumpkin', 'phantom', 'witch', 'reaper'];
 function rewardKill({ type, mut, head, src = null, x, y, z, bounty = false }) {
   const T = ZOMBIE_TYPES[type] || ZOMBIE_TYPES.walker;
   if (isEvent()) {
     // points for you and your team, and maybe a puzzle piece
-    const kind = type === 'boss' ? 'boss' : mut || ['brute', 'bloater', 'spitter'].includes(type) ? 'special' : 'zombie';
+    const kind = type === 'boss' ? 'boss' : mut || SPECIAL_KILLS.includes(type) ? 'special' : 'zombie';
     mp.send({ t: 'zkill', kind });
     eventDropChance(kind, x, z);
   }
-  if (isHalloween()) dropCandy(type === 'boss' ? 'boss' : mut || ['brute', 'bloater', 'spitter'].includes(type) ? 'special' : 'zombie', x, y, z);
+  if (isHalloween()) dropCandy(type === 'boss' ? 'boss' : mut || SPECIAL_KILLS.includes(type) ? 'special' : 'zombie', x, y, z);
   game.kills++;
   if (src === 'wolf') game.petKills = (game.petKills || 0) + 1;
   achieve('first_kill');
@@ -2727,7 +2754,7 @@ function eventDirector(dt) {
   const want = Math.min(32, 6 + people * 3);
   if (ev.spawnT <= 0 && zombies.aliveCount < want) {
     ev.spawnT = 1.2;
-    zombies.spawn(pickType(level), level, spawnAnchor(), Math.random() < mutatedChance(level));
+    hwIntro(zombies.spawn(hwType(pickType(level), level), level, spawnAnchor(), Math.random() < mutatedChance(level)));
   }
   // a boss every few minutes
   ev.bossT -= dt;
@@ -5151,7 +5178,7 @@ accountUI.adminActions = {
         return 'All zombies killed (wave ends).';
       case 'lineup': {
         // one of every kind (and a mutated one), to see all the different looks
-        for (const t of ['walker', 'runner', 'brute', 'crawler', 'spitter', 'bloater']) zombies.spawn(t, Math.max(1, game.wave), player.pos, false);
+        for (const t of ['walker', 'runner', 'brute', 'crawler', 'spitter', 'bloater', ...(isHalloween() ? HW_SPECIALS.map(([id]) => id) : [])]) zombies.spawn(t, Math.max(1, game.wave), player.pos, false);
         zombies.spawn('walker', Math.max(1, game.wave), player.pos, true);
         if (game.phase !== 'active') game.phase = 'active';
         return 'Spawned one of every kind of zombie (and a mutated one).';
@@ -5419,7 +5446,7 @@ function onCoopRelay(from, d) {
       break;
     }
     case 'glob':
-      if (!mp.isHost()) zombies.addGlob(new THREE.Vector3(...d.f), new THREE.Vector3(...d.v), 0);
+      if (!mp.isHost()) zombies.addGlob(new THREE.Vector3(...d.f), new THREE.Vector3(...d.v), 0, !!d.h);
       break;
     case 'wave':
       if (mp.isHost()) return;

@@ -2,6 +2,16 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.61', date: '21 Oct 2026', title: 'Halloween special zombies',
+    items: [
+      'New Halloween zombies with their own tricks (solo, co-op and the Halloween match, while Halloween is on):',
+      '🎃 Pumpkin Bomber: runs at you and blows up in a ball of fire. 👻 Phantom: see-through, vanishes and appears right next to you.',
+      '🧙 Witch: throws purple hexes and heals the zombies around her (kill her first!). 💀 Reaper: dashes at you and swings a big scythe.',
+      'More of them show up as the waves go on, and they drop more candy. Halloween zombies\' eyes glow orange.',
+      'Admins: spawn any of them with SPAWN 5 in the admin panel (Game tab), or see them all with the line-up.',
+    ],
+  },
+  {
     v: '5.60', date: '21 Oct 2026', title: 'Admin: one place for paid items',
     items: ['Admins: everything people buy with real money (the wolf, wolf levels, your specials and the 50c Deals) is now given from one 🎁 Someone paid you card in Admin → 💵 Shop.'],
   },

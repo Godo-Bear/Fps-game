@@ -21,7 +21,7 @@ const MODELS = [
 const HEIGHT = 1.85; // metres tall at zombie scale 1 (the block zombies are about this tall)
 
 // a gentle colour per kind of zombie, on top of its own skin and clothes
-const TINT = { walker: 0xffffff, runner: 0xfff0ec, brute: 0xd2d8c8, crawler: 0xf2f0e0, spitter: 0xe4ffd8, bloater: 0xf6ffd0 };
+const TINT = { walker: 0xffffff, runner: 0xfff0ec, brute: 0xd2d8c8, crawler: 0xf2f0e0, spitter: 0xe4ffd8, bloater: 0xf6ffd0, pumpkin: 0xffd8b0, phantom: 0xe0dcff, witch: 0xb8e0a8, reaper: 0x707070 };
 
 // ---- looks: every zombie gets its own skin, clothes, build, gear and way of walking
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -289,7 +289,7 @@ export function attachZombieModel(z) {
   let w = rand(0.88, 1.14);
   let h = rand(0.92, 1.08);
   if (T === 'brute') w *= 1.15;
-  if (T === 'bloater') w *= 1.35;
+  if (T === 'bloater' || T === 'pumpkin') w *= 1.35;
   if (T === 'runner') (w *= 0.9), (h *= 1.04);
   model.scale.set(template.scale * w, template.scale * h, template.scale * w);
   model.position.set(template.offset.x * w, template.offset.y * h, template.offset.z * w);
@@ -474,16 +474,17 @@ function dressUp(z, b) {
     return g;
   };
   const roll = Math.random();
-  const pumpkin = isHalloween() && (BV || roll < 0.4);
+  const ZT = z.type;
+  const pumpkin = ZT.pumpkinHead || (isHalloween() && !ZT.hw && (BV || roll < 0.4));
   if (pumpkin) onHead(wrap(jackOLantern(r * (BV ? 3.4 : 2.7), { light: !!BV })), topY - hh * 0.55);
-  const witch = isHalloween() && !pumpkin && roll < 0.7;
+  const witch = ZT.witchHat || (isHalloween() && !ZT.hw && !pumpkin && roll < 0.7);
   if (witch) {
     const h = witchHat();
     h.scale.setScalar(r * 2.6);
     onHead(wrap(h), topY - hh * 0.3);
   }
   // bosses carry the reaper's scythe
-  if (isHalloween() && BV && b.RightHand) {
+  if (((isHalloween() && BV) || ZT.scythe) && b.RightHand) {
     const s = scythe();
     s.scale.setScalar(1.9);
     s.rotation.set(Math.PI / 2, 0, 0);

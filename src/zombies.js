@@ -47,6 +47,23 @@ export const ZOMBIE_TYPES = {
     name: 'Bloater', hp: 160, speed: 1.5, damage: 30, scale: 1.25, radius: 0.65, range: 1.9, cooldown: 1, score: 35,
     skin: [0x8f9b5a, 0x9aa060], shirt: [0x5a5a3a], pants: [0x33331f], eyes: 0xc8ff3a, bloated: true,
   },
+  // ---- Halloween specials (only while Halloween is on; keep them last: the order is sent online)
+  pumpkin: {
+    name: 'Pumpkin Bomber', hp: 90, speed: 3.1, damage: 34, scale: 1.05, radius: 0.5, range: 1.8, cooldown: 1, score: 35,
+    skin: [0x8a7a50], shirt: [0x3a2410, 0x2a1a0a], pants: [0x1f1a12], eyes: 0xff8a1a, bloated: true, pumpkinHead: true, hw: true,
+  },
+  phantom: {
+    name: 'Phantom', hp: 70, speed: 2.7, damage: 14, scale: 1, radius: 0.4, range: 1.5, cooldown: 0.9, score: 35,
+    skin: [0xd8d4ff], shirt: [0xe8e6ff], pants: [0xc8c4f0], eyes: 0x8a3cff, ghost: true, blink: true, hw: true,
+  },
+  witch: {
+    name: 'Witch', hp: 95, speed: 2.2, damage: 14, scale: 1, radius: 0.42, range: 1.5, cooldown: 1.2, score: 40,
+    skin: [0x6aa05a, 0x7ab06a], shirt: [0x2a1a3a, 0x1a1a1a], pants: [0x1a1424], eyes: 0xb06bff, ranged: true, hex: true, healer: true, witchHat: true, hw: true,
+  },
+  reaper: {
+    name: 'Reaper', hp: 240, speed: 2.4, damage: 30, scale: 1.25, radius: 0.5, range: 2.3, cooldown: 1.3, score: 50,
+    skin: [0x3a3a3a], shirt: [0x141214], pants: [0x141214], eyes: 0xff2a2a, lunge: true, scythe: true, hw: true,
+  },
 };
 
 const TYPE_IDS = Object.keys(ZOMBIE_TYPES);
@@ -75,6 +92,7 @@ const GEO = (() => {
   };
 })();
 const globMat = new THREE.MeshBasicMaterial({ color: 0x8dff4a });
+const hexMat = new THREE.MeshBasicMaterial({ color: 0xb04dff }); // the Witch's hex bolts
 const puddleGeo = new THREE.CircleGeometry(1.6, 20);
 puddleGeo.rotateX(-Math.PI / 2);
 
@@ -127,7 +145,7 @@ class Zombie {
     this.pantsMat = new THREE.MeshStandardMaterial({ color: pick(T.pants), roughness: 1, flatShading: true });
     this.baseEmissive = mutated ? 0x1c4a06 : 0x000000;
     this.mats = [this.skinMat, this.shirtMat, this.pantsMat];
-    const eyeMat = new THREE.MeshBasicMaterial({ color: mutated && !BV ? 0x6dff2a : BV ? BV.eyes : T.eyes });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: mutated && !BV ? 0x6dff2a : BV ? BV.eyes : isHalloween() && T.eyes === 0xffd34d ? 0xff8a1a : T.eyes });
     if (BV) this.skinMat.color.setHex(BV.skin);
     const goreMat = new THREE.MeshStandardMaterial({ color: 0x4a0d0a, roughness: 0.6 });
     const glowMat = new THREE.MeshStandardMaterial({ color: 0x9dff4a, emissive: 0x4a9a10, roughness: 0.4 });
@@ -191,11 +209,11 @@ class Zombie {
     this.jaw = jaw;
     // Halloween: some wear a jack-o'-lantern (every boss does)
     const roll = Math.random();
-    if (isHalloween() && (variant || roll < 0.4)) {
-      const p = jackOLantern(variant ? 0.75 : 0.55, { light: !!variant });
+    if (T.pumpkinHead || (isHalloween() && !T.hw && (variant || roll < 0.4))) {
+      const p = jackOLantern(variant ? 0.75 : T.pumpkinHead ? 0.68 : 0.55, { light: !!variant });
       p.position.y = 0.05;
       head.add(p);
-    } else if (isHalloween() && roll < 0.7) {
+    } else if (T.witchHat || (isHalloween() && !T.hw && roll < 0.7)) {
       const h = witchHat();
       h.scale.setScalar(0.6);
       h.position.y = 0.18;
@@ -208,7 +226,7 @@ class Zombie {
     this.armR.position.set(T.bloated ? 0.55 : 0.37, 0.64, 0);
     this.armL.add(part(GEO.arm, this.skinMat, 'body'));
     if (Math.random() > 0.12 || typeId === 'boss' || T.crawl) this.armR.add(part(GEO.arm, this.skinMat, 'body'));
-    if (isHalloween() && variant) {
+    if ((isHalloween() && variant) || T.scythe) {
       const sc = scythe();
       sc.scale.setScalar(1.8);
       sc.position.set(0, -0.55, 0.15);
@@ -217,7 +235,7 @@ class Zombie {
     upper.add(this.armL, this.armR);
     this.armDroop = !T.crawl && Math.random() < 0.25 ? 1 : 0;
 
-    if (T.bloated || mutated) {
+    if ((T.bloated && !T.pumpkinHead) || mutated) {
       // glowing pustules
       const n = T.bloated ? 9 : 4;
       for (let i = 0; i < n; i++) {
@@ -230,7 +248,7 @@ class Zombie {
       }
     }
     if (T.ranged) {
-      const sac = new THREE.Mesh(GEO.sac, glowMat);
+      const sac = new THREE.Mesh(GEO.sac, T.hex ? hexMat : glowMat);
       sac.position.set(0, -0.2, 0.18);
       head.add(sac);
     }
@@ -272,6 +290,16 @@ class Zombie {
     }
     // the 3D zombie model (if it's loaded and switched on); the blocks above become invisible hitboxes
     attachZombieModel(this);
+    // the Phantom: see-through
+    if (T.ghost)
+      this.root.traverse((o) => {
+        if (!o.isMesh || o.userData.shared) return;
+        for (const m of [].concat(o.material)) {
+          m.transparent = true;
+          m.opacity = 0.42;
+          m.depthWrite = false;
+        }
+      });
   }
 
   get alive() {
@@ -466,6 +494,71 @@ export class ZombieManager {
     return best;
   }
 
+  // the Phantom: gone in a puff of purple smoke, back a few steps from its target
+  _blink(z, pp) {
+    const rp = z.root.position;
+    for (let tries = 0; tries < 10; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = rand(3, 5);
+      const x = pp.x + Math.cos(a) * d;
+      const zz = pp.z + Math.sin(a) * d;
+      if (Math.hypot(x, zz) > ARENA_RADIUS - 2) continue;
+      if (this.nav && !this.nav.reachable(x, zz)) continue;
+      if (this.world.colliders.blocked(x, zz, z.radius * 2)) continue;
+      this._puff(rp);
+      rp.set(x, Math.max(heightAt(x, zz), pp.y - 0.5), zz);
+      z.vy = 0;
+      this._puff(rp);
+      this.audio.groan(rp, 0.6, true);
+      return;
+    }
+  }
+  _puff(at) {
+    this.effects.burst(new THREE.Vector3(at.x, at.y + 1, at.z), { count: 18, color: [0xb06bff, 0x6a2aff, 0xe8d8ff], speed: 2.2, size: 0.18, life: 0.6, grav: -1, up: 1 });
+  }
+  // the Witch: heals every zombie near her (not bosses)
+  _hexHeal(z) {
+    const rp = z.root.position;
+    let healed = 0;
+    for (const o of this.list) {
+      if (!o.alive || o === z || o.typeId === 'boss' || o.hp >= o.maxHp) continue;
+      if (Math.hypot(o.root.position.x - rp.x, o.root.position.z - rp.z) > 10) continue;
+      o.hp = Math.min(o.maxHp, o.hp + o.maxHp * 0.35);
+      healed++;
+      this.effects.burst(new THREE.Vector3(o.root.position.x, o.centerY + 0.6, o.root.position.z), { count: 8, color: [0xb06bff, 0x7dff3a], speed: 0.8, size: 0.12, life: 0.7, grav: -3, up: 1.5 });
+    }
+    if (healed) this.effects.burst(new THREE.Vector3(rp.x, rp.y + 1.8, rp.z), { count: 24, color: [0xb06bff, 0x7dff3a, 0xe8d8ff], speed: 3, size: 0.14, life: 0.8, grav: -2, up: 2 });
+  }
+  // the Reaper: a quick dash at you, then a big scythe swing. True while it's dashing (it takes the frame).
+  _lunge(z, dt, pp, pdx, pdz, pdist, above, hooks) {
+    z.lungeCd = (z.lungeCd ?? rand(2, 4)) - dt;
+    if (!(z.lungeT > 0)) {
+      if (z.lungeCd > 0 || pdist < 3.5 || pdist > 12 || Math.abs(above) > 1.5 || z.windup > 0) return false;
+      z.lungeT = 0.85;
+      z.lungeCd = rand(5, 7);
+      z.flashT = 0.25;
+      this.audio.groan(z.root.position, 0.7, true);
+    }
+    z.lungeT -= dt;
+    const rp = z.root.position;
+    const step = z.speed * 3.4 * dt;
+    rp.x += (pdx / (pdist || 1)) * step;
+    rp.z += (pdz / (pdist || 1)) * step;
+    this.world.colliders.resolve(rp, z.radius, rp.y, 1.8 * z.scale);
+    rp.y = Math.max(heightAt(rp.x, rp.z), this.world.colliders.floorAt(rp.x, rp.z, z.radius * 0.6, rp.y));
+    z.root.rotation.y = Math.atan2(pdx, pdz);
+    if (Math.random() < dt * 20) this.effects.dust(new THREE.Vector3(rp.x, rp.y + 0.1, rp.z));
+    z.phase += dt * 14;
+    animateZombieModel(z, dt, { moving: true, speed: z.speed * 3.4, attacking: true });
+    if (pdist < z.type.range + 0.4) {
+      hooks.hitPlayer(z, z.damage * 1.5, 'melee', z.target);
+      z.lungeT = 0;
+      z.attackCd = z.type.cooldown;
+      return false;
+    }
+    return z.lungeT > 0;
+  }
+
   _spit(z, pp) {
     const from = new THREE.Vector3(z.root.position.x, z.centerY + 0.5, z.root.position.z);
     const to = new THREE.Vector3(pp.x, pp.y + 1.0, pp.z);
@@ -473,16 +566,17 @@ export class ZombieManager {
     const time = Math.max(0.6, flat / 16);
     const g = 14;
     const vel = new THREE.Vector3((to.x - from.x) / time, (to.y - from.y) / time + 0.5 * g * time, (to.z - from.z) / time);
-    this.addGlob(from, vel, z.damage);
-    if (this.onGlob) this.onGlob(from, vel);
+    const hex = !!z.type.hex;
+    this.addGlob(from, vel, z.damage, hex);
+    if (this.onGlob) this.onGlob(from, vel, hex);
   }
 
-  // dmg 0 = just for show (co-op clients see the host's acid)
-  addGlob(from, vel, dmg = 0) {
-    const mesh = new THREE.Mesh(GEO.glob, globMat);
+  // dmg 0 = just for show (co-op clients see the host's acid). hex: the Witch's purple bolt
+  addGlob(from, vel, dmg = 0, hex = false) {
+    const mesh = new THREE.Mesh(GEO.glob, hex ? hexMat : globMat);
     mesh.position.copy(from);
     this.scene.add(mesh);
-    this.globs.push({ mesh, vel: vel.clone(), g: 14, dmg, life: 4 });
+    this.globs.push({ mesh, vel: vel.clone(), g: 14, dmg, life: 4, hex });
     this.audio.spit?.(from);
   }
 
@@ -524,7 +618,7 @@ export class ZombieManager {
       let tint = z.baseEmissive;
       if (frosted) tint = 0x1a4a7a;
       for (const d of z.dots) if (DOT_TINT[d.kind]) tint = DOT_TINT[d.kind];
-      if (z.windup > 0 && T.bloated) tint = Math.sin(z.windup * 40) > 0 ? 0x6aff20 : 0x203a00;
+      if (z.windup > 0 && T.bloated) tint = Math.sin(z.windup * 40) > 0 ? (T.pumpkinHead ? 0xff8a1a : 0x6aff20) : T.pumpkinHead ? 0x3a1a00 : 0x203a00;
       const flash = z.flashT > 0;
       z.skinMat.emissive.setHex(flash ? 0x992222 : tint);
       z.shirtMat.emissive.setHex(flash ? 0x551111 : tint === z.baseEmissive ? 0 : tint);
@@ -629,6 +723,24 @@ export class ZombieManager {
       const pdz = pp.z - rp.z;
       const pdist = Math.hypot(pdx, pdz);
       const above = pp.y - rp.y;
+
+      // Halloween specials: the Phantom vanishes and reappears next to you, the Witch heals the zombies around her,
+      // the Reaper lunges at you with its scythe
+      if (T.blink && !ladder) {
+        z.blinkCd = (z.blinkCd ?? rand(3, 5)) - dt;
+        if (z.blinkCd <= 0 && pdist > 7 && pdist < 40) {
+          z.blinkCd = rand(5, 8);
+          this._blink(z, pp);
+        }
+      }
+      if (T.healer) {
+        z.healCd = (z.healCd ?? rand(4, 6)) - dt;
+        if (z.healCd <= 0) {
+          z.healCd = rand(7, 9);
+          this._hexHeal(z);
+        }
+      }
+      if (T.lunge && !ladder && this._lunge(z, dt, pp, pdx, pdz, pdist, above, hooks)) continue;
 
       // boss tricks (screaming, charging, hatching) can take over the whole frame
       if (z.variant && z.variant !== 'abomination' && !ladder && this._bossUpdate(z, dt, pp, pdx, pdz, pdist, hooks)) continue;
@@ -830,16 +942,17 @@ export class ZombieManager {
       g.vel.y -= g.g * dt;
       g.mesh.position.addScaledVector(g.vel, dt);
       const p = g.mesh.position;
-      if (Math.random() < 0.5) this.effects.burst(p, { count: 1, color: [0x8dff4a, 0x5ac020], speed: 0.3, size: 0.08, life: 0.4, grav: 2 });
+      const cols = g.hex ? [0xb06bff, 0x6a2aff, 0xe8d8ff] : [0x8dff4a, 0x5ac020, 0xc8ff6a];
+      if (Math.random() < 0.5) this.effects.burst(p, { count: 1, color: cols.slice(0, 2), speed: 0.3, size: 0.08, life: 0.4, grav: 2 });
       let hit = null;
       for (const t of targets) if (Math.hypot(p.x - t.pos.x, p.y - (t.pos.y + 1), p.z - t.pos.z) < 0.9) hit = t;
       const groundY = heightAt(p.x, p.z);
       if (hit || p.y <= groundY || g.life <= 0) {
         if (hit && g.dmg > 0) hooks.hitPlayer(null, g.dmg, 'acid', hit);
-        this.effects.burst(new THREE.Vector3(p.x, Math.max(p.y, groundY + 0.1), p.z), { count: 14, color: [0x8dff4a, 0x5ac020, 0xc8ff6a], speed: 2.5, size: 0.1, life: 0.5, up: 1.5 });
+        this.effects.burst(new THREE.Vector3(p.x, Math.max(p.y, groundY + 0.1), p.z), { count: 14, color: cols, speed: 2.5, size: 0.1, life: 0.5, up: 1.5 });
         const puddle = new THREE.Mesh(
           puddleGeo,
-          new THREE.MeshBasicMaterial({ color: 0x7adf3a, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
+          new THREE.MeshBasicMaterial({ color: g.hex ? 0x8a3cff : 0x7adf3a, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
         );
         puddle.position.set(p.x, groundY + 0.05, p.z);
         this.scene.add(puddle);
@@ -1012,6 +1125,11 @@ export class ZombieManager {
         this.scene.add(z.root);
         this.list.push(z);
         dirty = true;
+      }
+      if (z.type.blink && z.root.position.distanceTo(z.net.set(x, y, zz)) > 5) {
+        this._puff(z.root.position);
+        z.root.position.copy(z.net);
+        this._puff(z.net);
       }
       z.net.set(x, y, zz);
       z.netYaw = yaw;
