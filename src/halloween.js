@@ -221,3 +221,21 @@ export function bat() {
 
 export const glowMat = (c) => (c === 'orange' ? MAT.orange : c === 'purple' ? MAT.purple : MAT.green);
 export const sharedMesh = mesh;
+
+// A wrapped sweet (about 0.3 m long) that drops from zombies while Halloween is on.
+const CANDY_COLORS = [0xff3a5a, 0x9b5cff, 0x5adf4a, 0xffd23a, 0xff8a1a, 0xff6ad5].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.35, emissive: c, emissiveIntensity: 0.35 }));
+const CANDY_GEO = { body: new THREE.SphereGeometry(0.09, 10, 8), end: new THREE.ConeGeometry(0.07, 0.1, 6) };
+export function candyPiece() {
+  const g = new THREE.Group();
+  const m = CANDY_COLORS[Math.floor(Math.random() * CANDY_COLORS.length)];
+  const body = mesh(CANDY_GEO.body, m);
+  body.scale.set(1.4, 1, 1);
+  g.add(body);
+  for (const s of [-1, 1]) {
+    const e = mesh(CANDY_GEO.end, m);
+    e.rotation.z = (s * Math.PI) / 2;
+    e.position.x = s * 0.16;
+    g.add(e);
+  }
+  return g;
+}

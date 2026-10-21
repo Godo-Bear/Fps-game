@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CHARACTERS_LIVE, FINISHES, levelFromXp, petHas, petLevel } from '../shared/cosmetics.js';
+import { CHARACTERS_LIVE, FINISHES, levelFromXp, petHas, petLevel, CANDY_DROPS } from '../shared/cosmetics.js';
 import { EVAC_HOLD, INFECTED, JUGG_HP, MAPS, MODES, SOLO_MAP, SURVIVORS, quickWheel } from '../shared/modes.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../shared/achievements.js';
 import { termsHtml } from '../shared/terms.js';
@@ -7,7 +7,7 @@ import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
-import { isHalloween, setHalloween } from './halloween.js';
+import { candyPiece, isHalloween, setHalloween } from './halloween.js';
 import { priceTag } from '../shared/terms.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
@@ -1466,6 +1466,62 @@ function addHintMark(x, z) {
   scene.add(g);
   hintMarks.push({ g, t: 10 });
 }
+// ---- Halloween candy: zombies drop sweets; walk over them (they drift to you when you're close). The server
+// keeps the count (a few at a time, so it can check you're not collecting too fast).
+const candy = { list: [], pending: 0, flushT: 0, said: false };
+function dropCandy(kind, x, y, z) {
+  const [chance, n] = CANDY_DROPS[kind] || CANDY_DROPS.zombie;
+  if (Math.random() > chance) return;
+  // a boss drops a pile, a few pieces each worth more
+  const pieces = Math.min(n, 5);
+  for (let i = 0; i < pieces; i++) {
+    const g = candyPiece();
+    g.position.set(x + (Math.random() - 0.5) * 1.6, Math.max(y, heightAt(x, z)) + 0.4, z + (Math.random() - 0.5) * 1.6);
+    g.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(g);
+    candy.list.push({ g, worth: Math.ceil(n / pieces), t: 45, vy: 3 + Math.random() * 2 });
+  }
+}
+function updateCandy(dt) {
+  const show = isHalloween() && ['playing', 'paused', 'choosing'].includes(game.state);
+  const hud = $('candy-hud');
+  hud.classList.toggle('hidden', !show);
+  if (show) hud.textContent = `🍬 ${account.candy + candy.pending}`;
+  for (let i = candy.list.length - 1; i >= 0; i--) {
+    const c = candy.list[i];
+    c.t -= dt;
+    const p = c.g.position;
+    const floor = heightAt(p.x, p.z) + 0.3;
+    // pops out, falls, then bobs and spins
+    c.vy -= 14 * dt;
+    p.y = Math.max(floor + Math.sin(c.t * 3) * 0.06, p.y + c.vy * dt);
+    c.g.rotation.y += dt * 2.5;
+    const d = Math.hypot(p.x - player.pos.x, p.z - player.pos.z);
+    if (d < 4 && !player.dead) {
+      // drifts to you
+      p.x += ((player.pos.x - p.x) / (d || 1)) * Math.min(d, dt * 9);
+      p.z += ((player.pos.z - p.z) / (d || 1)) * Math.min(d, dt * 9);
+    }
+    if ((d < 1.2 && !player.dead) || c.t <= 0 || !show) {
+      if (d < 1.2 && show) {
+        candy.pending += c.worth;
+        audio.pickup();
+        if (!account.loggedIn && !candy.said) {
+          candy.said = true;
+          subBanner('🍬 Log in to keep your candy and spend it', 2.5);
+        }
+      }
+      scene.remove(c.g);
+      candy.list.splice(i, 1);
+    }
+  }
+  candy.flushT -= dt;
+  if (candy.pending > 0 && candy.flushT <= 0 && account.loggedIn) {
+    candy.flushT = 4;
+    const n = candy.pending;
+    account.claimCandy(n).then((got) => (candy.pending = Math.max(0, candy.pending - got)), () => {});
+  }
+}
 // hide and seek: hiders can't fight back, and seekers can't tag anyone while they're still counting
 function hnsNoAttack() {
   if (!mp.hns) return false;
@@ -1822,6 +1878,7 @@ function rewardKill({ type, mut, head, src = null, x, y, z, bounty = false }) {
     mp.send({ t: 'zkill', kind });
     eventDropChance(kind, x, z);
   }
+  if (isHalloween()) dropCandy(type === 'boss' ? 'boss' : mut || ['brute', 'bloater', 'spitter'].includes(type) ? 'special' : 'zombie', x, y, z);
   game.kills++;
   if (src === 'wolf') game.petKills = (game.petKills || 0) + 1;
   achieve('first_kill');
@@ -5078,6 +5135,7 @@ function update(dt) {
   const speedMul = (cheatsOn() && cheats.speed ? 2 : 1) * (mp.seeker && mp.countdown > 0 ? 0 : 1);
   if (mp.seeker && mp.countdown > 0) player.keys.delete('Space');
   updateBlindfold(dt);
+  updateCandy(dt);
   const hSpeed = flying ? flyUpdate(dt) : player.update(dt, world.colliders, stats, trigger || aim, audio, moveMul * speedMul * weatherMove(), world.ladders);
   tpCamera(); // events: over the shoulder
   hitSoundPlayed = false;
@@ -5450,7 +5508,7 @@ if (import.meta.env.DEV) {
       return savedGames;
     },
     bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio, zombies, hitZombie: botHitZombie }); },
-    get wolf() { return myWolf; }, wolfHunt, effects, ev, worldTick, isEvent, tank,
+    get wolf() { return myWolf; }, wolfHunt, effects, killedBy, candy, ev, worldTick, isEvent, tank,
     game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

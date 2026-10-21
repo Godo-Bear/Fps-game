@@ -31,6 +31,28 @@ export const FINISHES = [
   ['toxic', 15, 'Toxic', '#5fd13a'],
 ];
 
+// Halloween cosmetics: only with candy (collected during the Halloween event), never by level or coins.
+// Yours for good once bought. [kind, id, label, candy, extra (a finish's colour)]
+export const EVENT_LEVEL = 9999; // their unlock level: out of reach
+export const CANDY_SHOP = [
+  ['finish', 'pumpkin', 'Pumpkin', 150, '#e8761a'], ['finish', 'bone', 'Bone', 200, '#e4dcc4'], ['finish', 'spectral', 'Spectral', 300, '#7a3cff'],
+  ['avatar', '🎃', 'Jack-o\'-lantern', 40], ['avatar', '👻', 'Ghost', 40], ['avatar', '🦇', 'Bat', 60], ['avatar', '🕷️', 'Spider', 60], ['avatar', '🧛', 'Vampire', 90],
+  ['title', 'Ghoul', 'Ghoul', 80], ['title', 'Candy Hoarder', 'Candy Hoarder', 120], ['title', 'Night Stalker', 'Night Stalker', 150], ['title', 'Pumpkin King', 'Pumpkin King', 250],
+  ['color', '#ff7a1a', 'Pumpkin', 60], ['color', '#9b5cff', 'Haunted', 60], ['color', '#7dff3a', 'Slime', 60],
+  ['crosshair', '#ff7a1a', 'Jack-o\'-lantern', 30], ['crosshair', '#b06bff', 'Witchy', 30],
+];
+export const candyPrice = (itemId) => CANDY_SHOP.find(([kind, id]) => `cos_${kind}_${id}` === itemId)?.[3] ?? null;
+// how much candy a kill drops: [chance, how many]
+export const CANDY_DROPS = { zombie: [0.3, 1], special: [0.6, 2], boss: [1, 15] };
+// the server's limits: about one candy a second at most, and this many in one event
+export const CANDY_RATE = 1.2;
+export const CANDY_EVENT_MAX = 3000;
+// they join the normal lists (out of reach by level) so equipping and showing them works like any other
+for (const [kind, id, label, , extra] of CANDY_SHOP) {
+  const list = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES }[kind];
+  list.push(kind === 'avatar' || kind === 'title' ? [id, EVENT_LEVEL] : kind === 'finish' ? [id, EVENT_LEVEL, label, extra] : [id, EVENT_LEVEL, label]);
+}
+
 // Pets: bought with real money (paid to the owner, who switches it on from the admin panel: items.pet_wolf).
 // petColor is any colour; these are the quick picks.
 export const PET_COLORS = [

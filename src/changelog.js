@@ -12,6 +12,7 @@ export const CHANGELOG = [
     items: [
       'Admin: a new seasonal event is ready in the Events tab (nothing changes for anyone until it is started), with a preview only the admin sees.',
       'Admin: it now uses the new 3D models (pumpkins, graves, cauldrons, scarecrows, a scythe and a witch hat).',
+      'Admin: and its own rewards to collect and spend (try them with the preview and the test button in the Events tab).',
     ],
   },
   {

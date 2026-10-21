@@ -1,7 +1,7 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
 import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, EVENT_LEVEL, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -9,6 +9,7 @@ import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery,
 import { GUNS } from './guns.js';
 import { ACHIEVEMENTS } from '../shared/achievements.js';
 import { priceTag, termsHtml } from '../shared/terms.js';
+import { isHalloween } from './halloween.js';
 
 const TOKEN_KEY = 'deadplains.token';
 const GUEST_KEY = 'deadplains.guest';
@@ -121,7 +122,7 @@ export class Account {
   }
   // level used for unlocks: admins have everything
   get unlockLevel() {
-    return this.admin ? 999 : this.level;
+    return this.admin ? 99999 : this.level; // (over the Halloween items too)
   }
   get coins() {
     return this.user ? this.user.coins || 0 : this.guest.coins || 0;
@@ -499,6 +500,29 @@ export class Account {
   // ---- shop
   _saveGuest() {
     store.set(GUEST_KEY, JSON.stringify(this.guest));
+    this._changed();
+  }
+  // Halloween candy (items.candy): collected from kills while the event's on, spent in the Halloween shop
+  get candy() {
+    return this.items.candy || 0;
+  }
+  async claimCandy(n) {
+    if (!this.user) return 0;
+    const r = await this._api('/event/candy', { method: 'POST', body: { n } });
+    this.user = r.user;
+    this._changed();
+    return r.got;
+  }
+  async adminCandy(n) {
+    const r = await this._api('/admin/candy', { method: 'POST', body: { n } });
+    this.user = r.user;
+    this._changed();
+    return r.note;
+  }
+  async buyWithCandy(itemId) {
+    if (!this.user) throw new Error('Log in to keep candy and spend it');
+    const { user } = await this._api('/shop/candy', { method: 'POST', body: { item: itemId } });
+    this.user = user;
     this._changed();
   }
   async buy(itemId) {
@@ -1171,8 +1195,12 @@ export class AccountUI {
         ${list
           .map(([id, need, label, extra]) => {
             const locked = need > lvl && !a.items[cosmeticItemId(kind, id)];
-            const price = locked ? cosmeticPrice(kind, id) : null;
-            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${locked ? `Unlocks at level ${need}, or buy it in the shop` : esc(label || id)}">${render(id, label, extra)}${locked ? `<i>Lv ${need} · 🪙${price}</i>` : ''}</button>`;
+            // Halloween ones: only for candy, and only shown while it's on (or once you have them)
+            const candy = need >= EVENT_LEVEL ? CANDY_SHOP.find(([k, i]) => k === kind && i === id)?.[3] : null;
+            if (candy && locked && !isHalloween()) return '';
+            const price = locked && !candy ? cosmeticPrice(kind, id) : null;
+            const tip = locked ? (candy ? 'Halloween: buy it with candy in the Shop' : `Unlocks at level ${need}, or buy it in the shop`) : esc(label || id);
+            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${tip}">${render(id, label, extra)}${locked ? `<i>${candy ? `🎃 🍬${candy}` : `Lv ${need} · 🪙${price}`}</i>` : ''}</button>`;
           })
           .join('')}
       </div>`;
@@ -1359,6 +1387,20 @@ export class AccountUI {
     }
   }
 
+  // the Halloween shop: cosmetics for candy, while the event's on
+  _candyShop() {
+    const a = this.account;
+    const names = { avatar: 'Avatar', color: 'Name colour', title: 'Title', crosshair: 'Crosshair', finish: 'Gun finish' };
+    const cards = CANDY_SHOP.map(([kind, id, label, price, color]) => {
+      const owned = !!a.items[cosmeticItemId(kind, id)] || a.unlockLevel >= EVENT_LEVEL;
+      const show = kind === 'avatar' ? `<span class="big">${id}</span>` : kind === 'color' || kind === 'crosshair' ? `<span class="swatch" style="background:${id}"></span>${esc(label)}` : kind === 'finish' ? `<span class="swatch" style="background:${color}"></span>${esc(label)}` : `<b>${esc(id)}</b>`;
+      return `<div class="cos-item candy"><span class="muted small">${names[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-candy="${cosmeticItemId(kind, id)}" ${a.candy < price ? 'disabled' : ''}>🍬 ${price}</button>`}</div>`;
+    }).join('');
+    return `<div class="candy-shop"><div class="shop-head"><span class="coins big">🍬 ${a.candy}</span>
+        <span><b>🎃 HALLOWEEN SHOP</b> <span class="muted">· only while Halloween is on · zombies drop candy (bosses a big pile) · yours for good</span></span></div>
+      ${a.loggedIn ? '' : '<p class="muted small">Log in to collect candy and spend it.</p>'}
+      <div class="cos-list">${cards}</div></div>`;
+  }
   _shop() {
     const a = this.account;
     const items = a.items;
@@ -1385,7 +1427,7 @@ export class AccountUI {
     const cosmetics = Object.entries(lists)
       .flatMap(([kind, list]) =>
         list
-          .filter(([id, need]) => need > a.unlockLevel && !items[cosmeticItemId(kind, id)])
+          .filter(([id, need]) => need > a.unlockLevel && need < EVENT_LEVEL && !items[cosmeticItemId(kind, id)])
           .map(([id, need, label, color]) => {
             const price = cosmeticPrice(kind, id);
             const show = kind === 'avatar' ? `<span class="big">${id}</span>` : kind === 'color' || kind === 'crosshair' ? `<span class="swatch" style="background:${id}"></span>${esc(label)}` : kind === 'finish' ? `<span class="swatch" style="background:${color}"></span>${esc(label)}` : esc(id);
@@ -1394,6 +1436,7 @@ export class AccountUI {
       )
       .join('');
     this.body.innerHTML = `
+      ${isHalloween() ? this._candyShop() : ''}
       <div class="shop-head"><span class="coins big">🪙 ${a.coins}</span>
         <span class="muted">Earn coins from kills, headshots and waves in solo, and from kills and wins online.</span></div>
       <div id="shop-msg" class="msg"></div>
@@ -1409,6 +1452,16 @@ export class AccountUI {
       <div class="cos-list">${cosmetics || '<p class="muted">You own every cosmetic!</p>'}</div>
       ${a.loggedIn ? '' : '<p class="muted small">Guest: coins and purchases are saved in this browser. Log in to keep them on your account.</p>'}`;
     const msg = (t) => (document.getElementById('shop-msg').textContent = t);
+    this.body.querySelectorAll('[data-candy]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          await a.buyWithCandy(b.dataset.candy);
+          msg('🎃 Yours! Wear it from the Locker.');
+        } catch (err) {
+          msg(err.message);
+        }
+      })
+    );
     this.body.querySelectorAll('[data-buy]').forEach((b) =>
       b.addEventListener('click', async () => {
         try {
@@ -1604,6 +1657,8 @@ export class AccountUI {
       </div>
       <div class="acard"><h4>🎃 Halloween <span class="muted small">(nobody sees it until you start the Halloween Night event above)</span></h4>
         <p class="muted small">While it's on, every map (solo and online) turns into a foggy purple night with jack-o'-lanterns, little graveyards, bubbling cauldrons, pumpkin-head scarecrows, string lights, ghosts and bats, and the zombies wear pumpkin heads. Maps already loaded change when the next one loads.</p>
+        <p class="muted small">Candy: zombies drop sweets while it's on (bosses a big pile), spent in the 🎃 Halloween shop at the top of the Shop on cosmetics nobody else can get (gun finishes, avatars, titles, name colours, crosshairs).</p>
+        <div class="admin-grid"><button class="btn small ghost" id="admin-candy">🍬 GIVE ME 200 CANDY (TEST)</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-halloween-preview">${act?.halloweenPreview?.() ? '👻 PREVIEW ON (ONLY YOU) · TURN OFF' : '👻 PREVIEW IT (ONLY YOU)'}</button></div></div>
       <div class="acard"><h4>ℹ️ How it works</h4>
         <p class="muted small">While it's on, the <b>JOIN EVENT</b> button in Multiplayer (under the room code) lights up. Everyone plays in <b>one match</b> (${EVENT_MAX_PLAYERS} players a room: when one fills up, a new one opens; no host): <b>Red vs Blue vs the zombies</b>, seen from behind their character, starting as the <b>Survivor</b>.
@@ -1760,6 +1815,8 @@ export class AccountUI {
     };
     evStatus();
     // picking an event fills in its length and drop rate (you can still change them)
+    const ac = document.getElementById('admin-candy');
+    if (ac) ac.onclick = () => a.adminCandy(200).then(msg, (e) => msg(e.message));
     const hp = document.getElementById('admin-halloween-preview');
     if (hp) hp.onclick = () => {
       msg(act.toggleHalloweenPreview());

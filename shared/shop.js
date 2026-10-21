@@ -1,5 +1,5 @@
 // Coins and the shop. Shared by the game client and the server so prices always match.
-import { AVATARS, CROSSHAIRS, FINISHES, NAME_COLORS, TITLES } from './cosmetics.js';
+import { AVATARS, CROSSHAIRS, EVENT_LEVEL, FINISHES, NAME_COLORS, TITLES } from './cosmetics.js';
 
 // Coins earned for a finished game (the server recomputes this from the reported run).
 export function coinsForRun({ mode, wave = 0, kills = 0, headshots = 0, won = false }) {
@@ -29,7 +29,7 @@ const COSMETIC_LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, cro
 export const cosmeticItemId = (kind, id) => `cos_${kind}_${id}`;
 export function cosmeticPrice(kind, id) {
   const row = COSMETIC_LISTS[kind]?.find((r) => r[0] === id);
-  return row && row[1] > 1 ? row[1] * 120 : null;
+  return row && row[1] > 1 && row[1] < EVENT_LEVEL ? row[1] * 120 : null; // Halloween ones: candy only
 }
 
 // Price of the next purchase of an item, or null if it can't be bought (maxed, unknown).

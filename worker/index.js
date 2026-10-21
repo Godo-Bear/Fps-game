@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun, CANDY_EVENT_MAX, CANDY_RATE, candyPrice } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { SPECIAL_GEAR, TANK_ARMOUR, TANK_FLAG } from '../shared/gear.js';
 import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_THEMES, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
@@ -311,7 +311,7 @@ export class GameDB extends DurableObject {
       level,
       xp: u.xp,
       // admins have every cosmetic unlocked
-      profile: cleanProfile(JSON.parse(u.profile || '{}'), u.admin ? 999 : level, items),
+      profile: cleanProfile(JSON.parse(u.profile || '{}'), u.admin ? 99999 : level, items),
       stats: { bestWave: u.best_wave, bestScore: u.best_score, kills: u.kills, headshots: u.headshots, games: u.games, pvpKills: u.pvp_kills, pvpWins: u.pvp_wins },
       online: Date.now() - u.last_seen < ONLINE_MS,
       badges: this._badges(u),
@@ -686,7 +686,7 @@ export class GameDB extends DurableObject {
     }
 
     if (path === '/profile' && method === 'PUT') {
-      const profile = cleanProfile(body.profile, me.admin ? 999 : levelFromXp(me.xp), this._items(me));
+      const profile = cleanProfile(body.profile, me.admin ? 99999 : levelFromXp(me.xp), this._items(me));
       this.sql.exec('UPDATE users SET profile = ? WHERE id = ?', JSON.stringify(profile), me.id);
       return json({ user: this._publicUser({ ...me, profile: JSON.stringify(profile) }, true) });
     }
@@ -793,6 +793,17 @@ export class GameDB extends DurableObject {
       if ((me.coins || 0) < price) return err('Not enough coins');
       items[body.item] = (items[body.item] || 0) + 1;
       return saveItems(items, me.coins - price);
+    }
+    // the Halloween shop: cosmetics for candy, only while the event's on (admins any time)
+    if (path === '/shop/candy' && method === 'POST') {
+      const items = this._items(me);
+      const price = typeof body.item === 'string' ? candyPrice(body.item) : null;
+      if (price === null || items[body.item]) return err("That can't be bought");
+      if (this._event()?.theme !== 'halloween' && !me.admin) return err('The Halloween shop is closed');
+      if ((items.candy || 0) < price) return err('Not enough candy');
+      items.candy -= price;
+      items[body.item] = 1;
+      return saveItems(items, me.coins || 0);
     }
     if (path === '/shop/use' && method === 'POST') {
       const items = this._items(me);
@@ -1124,6 +1135,40 @@ export class GameDB extends DurableObject {
       this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
       const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
       return json({ piece, coins: piece ? 0 : DUPLICATE_COINS, user: this._publicUser(user, true) });
+    }
+    // Halloween: candy from kills (the game sends it a few at a time). About one a second at most, and so much
+    // per event. Admins can collect it with the Halloween preview on, to test.
+    if (path === '/event/candy' && method === 'POST') {
+      const ev = this._event();
+      const live = ev?.theme === 'halloween';
+      if (!live && !me.admin) return err('No Halloween event is on');
+      const evId = live ? ev.id : 'preview';
+      const items = this._items(me);
+      const now = Date.now();
+      if (items.candy_ev !== evId) {
+        items.candy_ev = evId;
+        items.candy_evn = 0;
+        items.candy_at = now - 10000;
+      }
+      const allowed = Math.max(1, Math.floor(((now - (items.candy_at || 0)) / 1000) * CANDY_RATE));
+      const n = Math.max(0, Math.min(Math.floor(Number(body.n) || 0), allowed, 50, CANDY_EVENT_MAX - (items.candy_evn || 0)));
+      if (n) {
+        items.candy = (items.candy || 0) + n;
+        items.candy_evn = (items.candy_evn || 0) + n;
+        items.candy_at = now;
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), me.id);
+      }
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ got: n, candy: items.candy || 0, user: this._publicUser(user, true) });
+    }
+    // admin: candy for yourself, to try the Halloween shop
+    if (path === '/admin/candy' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const items = this._items(me);
+      items.candy = Math.max(0, (items.candy || 0) + Math.max(-100000, Math.min(100000, Math.floor(Number(body.n) || 0))));
+      this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), me.id);
+      const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
+      return json({ note: `You have ${items.candy} candy.`, user: this._publicUser(user, true) });
     }
     // admin: host an event (every server: players join from the menu), or end it
     if (path === '/admin/event' && method === 'POST') {
