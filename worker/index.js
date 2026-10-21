@@ -2067,7 +2067,7 @@ export class Room extends DurableObject {
         if (Math.hypot(p.pos[0] - d.x, p.pos[2] - d.z) > SUPPLY_REACH + 1.5) return;
         this.match.drops.delete(d.id);
         // zombie players get the health but can't use guns
-        const gun = MODES[this.mode].infection && p.team === INFECTED ? null : d.gun;
+        const gun = MODES[this.mode].infection && p.team === INFECTED && !p.admin ? null : d.gun; // admins keep their guns in every mode
         if (!this._coop) {
           p.hp = this._maxHp(p);
           this._send(p, { t: 'healed', hp: p.hp });
@@ -2507,15 +2507,16 @@ export class Room extends DurableObject {
     const dist = Math.hypot(p.pos[0] - target.pos[0], p.pos[2] - target.pos[2]);
     if (dist > 320) return;
     // infection zombies only have their claws (the knife): close up only
-    if (mode.infection && p.team === INFECTED && (!m.melee || dist > 5)) return;
+    if (mode.infection && p.team === INFECTED && !p.admin && (!m.melee || dist > 5)) return; // (admins can use guns in any mode)
     // hide and seek: hiders can't hurt anyone, and seekers can't tag anyone until they've finished counting
-    if (mode.hns && (p.team !== INFECTED || now < (this.match.seekAt || Infinity))) return;
+    if (mode.hns && !p.admin && (p.team !== INFECTED || now < (this.match.seekAt || Infinity))) return;
     if (now < target.protectUntil || now < (target.shieldUntil || 0) || target.god) return;
     // one in the chamber: every bullet kills (and an admin's one-hit-kill cheat)
     // in a tank (only if they really have one): a quarter of the damage
     const armour = target.flags & TANK_FLAG && target.items?.sp_tank ? TANK_ARMOUR : 1;
     // one in the chamber: every bullet kills; hide and seek: one tag and you're found
-    target.hp -= (mode.oitc && !m.melee) || mode.hns || p.onehit ? target.hp : dmg * armour;
+    // (an admin's other guns in one in the chamber hit normally: only the revolver's bullets kill outright)
+    target.hp -= (mode.oitc && !m.melee && p.gun === 'revolver') || (mode.hns && m.melee) || p.onehit ? target.hp : dmg * armour;
     target.lastHurt = now;
     this._send(target, { t: 'hurt', by: p.id, dmg, from: p.pos, hp: Math.max(0, target.hp) });
     if (target.hp > 0) return;

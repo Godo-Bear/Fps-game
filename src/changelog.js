@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.45', date: '21 Oct 2026', title: 'Admin: guns in every mode',
+    items: [
+      'Admin: admins keep their own guns (the rifle, their starting gun and special gear) in every mode, on top of what the mode gives: Gun Game, One in the Chamber, Juggernaut, Infection (even as a zombie) and Hide and Seek (hider or seeker, even while counting). They can pick up guns there too.',
+    ],
+  },
+  {
     v: '5.44', date: '20 Oct 2026', title: 'New web address',
     items: [
       'War Grounds and JINtelligence have moved to a new address (jn-studios.workers.dev). The ads round the maps show the new link and QR code.',

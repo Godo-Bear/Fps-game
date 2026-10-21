@@ -1524,7 +1524,7 @@ function updateCandy(dt) {
 }
 // hide and seek: hiders can't fight back, and seekers can't tag anyone while they're still counting
 function hnsNoAttack() {
-  if (!mp.hns) return false;
+  if (!mp.hns || account.admin) return false; // admins can fight in any mode
   if (!mp.seeker) subBanner("Hiders can't attack: stay hidden!", 0.9);
   else if (mp.countdown > 0) subBanner('Still counting…', 0.9);
   else return false;
@@ -1715,7 +1715,7 @@ function grenadeBlast(at) {
 
 // ---------------------------------------------------------------- supply drops
 // Gun Game and Infection give you your guns: nothing to pick up there.
-const fixedGuns = () => game.mode === 'mp' && mp.inMatch && (!!MODES[mp.mode]?.gungame || mp.infected || mp.oitc || mp.isJugg);
+const fixedGuns = () => game.mode === 'mp' && mp.inMatch && !account.admin && (!!MODES[mp.mode]?.gungame || mp.infected || mp.oitc || mp.isJugg); // admins pick up guns anywhere
 let soloDropT = 50;
 let soloDropId = 1;
 function soloSupplyDrop(near = null) {
@@ -1790,8 +1790,24 @@ function updateSupply(dt) {
   }
 }
 
-// ---- gun game and infection: the mode decides your guns
+// ---- gun game and infection: the mode decides your guns (admins keep theirs as well, in every mode)
 function modeLoadout() {
+  const fixed = modeLoadoutBase();
+  if (fixed && account.admin) adminGuns();
+  return fixed;
+}
+// an admin's own guns on top of what the mode gives: the rifle, their starting gun and special gear (unlimited ammo)
+function adminGuns() {
+  const add = (id) => {
+    if (!GUNS[id] || weapon.slots.some((s) => s.def.id === id)) return;
+    weapon.slots.push({ def: GUNS[id], ammo: weapon.magSize(stats, GUNS[id]), reserve: Infinity, mut: null });
+  };
+  add('rifle');
+  const own = account.items.loadout;
+  if (own && account.items[`gun_${own}`]) add(own);
+  for (const gid of ['flamer', 'bazooka']) if (ownsGear(account.items, gid)) add(gid);
+}
+function modeLoadoutBase() {
   if (game.mode !== 'mp' || !mp.inMatch) return false;
   const mode = MODES[mp.mode];
   document.body.classList.toggle('infected', mp.infected && !mp.hns);
