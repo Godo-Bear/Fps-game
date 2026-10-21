@@ -1107,7 +1107,7 @@ export class GameDB extends DurableObject {
       const u = typeof body.username === 'string' ? this._byName(body.username) : null;
       if (!u) return err('No player with that name', 404);
       const action = String(body.action);
-      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces', 'gear', 'candy', 'cosmetic', 'paid'].includes(action)) return err("You can't do that to yourself");
+      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces', 'gear', 'candy', 'cosmetic', 'paid', 'consumable'].includes(action)) return err("You can't do that to yourself");
       if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
       let note = '';
       if (action === 'kick') {
@@ -1212,6 +1212,16 @@ export class GameDB extends DurableObject {
         else delete items[id];
         this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
         note = body.on ? `${u.username} has it now (they wear it from the Locker).` : `Took it from ${u.username}.`;
+      } else if (action === 'consumable') {
+        // a run item (they bought it from the 50c Deals): one more, or one fewer with a minus number
+        const def = SHOP.find((d) => d.id === body.item && d.kind === 'consumable');
+        if (!def) return err('Unknown item');
+        const n = Math.max(-def.max, Math.min(def.max, Math.floor(Number(body.n) || 1)));
+        const items = this._items(u);
+        const before = items[def.id] || 0;
+        items[def.id] = Math.max(0, Math.min(def.max, before + n));
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
+        note = items[def.id] === before ? `${u.username} already has ${before} ${def.name}${before >= def.max ? ' (the most they can hold)' : ''}.` : `${u.username} has ${items[def.id]} ${def.icon} ${def.name} now.`;
       } else if (action === 'paid') {
         // they paid the owner for one of the real-money shop items: they get what it gives (or it's taken back)
         const def = this._paidItems().find((i) => i.id === body.id);

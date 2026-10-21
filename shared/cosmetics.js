@@ -45,9 +45,10 @@ for (const [kind, rows] of Object.entries(MORE)) {
   list.sort((a, b) => a[1] - b[1]);
 }
 
-// 50c Deals: cosmetics nobody can unlock, only buy for real money (DEAL_PRICE, paid to the owner, who gives them
-// out from the admin panel). [kind, id, label, colour (name colour, crosshair, finish), glow (a gun skin that glows)]
+// 50c Deals: cosmetics nobody can unlock, only buy: for real money (DEAL_PRICE, paid to the owner, who gives them
+// out from the admin panel) or for lots of coins (DEAL_COINS). [kind, id, label, colour (name colour, crosshair, finish), glow (a gun skin that glows)]
 export const DEAL_PRICE = '50c';
+export const DEAL_COINS = 2500; // or this many coins
 export const DEALS = [
   ['avatar', '💎', 'Diamond'], ['avatar', '🦄', 'Unicorn'], ['avatar', '🚀', 'Rocket'], ['avatar', '🤖', 'Robot'], ['avatar', '🥷', 'Ninja'],
   ['color', '#00e5ff', 'Neon Cyan'], ['color', '#ff2bd6', 'Neon Pink'], ['color', '#c0c0c0', 'Silver'],

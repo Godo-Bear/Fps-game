@@ -4,7 +4,7 @@ import { EVAC_HOLD, INFECTED, JUGG_HP, MAPS, MODES, SOLO_MAP, SURVIVORS, quickWh
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../shared/achievements.js';
 import { termsHtml } from '../shared/terms.js';
 import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
-import { coinsForRun } from '../shared/shop.js';
+import { SHOP, coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
 import { candyPiece, isHalloween, jackOLantern, setHalloween } from './halloween.js';
@@ -3340,6 +3340,7 @@ function applyShop() {
   if (it.grenadier) giveGrenades(it.grenadier);
   if (it.scavenger) pickups.topUp(5 + 2 * it.scavenger, player.pos, 0.06);
   giveLoadout();
+  useRunItems();
   if (it.revive > 0) {
     const runId = game.runId;
     account
@@ -3350,6 +3351,30 @@ function applyShop() {
         renderOwned();
         subBanner('Revive token used: Second Wind ready', 2.5);
         if (game.runId === runId) persistRun();
+      })
+      .catch(() => {});
+  }
+}
+// the other run items from the Shop: one of each you own is used up and gives its perk (at its best) or grenades
+function useRunItems() {
+  const runId = game.runId;
+  for (const def of SHOP) {
+    if (def.kind !== 'consumable' || def.id === 'revive' || !(account.items[def.id] > 0)) continue;
+    account
+      .useItem(def.id)
+      .then(() => {
+        if (game.runId !== runId) return;
+        if (def.grenades) giveGrenades(99);
+        const pu = def.powerup && POWERUPS.find((p) => p.id === def.powerup);
+        if (pu) {
+          const rarity = pu.tiers.legendary !== undefined ? 'legendary' : 'epic';
+          pu.apply(stats, pu.tiers[rarity]);
+          const have = owned.get(pu.id);
+          owned.set(pu.id, { def: pu, count: (have?.count || 0) + 1, rarity });
+          renderOwned();
+        }
+        subBanner(`${def.icon} ${def.name} used`, 2.5);
+        persistRun();
       })
       .catch(() => {});
   }

@@ -1,8 +1,8 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
 import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, DEALS, DEAL_PRICE, EVENT_LEVEL, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
-import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { DEAL_ITEMS, SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
@@ -1297,8 +1297,8 @@ export class AccountUI {
             if (candy && locked && !isHalloween()) return '';
             const deal = isDeal(kind, id); // a 50c deal: real money only
             const price = locked && !candy && !deal ? cosmeticPrice(kind, id) : null;
-            const tip = locked ? (candy ? 'Halloween: buy it with candy in the Shop' : deal ? `${DEAL_PRICE} Deal: buy it in the Shop` : `Unlocks at level ${need}, or buy it in the shop`) : esc(label || id);
-            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${tip}">${render(id, label, extra, glow)}${locked ? `<i>${candy ? `🎃 🍬${candy}` : deal ? `💵 ${DEAL_PRICE}` : `Lv ${need} · 🪙${price}`}</i>` : ''}</button>`;
+            const tip = locked ? (candy ? 'Halloween: buy it with candy in the Shop' : deal ? `In the Shop's ${DEAL_PRICE} Deals: ${DEAL_COINS} coins or ${DEAL_PRICE}` : `Unlocks at level ${need}, or buy it in the shop`) : esc(label || id);
+            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${tip}">${render(id, label, extra, glow)}${locked ? `<i>${candy ? `🎃 🍬${candy}` : deal ? `🪙${DEAL_COINS} · 💵${DEAL_PRICE}` : `Lv ${need} · 🪙${price}`}</i>` : ''}</button>`;
           })
           .join('')}
       </div>`;
@@ -1523,18 +1523,29 @@ export class AccountUI {
       ${money ? `<p class="small">${a.loggedIn ? `To buy a 💵 one: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and what you're buying. They give it to you, then it shows up on your account.` : 'Log in first: it goes on your account.'}</p>` : ''}
       <div class="shop-grid">${list.map(card).join('')}</div>`;
   }
-  // 50c Deals: cosmetics you can only get for real money (paid to the owner, who gives them out)
+  // 50c Deals: the run items (also with coins next to the Revive Token) and cosmetics you can't unlock, each for
+  // 50c of real money (paid to the owner, who gives it out) or for coins
   _deals() {
     const a = this.account;
     const note = esc(a.cfg?.payNote || 'paid cash in hand to the site owner');
     const names = { avatar: 'Avatar', color: 'Name colour', title: 'Name tag', crosshair: 'Crosshair', finish: 'Gun skin' };
+    const items = DEAL_ITEMS.map((id) => shopDef(SHOP.find((d) => d.id === id), a.shopEdits))
+      .filter((d) => !d.hidden)
+      .map((d) => {
+        const price = priceOf(d.id, a.items, a.shopEdits);
+        return `<div class="cos-item deal"><span class="big">${esc(d.icon)}</span> <b>${esc(d.name)}</b> <span class="muted small">(you have ${a.items[d.id] || 0})</span> ${price === null ? '<span class="maxed">MAX</span>' : `<button class="btn small" data-buy="${d.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`} <span class="pet-price">💵 ${DEAL_PRICE}</span></div>`;
+      })
+      .join('');
     const cards = DEALS.map(([kind, id, label, color, glow]) => {
       const owned = !!a.items[cosmeticItemId(kind, id)];
       const show = kind === 'avatar' ? `<span class="big">${id}</span> ${esc(label)}` : kind === 'title' ? `<b>${esc(id)}</b>` : `<span class="swatch${glow ? ' glow' : ''}" style="background:${kind === 'finish' ? color : id};${glow ? `--glow:${glow}` : ''}"></span>${esc(label)}${glow ? ' <span class="glow-tag">✨ GLOWS</span>' : ''}`;
-      return `<div class="cos-item deal"><span class="muted small">${names[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<span class="pet-price">💵 ${DEAL_PRICE}</span>`}</div>`;
+      return `<div class="cos-item deal"><span class="muted small">${names[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-buy="${cosmeticItemId(kind, id)}" ${a.coins < DEAL_COINS ? 'disabled' : ''}>🪙 ${DEAL_COINS}</button> <span class="pet-price">💵 ${DEAL_PRICE}</span>`}</div>`;
     }).join('');
-    return `<h4>💵 ${DEAL_PRICE} Deals <span class="muted small">(${DEAL_PRICE} each, real money, ${note} · only here, yours for good)</span></h4>
-      <p class="small">${a.loggedIn ? `To buy one: pay the owner ${DEAL_PRICE} and tell them your player name, <b>${esc(a.name)}</b>, and which one. They give it to you, then wear it from the Locker.` : 'Log in first: it goes on your account.'}</p>
+    return `<h4>💵 ${DEAL_PRICE} Deals <span class="muted small">(each one ${DEAL_PRICE} of real money, ${note}, or buy it with coins)</span></h4>
+      <p class="small">${a.loggedIn ? `For ${DEAL_PRICE}: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and which one. They give it to you. Or press the 🪙 button to buy it with coins.` : 'Log in first: it goes on your account.'}</p>
+      <h5>Run items <span class="muted small">(used at the start of your next run)</span></h5>
+      <div class="cos-list">${items}</div>
+      <h5>Cosmetics <span class="muted small">(yours for good: wear them from the Locker)</span></h5>
       <div class="cos-list">${cards}</div>`;
   }
   _shop() {
@@ -1955,7 +1966,7 @@ export class AccountUI {
       </div>
       <div class="acard"><h4>💵 ${DEAL_PRICE} Deals <span class="muted small">(someone paid you ${DEAL_PRICE}: give them the one they picked)</span></h4>
         <form class="auth inline admin-row" id="admin-give-deal"><input name="u" maxlength="40" placeholder="Player name" required />
-          <select name="item">${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${{ avatar: '🙂 Avatar', color: '🎨 Name colour', title: '🏷️ Name tag', crosshair: '➕ Crosshair', finish: '🔫 Gun skin' }[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</select>
+          <select name="item">${DEAL_ITEMS.map((id) => SHOP.find((d) => d.id === id)).map((d) => `<option value="item:${d.id}">${d.icon} Run item: ${esc(d.name)} (+1)</option>`).join('')}${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${{ avatar: '🙂 Avatar', color: '🎨 Name colour', title: '🏷️ Name tag', crosshair: '➕ Crosshair', finish: '🔫 Gun skin' }[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</select>
           <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE BACK</button></form>
       </div>
       <div class="acard"><h4>🛒 In the shop now</h4><div id="admin-paid-list" class="admin-players"></div>
@@ -2271,7 +2282,8 @@ export class AccountUI {
       e.preventDefault();
       const f = new FormData(dealForm);
       try {
-        msg((await a.adminPlayer(String(f.get('u')).trim(), 'cosmetic', { item: f.get('item'), on: dealOn })).note);
+        const item = String(f.get('item'));
+        msg((await (item.startsWith('item:') ? a.adminPlayer(String(f.get('u')).trim(), 'consumable', { item: item.slice(5), n: dealOn ? 1 : -1 }) : a.adminPlayer(String(f.get('u')).trim(), 'cosmetic', { item, on: dealOn }))).note);
       } catch (err) {
         msg(err.message);
       }

@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.55', date: '21 Oct 2026', title: 'New run items',
+    items: [
+      'New items in the Shop next to the Revive Token, each used up at the start of your next run: 💥 Damage Boost (1500), 🛡️ Armour Plating (1500), 👟 Sprint Boots (1200), 🌿 Med Patch (1200), 💣 Grenade Crate (1000) and 🧨 Explosive Ammo (3000).',
+      'The 💵 50c Deals now have every run item too, and everything there can be bought either way: 50c (paid to the owner) or coins (2500 for the deal cosmetics).',
+      'Admin: the 50c Deals box in Admin → 💵 Shop gives run items as well (+1 each time, TAKE BACK takes one away).',
+    ],
+  },
+  {
     v: '5.54', date: '21 Oct 2026', title: 'Admin: set passwords',
     items: [
       'Admin: 👥 Players → 🔑 Set a password gives a player who forgot theirs a new one (by player name or email, even a made-up email), and says which email they log in with.',

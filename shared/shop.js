@@ -1,5 +1,5 @@
 // Coins and the shop. Shared by the game client and the server so prices always match.
-import { AVATARS, CROSSHAIRS, EVENT_LEVEL, FINISHES, NAME_COLORS, TITLES } from './cosmetics.js';
+import { AVATARS, CROSSHAIRS, DEAL_COINS, EVENT_LEVEL, FINISHES, NAME_COLORS, TITLES, isDeal } from './cosmetics.js';
 
 // Coins earned for a finished game (the server recomputes this from the reported run).
 export function coinsForRun({ mode, wave = 0, kills = 0, headshots = 0, won = false }) {
@@ -22,12 +22,22 @@ export const SHOP = [
   { id: 'gun_sniper', kind: 'gun', gun: 'sniper', name: 'Longshot', icon: '🎯', desc: 'Equip it to spawn with it in every mode, with unlimited ammo', price: 1200 },
   { id: 'gun_launcher', kind: 'gun', gun: 'launcher', name: 'Thumper', icon: '🧨', desc: 'Equip it to spawn with it in every mode, with unlimited ammo', price: 1200 },
   { id: 'revive', kind: 'consumable', name: 'Revive Token', icon: '👼', desc: 'Your next solo run starts with Second Wind', max: 5, price: 400 },
+  // more for your next solo run (powerup: it starts with that perk at its best; grenades: a full grenade belt)
+  { id: 'tok_damage', kind: 'consumable', name: 'Damage Boost', icon: '💥', desc: 'Your next solo run starts with legendary Hollow Points (+55% damage)', max: 5, price: 1500, powerup: 'damage' },
+  { id: 'tok_armor', kind: 'consumable', name: 'Armour Plating', icon: '🛡️', desc: 'Your next solo run starts with legendary Scrap Armor (take 28% less damage)', max: 5, price: 1500, powerup: 'armor' },
+  { id: 'tok_speed', kind: 'consumable', name: 'Sprint Boots', icon: '👟', desc: 'Your next solo run starts with legendary Fleet Foot (run faster)', max: 5, price: 1200, powerup: 'speed' },
+  { id: 'tok_regen', kind: 'consumable', name: 'Med Patch', icon: '🌿', desc: 'Your next solo run starts with legendary Regeneration (heal over time)', max: 5, price: 1200, powerup: 'regen' },
+  { id: 'tok_grenades', kind: 'consumable', name: 'Grenade Crate', icon: '💣', desc: 'Your next solo run starts with a full belt of grenades', max: 5, price: 1000, grenades: true },
+  { id: 'tok_explosive', kind: 'consumable', name: 'Explosive Ammo', icon: '🧨', desc: 'Your next solo run starts with Explosive Rounds (bullets blow up zombies)', max: 5, price: 3000, powerup: 'explosive' },
 ];
 
 // Any locked cosmetic can also be bought instead of levelling up for it.
 const COSMETIC_LISTS = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES };
 export const cosmeticItemId = (kind, id) => `cos_${kind}_${id}`;
+// the items in the 50c Deals too (bought there for real money, or here for coins)
+export const DEAL_ITEMS = SHOP.filter((d) => d.kind === 'consumable').map((d) => d.id);
 export function cosmeticPrice(kind, id) {
+  if (isDeal(kind, id)) return DEAL_COINS; // the 50c deals: real money, or lots of coins
   const row = COSMETIC_LISTS[kind]?.find((r) => r[0] === id);
   return row && row[1] > 1 && row[1] < EVENT_LEVEL ? row[1] * 120 : null; // Halloween ones: candy only
 }
