@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { isHalloween } from './halloween.js';
 
 // The owner's gun models (public/models). Until one has loaded, that gun keeps its block model.
 // Each is turned to point down -z (rotY), scaled to `length` metres, then placed with its muzzle at `muzzleZ`
@@ -217,7 +218,35 @@ export const GUNS = {
     hands: { grip: [0.005, -0.12, 0.08], fore: [-0.02, -0.08, -0.32] },
     ads: [0, -0.08, -0.34],
   },
+  // Halloween guns: only while Halloween is on (found around the maps, like the others). base: the gun whose model
+  // and handling it borrows; finish/glow: its own colour and glow, whatever skin you wear.
+  pumpkin: {
+    id: 'pumpkin', base: 'launcher', halloween: true, name: 'Pumpkin Launcher', tier: 'legendary', icon: '🎃',
+    damage: 200, pellets: 1, fireRate: 1.2, mag: 3, reload: 2.6, reserve: 18,
+    spread: 0.004, auto: false, recoil: 0.06, kick: 1, zoomFov: 58, sound: 'launcher', reloadStyle: 'drum',
+    projectile: { speed: 38, gravity: 10, radius: 5, pumpkin: true },
+    finish: '#e8761a', glow: 0xff8a1a,
+    hands: { grip: [0.005, -0.12, 0.1], fore: [-0.02, -0.09, -0.3] },
+    ads: [0, -0.075, -0.36],
+  },
+  hexrifle: {
+    id: 'hexrifle', base: 'rifle', halloween: true, name: 'Hex Rifle', tier: 'epic', icon: '🔮',
+    damage: 32, pellets: 1, fireRate: 8, mag: 30, reload: 1.9, reserve: 240,
+    spread: 0.006, auto: true, recoil: 0.011, kick: 0.5, zoomFov: 50, sound: 'rifle', reloadStyle: 'mag', sight: 'reddot', pierce: 2,
+    finish: '#2a1640', glow: 0xb06bff,
+    hands: { grip: [0.005, -0.1, 0.11], fore: [-0.02, -0.06, -0.38] },
+    ads: [0, -0.052, -0.36],
+  },
+  boneshot: {
+    id: 'boneshot', base: 'shotgun', halloween: true, name: 'Bone Breaker', tier: 'epic', icon: '💀',
+    damage: 21, pellets: 9, fireRate: 1.5, mag: 8, reload: 0.42, reserve: 40,
+    spread: 0.065, auto: false, recoil: 0.055, kick: 1, zoomFov: 62, sound: 'shotgun', reloadStyle: 'shells', falloff: [14, 44],
+    finish: '#e4dcc4', glow: 0x7dff3a,
+    hands: { grip: [0, -0.1, 0.12], fore: [-0.01, -0.07, -0.34] },
+    ads: [0, -0.045, -0.36],
+  },
 };
+export const HALLOWEEN_GUNS = Object.keys(GUNS).filter((id) => GUNS[id].halloween);
 
 export const TIER_COLOR = { common: 0xcfc6b0, rare: 0x3d8bff, epic: 0xb04dff, legendary: 0xffb020 };
 export const TIER_CSS = { common: '#cfc6b0', rare: 'var(--rare)', epic: 'var(--epic)', legendary: 'var(--legendary)' };
@@ -242,6 +271,8 @@ export const MUTATION_IDS = Object.keys(MUTATIONS);
 export const randomMutation = () => MUTATION_IDS[Math.floor(Math.random() * MUTATION_IDS.length)];
 
 export function rollGun(rand = Math.random) {
+  // Halloween: now and then one of its guns instead
+  if (isHalloween() && rand() < 0.22) return HALLOWEEN_GUNS[Math.floor(rand() * HALLOWEEN_GUNS.length)];
   let r = rand();
   for (const row of GUN_DROP_TABLE) {
     if (r < row.chance) return row.guns[Math.floor(rand() * row.guns.length)];
@@ -275,11 +306,14 @@ const C = (r1, r2, len, seg = 10) => new THREE.CylinderGeometry(r1, r2, len, seg
 const H = Math.PI / 2;
 
 // Builds a gun pointing down -Z. Returns the group plus the parts the reload animations move.
-// finish: hex colour for the metal parts; mutation: id from MUTATIONS (adds a glow).
-export function buildGun(id, { finish = null, mutation = null } = {}) {
-  const out = buildGunBase(id);
-  if (finish || mutation) {
-    const mut = mutation ? MUTATIONS[mutation] : null;
+// finish: hex colour for the metal parts; glow: a skin's glow colour; mutation: id from MUTATIONS (adds a glow).
+export function buildGun(id, { finish = null, glow = null, mutation = null } = {}) {
+  const def = GUNS[id];
+  const out = buildGunBase(def?.base || id);
+  finish = def?.finish || finish;
+  glow = def?.glow ?? glow;
+  if (finish || mutation || glow) {
+    const mut = mutation ? MUTATIONS[mutation] : glow ? { color: typeof glow === 'string' ? parseInt(glow.slice(1), 16) : glow } : null;
     const swap = new Map();
     out.group.traverse((o) => {
       if (!o.isMesh || (o.material !== M.metal && o.material !== M.dark && !o.userData.finishable)) return;

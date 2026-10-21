@@ -3854,3 +3854,13 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
 .candy-shop .coins { color: #ffb347; }
 .cos-item.candy .btn { background: #ff7a1a; border-color: #ff7a1a; color: #1a0e05; }
 #candy-hud { position: fixed; top: 250px; right: 22px; z-index: 6; font-family: 'Black Ops One', sans-serif; font-size: 20px; color: #ffb347; text-shadow: 0 2px 6px #000; pointer-events: none; }
+
+/* Halloween gun skins that glow */
+.swatch.glow {
+  box-shadow: 0 0 6px 2px var(--glow), inset 0 0 0 2px var(--glow);
+}
+.glow-tag {
+  font-size: 0.7em;
+  color: #ffd23a;
+  letter-spacing: 0.05em;
+}

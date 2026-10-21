@@ -1,8 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
-import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun, CANDY_EVENT_MAX, CANDY_RATE, candyPrice } from '../shared/cosmetics.js';
+import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, cleanProfile, unlocked, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun, CANDY_EVENT_MAX, CANDY_RATE, candyPrice } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { SPECIAL_GEAR, TANK_ARMOUR, TANK_FLAG } from '../shared/gear.js';
-import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_THEMES, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
+import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_PRESETS, EVENT_THEMES, SCHEDULE_MINUTES, halloweenEnd, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
@@ -55,6 +55,9 @@ const DAY = 86400000;
 const ONLINE_MS = 3 * 60000;
 const LIVE_MS = 45000;
 // weeks since 5 Jan 2026 (a Monday): the weekly challenge resets every Monday 00:00 UTC
+// what an admin's real-money shop item gives when they hand it out
+const PAID_GIVES = ['none', 'coins', 'candy', 'gun', 'gear', 'cosmetic', 'wolf'];
+
 // paid access: a paid_until date means "until the end of that day" (UTC); empty = no end
 const accessEnded = (paidUntil) => {
   if (!paidUntil) return false;
@@ -259,16 +262,67 @@ export class GameDB extends DurableObject {
     }
   }
 
-  // the event the admin is hosting (admin panel → Events), or null
-  _event() {
+  _config(key, fallback = null) {
     try {
-      const e = JSON.parse(this.sql.exec("SELECT value FROM config WHERE key = 'event'").toArray()[0]?.value || 'null');
-      if (!e || !e.id) return null;
-      if (e.endsAt && Date.now() > e.endsAt) return null; // its time ran out
-      return e;
+      return JSON.parse(this.sql.exec('SELECT value FROM config WHERE key = ?', key).toArray()[0]?.value || 'null') ?? fallback;
     } catch {
-      return null;
+      return fallback;
     }
+  }
+  _setConfig(key, value) {
+    this.sql.exec('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', key, JSON.stringify(value));
+  }
+
+  // the event the admin is hosting (admin panel → Events), or the hourly one when it's that time, or null
+  _event() {
+    const now = Date.now();
+    const e = this._config('event');
+    if (e && e.id && !(e.endsAt && now > e.endsAt)) return e;
+    // its time ran out: its announcement goes too
+    if (e?.id && e.announced && this._announce()?.id === e.id) this.sql.exec("DELETE FROM config WHERE key = 'announce'");
+    // the hourly event: from minute `at` of every hour, for SCHEDULE_MINUTES
+    const s = this._schedule();
+    if (!s.on) return null;
+    const start = Math.floor((now - s.at * 60000) / 3600000) * 3600000 + s.at * 60000;
+    if (now - start >= SCHEDULE_MINUTES * 60000 || s.skip === start || e?.id === start) return null;
+    const p = EVENT_PRESETS[s.preset] || EVENT_PRESETS[0];
+    return this._startEvent({ name: p.name, theme: p.theme || null, boost: p.boost, startedAt: start, endsAt: start + SCHEDULE_MINUTES * 60000, by: 'Every hour', scheduled: true, announce: s.announce });
+  }
+  _schedule() {
+    const s = this._config('schedule', {});
+    return { on: !!s.on, preset: Number(s.preset) || 0, at: Math.max(0, Math.min(59, Math.floor(Number(s.at) || 0))), announce: s.announce !== false, skip: s.skip || 0 };
+  }
+  // puts an event on (replacing any other) and tells everyone if asked
+  _startEvent({ name, theme = null, boost = 1, startedAt = Date.now(), endsAt = 0, by, scheduled = false, announce = true }) {
+    if (theme === 'halloween') endsAt = Math.min(endsAt || Infinity, halloweenEnd(startedAt)); // Halloween stops a week after Halloween, whatever length was picked
+    const first = makeRoomCode(); // one room for everyone: its code goes out with the event, and the first person in opens it
+    const ev = { id: startedAt, name, by, startedAt, endsAt, boost, pieces: 0, announced: announce, room: first, rooms: [first], theme, scheduled };
+    this._setConfig('event', ev);
+    if (announce) {
+      // everyone gets told (until they press OK), on the menu or in a match
+      const left = endsAt ? Math.round((endsAt - Date.now()) / 60000) : 0;
+      const text = theme === 'halloween'
+        ? `🎃 ${name} is LIVE! Every map has gone spooky. Go to Multiplayer and press JOIN EVENT: Red vs Blue vs the pumpkin-head zombies, with double puzzle-piece drops.`
+          : `🎉 ${name} is LIVE${scheduled ? ` for ${left} minutes` : ''}! Go to Multiplayer and press JOIN EVENT: everyone's in one match, Red vs Blue vs the zombies, and kills drop puzzle pieces of new characters.`;
+      this._setConfig('announce', { id: ev.id, text, from: by, at: Date.now() });
+    }
+    return ev;
+  }
+
+  // the season the admin started (Halloween: the whole game themed, candy, its shop and guns), or null once it's over
+  _season() {
+    const s = this._config('season');
+    return s && s.theme && s.endsAt > Date.now() ? s : null;
+  }
+  // is Halloween on (a Halloween event or the season)
+  _halloween() {
+    return this._event()?.theme === 'halloween' || this._season()?.theme === 'halloween';
+  }
+
+  // the admin's real-money shop items (paid to the owner in person; the admin gives them out)
+  _paidItems() {
+    const list = this._config('paidItems', []);
+    return Array.isArray(list) ? list : [];
   }
 
   _updates() {
@@ -563,6 +617,8 @@ export class GameDB extends DurableObject {
         wolfPrice: this._wolfPrice(),
         wolfLevelPrice: this._wolfPrice('wolfLevelPrice'),
         event: this._event(),
+        season: this._season(),
+        paidItems: this._paidItems(),
         features: this._features(),
       });
     }
@@ -816,7 +872,7 @@ export class GameDB extends DurableObject {
       const items = this._items(me);
       const price = typeof body.item === 'string' ? candyPrice(body.item) : null;
       if (price === null || items[body.item]) return err("That can't be bought");
-      if (this._event()?.theme !== 'halloween' && !me.admin) return err('The Halloween shop is closed');
+      if (!this._halloween() && !me.admin) return err('The Halloween shop is closed');
       if ((items.candy || 0) < price) return err('Not enough candy');
       items.candy -= price;
       items[body.item] = 1;
@@ -992,7 +1048,7 @@ export class GameDB extends DurableObject {
       const u = typeof body.username === 'string' ? this._byName(body.username) : null;
       if (!u) return err('No player with that name', 404);
       const action = String(body.action);
-      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces', 'gear'].includes(action)) return err("You can't do that to yourself");
+      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces', 'gear', 'candy', 'cosmetic', 'paid'].includes(action)) return err("You can't do that to yourself");
       if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
       let note = '';
       if (action === 'kick') {
@@ -1078,6 +1134,47 @@ export class GameDB extends DurableObject {
         if (items.pet_lvl >= PET_MAX_LEVEL) items.pet_xp = 0;
         this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
         note = items.pet_lvl === before ? `${u.username}'s wolf is already level ${before}.` : `${u.username}'s 🐺 wolf is now level ${items.pet_lvl}.`;
+      } else if (action === 'candy') {
+        // give (or take, with a minus number) Halloween candy
+        const n = Math.max(-1000000, Math.min(1000000, Math.floor(Number(body.n) || 0)));
+        if (!n) return err('How much candy?');
+        const items = this._items(u);
+        const before = items.candy || 0;
+        items.candy = Math.max(0, before + n);
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
+        note = n > 0 ? `Gave ${n} 🍬 candy to ${u.username} (they have ${items.candy}).` : `Took ${before - items.candy} 🍬 candy from ${u.username} (they have ${items.candy}).`;
+      } else if (action === 'cosmetic') {
+        // give (or take) any cosmetic: the Halloween gun skins and the rest of the candy shop too
+        const id = String(body.item || '');
+        const m = /^cos_(avatar|color|title|crosshair|finish)_(.+)$/.exec(id);
+        if (!m || !unlocked(m[1], m[2], Infinity)) return err('Unknown item');
+        const items = this._items(u);
+        if (body.on) items[id] = 1;
+        else delete items[id];
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
+        note = body.on ? `${u.username} has it now (they wear it from the Locker).` : `Took it from ${u.username}.`;
+      } else if (action === 'paid') {
+        // they paid the owner for one of the real-money shop items: they get what it gives (or it's taken back)
+        const def = this._paidItems().find((i) => i.id === body.id);
+        if (!def) return err('That shop item is gone');
+        const items = this._items(u);
+        let coins = u.coins || 0;
+        const sign = body.on ? 1 : -1;
+        const own = (key) => {
+          if (!key) return;
+          if (body.on) items[key] = 1;
+          else delete items[key];
+        };
+        if (def.give === 'coins') coins = Math.max(0, coins + sign * def.amount);
+        else if (def.give === 'candy') items.candy = Math.max(0, (items.candy || 0) + sign * def.amount);
+        else if (def.give === 'gun' || def.give === 'cosmetic') own(def.what);
+        else if (def.give === 'gear') own(SPECIAL_GEAR.find((x) => x.id === def.what)?.item);
+        else if (def.give === 'wolf') own(PET_ITEM);
+        // how many times they've bought it (shows as owned in their shop)
+        items[`paid_${def.id}`] = Math.max(0, (items[`paid_${def.id}`] || 0) + sign);
+        if (!items[`paid_${def.id}`]) delete items[`paid_${def.id}`];
+        this.sql.exec('UPDATE users SET items = ?, coins = ? WHERE id = ?', JSON.stringify(items), coins, u.id);
+        note = body.on ? `${u.username} got ${def.icon} ${def.name}.` : `Took ${def.icon} ${def.name} back from ${u.username}.`;
       } else return err('Unknown action');
       const after = this._byName(u.username);
       const user = after.id === me.id ? this._publicUser(after, true) : undefined;
@@ -1157,9 +1254,11 @@ export class GameDB extends DurableObject {
     // per event. Admins can collect it with the Halloween preview on, to test.
     if (path === '/event/candy' && method === 'POST') {
       const ev = this._event();
-      const live = ev?.theme === 'halloween';
+      const season = this._season();
+      const live = this._halloween();
       if (!live && !me.admin) return err('No Halloween event is on');
-      const evId = live ? ev.id : 'preview';
+      // the limit is per event, or per day through the season
+      const evId = ev?.theme === 'halloween' ? ev.id : season?.theme === 'halloween' ? `s${season.id}_${dayNumber()}` : 'preview';
       const items = this._items(me);
       const now = Date.now();
       if (items.candy_ev !== evId) {
@@ -1187,12 +1286,64 @@ export class GameDB extends DurableObject {
       const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
       return json({ note: `You have ${items.candy} candy.`, user: this._publicUser(user, true) });
     }
+    // admin: start (or end) a season: Halloween until a week after Halloween, or the day the admin picks
+    if (path === '/admin/season' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      if (body.action === 'stop') {
+        const was = this._season();
+        this.sql.exec("DELETE FROM config WHERE key = 'season'");
+        return json({ season: null, note: was ? 'The Halloween season is over.' : 'No season was on.' });
+      }
+      const now = Date.now();
+      // until the end of the day picked (UTC), or the end of 7 November
+      const day = /^\d{4}-\d{2}-\d{2}$/.test(String(body.until || '')) ? Date.parse(`${body.until}T00:00:00Z`) + 86400000 : halloweenEnd(now);
+      if (!(day > now)) return err('Pick a day in the future');
+      const old = this._season();
+      const season = { id: old?.id || now, theme: 'halloween', by: me.username, startedAt: old?.startedAt || now, endsAt: day };
+      this._setConfig('season', season);
+      if (!old && body.announce !== false)
+        this._setConfig('announce', { id: now, text: `🎃 HALLOWEEN IS HERE! Every map has gone spooky, zombies drop 🍬 candy, Halloween guns are hiding around the maps and the 🎃 Halloween shop is open (top of the Shop) with gun skins you can only get now. On until ${new Date(day - 1).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' })}.`, from: me.username, at: now });
+      return json({ season, note: `Halloween is on for everyone until the end of ${new Date(day - 1).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' })} (UTC).` });
+    }
+    // admin: the real-money shop items: add one (or change it, same id) or take it out of the shop
+    if (path === '/admin/paid-items' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      let list = this._paidItems();
+      if (body.action === 'remove') {
+        list = list.filter((i) => i.id !== body.id);
+        this._setConfig('paidItems', list);
+        return json({ paidItems: list, note: 'Taken out of the shop. Anyone who bought it keeps what it gave them.' });
+      }
+      const clean = (v, n) => String(v || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, n);
+      const item = {
+        id: /^[a-z0-9]{4,12}$/.test(body.id) ? body.id : Math.random().toString(36).slice(2, 10),
+        name: clean(body.name, 40),
+        icon: clean(body.icon, 8) || '💵',
+        price: clean(body.price, 20),
+        desc: clean(body.desc, 200),
+        give: PAID_GIVES.includes(body.give) ? body.give : 'none',
+        amount: Math.max(0, Math.min(10000000, Math.floor(Number(body.amount) || 0))),
+        what: clean(body.what, 40),
+      };
+      if (!item.name || !item.price) return err('It needs a name and a price');
+      if (item.give === 'gear' && !SPECIAL_GEAR.some((g) => g.id === item.what)) return err('Pick which special gear');
+      if (item.give === 'gun' && !SHOP.some((d) => d.kind === 'gun' && d.id === item.what)) return err('Pick which gun');
+      if (item.give === 'cosmetic' && !/^cos_(avatar|color|title|crosshair|finish)_.+$/.test(item.what)) return err('Pick which cosmetic');
+      const at = list.findIndex((i) => i.id === item.id);
+      if (at >= 0) list[at] = item;
+      else if (list.length >= 30) return err('The shop has 30 of these already: take one out first');
+      else list.push(item);
+      this._setConfig('paidItems', list);
+      return json({ paidItems: list, item, note: `${item.icon} ${item.name} (${item.price}) is in the shop. When someone pays you, give it to them here.` });
+    }
     // admin: host an event (every server: players join from the menu), or end it
     if (path === '/admin/event' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);
       if (body.action === 'stop') {
         const ev = this._event();
         this.sql.exec("DELETE FROM config WHERE key = 'event'");
+        // the hourly one stays off until the next hour
+        if (ev?.scheduled) this._setConfig('schedule', { ...this._schedule(), skip: ev.id });
         if (ev?.announced) this.sql.exec("DELETE FROM config WHERE key = 'announce'");
         return json({ note: ev ? `${ev.name} has ended.` : 'No event was on.', event: null });
       }
@@ -1201,24 +1352,24 @@ export class GameDB extends DurableObject {
         const minutes = Math.max(0, Math.min(10080, Math.floor(Number(body.minutes) || 0)));
         const boost = DROP_BOOSTS.some(([v]) => v === Number(body.boost)) ? Number(body.boost) : 1;
         const now = Date.now();
-        // one room for everyone: its code goes out with the event, and the first person in opens it
-        const first = makeRoomCode();
         const theme = EVENT_THEMES.includes(body.theme) ? body.theme : null; // e.g. halloween: how every map looks while it's on
-        const ev = { id: now, name, by: me.username, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, boost, pieces: 0, announced: body.announce !== false, room: first, rooms: [first], theme };
-        this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES ('event', ?)", JSON.stringify(ev));
-        if (ev.announced) {
-          // everyone gets told (until they press OK), on the menu or in a match
-          const text = theme === 'halloween'
-            ? `🎃 ${name} is LIVE! Every map has gone spooky. Go to Multiplayer and press JOIN EVENT: Red vs Blue vs the pumpkin-head zombies, with double puzzle-piece drops.`
-            : `🎉 ${name} is LIVE! Go to Multiplayer and press JOIN EVENT: everyone's in one match, Red vs Blue vs the zombies, and kills drop puzzle pieces of new characters.`;
-          const a = { id: now, text, from: me.username, at: now };
-          this.sql.exec("INSERT INTO config (key, value) VALUES ('announce', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify(a));
-        }
+        const ev = this._startEvent({ name, theme, boost, startedAt: now, endsAt: minutes ? now + minutes * 60000 : 0, by: me.username, announce: body.announce !== false });
         return json({ note: `${name} is live${minutes ? ` for ${minutes >= 60 ? `${minutes / 60} hour(s)` : `${minutes} minutes`}` : ' until you end it'}.`, event: ev });
+      }
+      // the hourly event: on/off, which one, which minute
+      if (body.action === 'schedule') {
+        const s = this._schedule();
+        if ('on' in body) s.on = !!body.on;
+        if ('preset' in body && EVENT_PRESETS[Number(body.preset)]) s.preset = Number(body.preset);
+        if ('at' in body) s.at = Math.max(0, Math.min(59, Math.floor(Number(body.at) || 0)));
+        if ('announce' in body) s.announce = !!body.announce;
+        this._setConfig('schedule', s);
+        const p = EVENT_PRESETS[s.preset];
+        return json({ schedule: s, event: this._event(), note: s.on ? `${p.name} now runs every hour at :${String(s.at).padStart(2, '0')} for ${SCHEDULE_MINUTES} minutes.` : 'The hourly event is off.' });
       }
       // how it's going: event rooms and the players in them
       const rooms = [...this.rooms.values()].filter((r) => r.mode === 'event' && Date.now() - r.at < 90000);
-      return json({ event: this._event(), rooms: rooms.length, players: rooms.reduce((n, r) => n + r.players, 0) });
+      return json({ event: this._event(), schedule: this._schedule(), season: this._season(), rooms: rooms.length, players: rooms.reduce((n, r) => n + r.players, 0) });
     }
     // admin: every room on every server, private and event ones too
     if (path === '/admin/rooms' && method === 'POST') {
@@ -1435,7 +1586,7 @@ export class GameDB extends DurableObject {
       const groupUnread = this.sql
         .exec('SELECT COUNT(*) AS n FROM group_messages g JOIN chat_members c ON c.grp = g.grp WHERE c.user = ? AND g.id > c.last_read AND g.sender != ?', me.id, me.id)
         .one().n;
-      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce(), event: this._event(), features: this._features() });
+      return json({ unread, requests, timeoutMins: t, groupUnread, announce: this._announce(), event: this._event(), season: this._season(), paidItems: this._paidItems(), features: this._features() });
     }
     if (path === '/messages' && (method === 'GET' || method === 'POST')) {
       const name = method === 'GET' ? url.searchParams.get('with') : body.to;

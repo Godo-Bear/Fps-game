@@ -32,10 +32,13 @@ export const FINISHES = [
 ];
 
 // Halloween cosmetics: only with candy (collected during the Halloween event), never by level or coins.
-// Yours for good once bought. [kind, id, label, candy, extra (a finish's colour)]
+// Yours for good once bought (or an admin gives them). [kind, id, label, candy, extra (a finish's colour), glow (a gun
+// skin that glows: its colour)]
 export const EVENT_LEVEL = 9999; // their unlock level: out of reach
 export const CANDY_SHOP = [
   ['finish', 'pumpkin', 'Pumpkin', 150, '#e8761a'], ['finish', 'bone', 'Bone', 200, '#e4dcc4'], ['finish', 'spectral', 'Spectral', 300, '#7a3cff'],
+  ['finish', 'jackfire', 'Jack-o\'-Fire', 400, '#3a1c08', '#ff7a1a'], ['finish', 'ecto', 'Ectoplasm', 450, '#1c2a18', '#6dff3a'],
+  ['finish', 'bloodmoon', 'Blood Moon', 550, '#3a0a0e', '#ff2a3a'], ['finish', 'phantom', 'Phantom', 700, '#1a1030', '#b06bff'],
   ['avatar', '🎃', 'Jack-o\'-lantern', 40], ['avatar', '👻', 'Ghost', 40], ['avatar', '🦇', 'Bat', 60], ['avatar', '🕷️', 'Spider', 60], ['avatar', '🧛', 'Vampire', 90],
   ['title', 'Ghoul', 'Ghoul', 80], ['title', 'Candy Hoarder', 'Candy Hoarder', 120], ['title', 'Night Stalker', 'Night Stalker', 150], ['title', 'Pumpkin King', 'Pumpkin King', 250],
   ['color', '#ff7a1a', 'Pumpkin', 60], ['color', '#9b5cff', 'Haunted', 60], ['color', '#7dff3a', 'Slime', 60],
@@ -48,9 +51,9 @@ export const CANDY_DROPS = { zombie: [0.3, 1], special: [0.6, 2], boss: [1, 15] 
 export const CANDY_RATE = 1.2;
 export const CANDY_EVENT_MAX = 3000;
 // they join the normal lists (out of reach by level) so equipping and showing them works like any other
-for (const [kind, id, label, , extra] of CANDY_SHOP) {
+for (const [kind, id, label, , extra, glow] of CANDY_SHOP) {
   const list = { avatar: AVATARS, color: NAME_COLORS, title: TITLES, crosshair: CROSSHAIRS, finish: FINISHES }[kind];
-  list.push(kind === 'avatar' || kind === 'title' ? [id, EVENT_LEVEL] : kind === 'finish' ? [id, EVENT_LEVEL, label, extra] : [id, EVENT_LEVEL, label]);
+  list.push(kind === 'avatar' || kind === 'title' ? [id, EVENT_LEVEL] : kind === 'finish' ? [id, EVENT_LEVEL, label, extra, glow] : [id, EVENT_LEVEL, label]);
 }
 
 // Pets: bought with real money (paid to the owner, who switches it on from the admin panel: items.pet_wolf).

@@ -59,3 +59,19 @@ export const EVENT_PRESETS = [
 export const EVENT_THEMES = ['halloween'];
 // Event rooms hold this many; when one fills up, the next player opens a new one (same event, same drops).
 export const EVENT_MAX_PLAYERS = 20;
+
+// The hourly event (admin panel → Events → Every hour): the picked event (Outfit Hunt to start with) runs for
+// SCHEDULE_MINUTES from minute `at` of every hour (UTC, so the same minute everywhere but half-hour time zones),
+// then a break until the next hour, for good (until the admin turns it off). An event the admin starts by hand
+// wins while it's on.
+export const SCHEDULE_MINUTES = 30;
+
+// Seasons (admin panel → Events → Halloween season): the whole game in a theme, with its candy, shop and special
+// guns, from when the admin starts it until its end (Halloween: a week after, the end of 7 November). The Halloween
+// Night event can't run past that either.
+export function halloweenEnd(now = Date.now()) {
+  const y = new Date(now).getUTCFullYear();
+  let end = Date.UTC(y, 10, 8); // 8 Nov 00:00 UTC = the end of 7 Nov
+  if (end < now) end = Date.UTC(y + 1, 10, 8);
+  return end;
+}

@@ -7,7 +7,7 @@ import { MAX_SAVES, SAVE_NAME_MAX, cleanSaveName } from '../shared/saves.js';
 import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
-import { candyPiece, isHalloween, setHalloween } from './halloween.js';
+import { candyPiece, isHalloween, jackOLantern, setHalloween } from './halloween.js';
 import { priceTag } from '../shared/terms.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
@@ -1179,7 +1179,7 @@ const grenadeMat = new THREE.MeshStandardMaterial({ color: 0x4a5530, roughness: 
 const _step = new THREE.Vector3();
 function launchGrenade(dir) {
   const def = weapon.def;
-  const mesh = new THREE.Mesh(grenadeGeo, grenadeMat);
+  const mesh = def.projectile.pumpkin ? jackOLantern(0.42) : new THREE.Mesh(grenadeGeo, grenadeMat); // the Pumpkin Launcher fires jack-o'-lanterns
   mesh.position.copy(_muzzle);
   scene.add(mesh);
   const vel = dir.clone().multiplyScalar(def.projectile.speed);
@@ -1188,6 +1188,7 @@ function launchGrenade(dir) {
     mesh, vel, life: 6,
     radius: def.projectile.radius, gravity: def.projectile.gravity,
     damage: weapon.damage(stats),
+    pumpkin: !!def.projectile.pumpkin,
   });
 }
 
@@ -1210,7 +1211,7 @@ function updateProjectiles(dt) {
     }
     if (at || p.life <= 0) {
       const c = at || pos;
-      explodeAt(c, p.radius, p.damage);
+      explodeAt(c, p.radius, p.damage, p.pumpkin ? { color: [0xff8a1a, 0xffd23a, 0xe8761a] } : undefined);
       if (game.mode === 'mp') {
         mp.send({ t: 'fx', k: 'boom', p: [c.x, c.y, c.z].map((v) => Math.round(v * 10) / 10) }); // everyone sees it go off
         // splash damage against other players
@@ -1226,7 +1227,7 @@ function updateProjectiles(dt) {
     }
     pos.add(_step);
     p.mesh.lookAt(pos.x + p.vel.x, pos.y + p.vel.y, pos.z + p.vel.z);
-    if (Math.random() < 0.6) effects.burst(pos, { count: 1, color: [0x8a8070, 0x6a645a], speed: 0.4, size: 0.12, life: 0.5, grav: -1, up: 0.5 });
+    if (Math.random() < 0.6) effects.burst(pos, { count: 1, color: p.pumpkin ? [0xff8a1a, 0xffd23a] : [0x8a8070, 0x6a645a], speed: 0.4, size: 0.12, life: 0.5, grav: -1, up: 0.5 });
   }
 }
 
@@ -2584,6 +2585,7 @@ function updateHud(dt) {
     }
   }
   for (const m of medkits) if (m.g.visible || m.pack) marks.push({ x: m.g.position.x, z: m.g.position.z, color: '#ffffff', r: 2.2 });
+  for (const d of ev.drops) marks.push({ x: d.g.position.x, z: d.g.position.z, color: '#ffd34d', r: 4.5, shape: 'diamond' }); // puzzle pieces
   for (const i of pickups.items) marks.push({ x: i.root.position.x, z: i.root.position.z, color: i.mut ? MUTATIONS[i.mut].css : { rare: '#3d8bff', epic: '#b04dff', legendary: '#ffb020' }[GUNS[i.id].tier], r: 3, shape: 'diamond' });
   minimap.draw(player, marks);
 }
@@ -2611,7 +2613,7 @@ function applyProfile() {
   if (CHARACTERS_LIVE || account.admin) setArmLook(p.look);
   document.documentElement.style.setProperty('--xh', p.crosshair);
   const fin = FINISHES.find((f) => f[0] === p.finish);
-  weapon.setFinish(fin && fin[0] !== 'standard' ? fin[3] : null);
+  weapon.setFinish(fin && fin[0] !== 'standard' ? fin[3] : null, fin?.[4] || null); // [4]: a Halloween skin's glow
   // gun mastery skins
   const m = account.mastery;
   const skins = {};
@@ -2738,7 +2740,37 @@ const PIECE_SHAPE = (() => {
   return new THREE.ExtrudeGeometry(s, { depth: 0.08, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 2 });
 })();
 const pieceMat = new THREE.MeshStandardMaterial({ color: 0xffd34d, emissive: 0xffa000, emissiveIntensity: 0.9, roughness: 0.3, metalness: 0.4 });
-const beamMat = new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.35, depthWrite: false });
+const beamMat = new THREE.MeshBasicMaterial({ color: 0xffa000, transparent: true, opacity: 0.6, depthWrite: false });
+const ringMat = new THREE.MeshBasicMaterial({ color: 0xff9000, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
+// a glowing 🧩 marker that shows through walls and stays the same size on screen, so a drop is easy to find
+const pieceMarkMat = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  const grad = x.createRadialGradient(64, 64, 8, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(255,220,90,0.95)');
+  grad.addColorStop(0.45, 'rgba(255,170,0,0.45)');
+  grad.addColorStop(1, 'rgba(255,170,0,0)');
+  x.fillStyle = grad;
+  x.fillRect(0, 0, 128, 128);
+  // a jigsaw piece: a square with a knob on top and on the right, outlined dark so it shows on snow and sky
+  x.beginPath();
+  x.moveTo(40, 46);
+  x.lineTo(56, 46);
+  x.arc(64, 40, 10, Math.PI * 0.8, Math.PI * 0.2, false);
+  x.lineTo(88, 46);
+  x.lineTo(88, 62);
+  x.arc(94, 70, 10, Math.PI * 1.3, Math.PI * 0.7, false);
+  x.lineTo(88, 94);
+  x.lineTo(40, 94);
+  x.closePath();
+  x.fillStyle = '#ffd34d';
+  x.fill();
+  x.lineWidth = 6;
+  x.strokeStyle = '#3a2200';
+  x.stroke();
+  return new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false });
+})();
 // a kill might drop a piece (rarer for plain zombies, always for a boss), boosted by the admin's drop rate
 function eventDropChance(kind, x, z) {
   const boost = account.event?.boost || 1;
@@ -2747,14 +2779,25 @@ function eventDropChance(kind, x, z) {
   const g = new THREE.Group();
   const piece = new THREE.Mesh(PIECE_SHAPE, pieceMat);
   piece.position.z = -0.05;
+  piece.scale.setScalar(1.6);
   g.add(piece);
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.3, 14, 10, 1, true), beamMat);
-  beam.position.y = 7;
+  // easy to spot: a tall bright beam, a pulsing ring on the ground and a marker you see through walls
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.45, 40, 12, 1, true), beamMat);
+  beam.position.y = 20;
   g.add(beam);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.15, 32), ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = -0.85;
+  g.add(ring);
+  const mark = new THREE.Sprite(pieceMarkMat);
+  mark.scale.setScalar(0.11);
+  mark.position.y = 1.4;
+  mark.renderOrder = 999;
+  g.add(mark);
   const y = Math.max(heightAt(x, z), world.colliders.floorAt(x, z, 0.2, 50)) + 0.9;
   g.position.set(x, y, z);
   scene.add(g);
-  ev.drops.push({ g, piece, y, t: 45 });
+  ev.drops.push({ g, piece, ring, y, t: 45 });
   subBanner('🧩 A puzzle piece dropped! Grab it', 1.6);
   audio.pickup?.();
 }
@@ -2764,6 +2807,7 @@ function updateEventDrops(dt) {
     const d = ev.drops[i];
     d.t -= dt;
     d.piece.rotation.y += dt * 2;
+    d.ring.scale.setScalar(1 + ((time * 1.5) % 1) * 0.8);
     d.g.position.y = d.y + Math.sin(time * 3) * 0.12;
     const near = isEvent() && !player.dead && Math.hypot(player.pos.x - d.g.position.x, player.pos.z - d.g.position.z) < 1.8 && Math.abs(player.pos.y + 0.9 - d.g.position.y) < 2.5;
     if (d.t > 0 && !near && isEvent()) continue;
@@ -2956,7 +3000,7 @@ try {
 } catch {
   /* private window */
 }
-const wantHalloween = () => account.event?.theme === 'halloween' || (account.admin && halloweenPreview);
+const wantHalloween = () => account.event?.theme === 'halloween' || account.season?.theme === 'halloween' || (account.admin && halloweenPreview);
 function syncHalloween() {
   setHalloween(wantHalloween());
 }
@@ -5524,7 +5568,7 @@ if (import.meta.env.DEV) {
       return savedGames;
     },
     bots, botTick: (n = 1, dt = 0.05) => { for (let i = 0; i < n; i++) bots.update(dt, { mp, world, player, effects, audio, zombies, hitZombie: botHitZombie }); },
-    get wolf() { return myWolf; }, wolfHunt, effects, killedBy, candy, ev, worldTick, isEvent, tank,
+    get wolf() { return myWolf; }, wolfHunt, eventDropChance, effects, killedBy, candy, ev, worldTick, isEvent, tank,
     game, player, weapon, mp, account, accountUI, defend, structures, spectate, controls, get weather() { return weather; }, stats: () => stats, refreshSave, startGame, onPlayerHit, beginWave, openChoice, choose, loadMap, POWERUPS, scene, camera, renderer, levelFromXp,
   };
 }

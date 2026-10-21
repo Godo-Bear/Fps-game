@@ -2,6 +2,17 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.46', date: '21 Oct 2026', title: 'Easier-to-find puzzle pieces',
+    items: [
+      'Event puzzle pieces are much easier to spot: a bigger piece, a tall orange beam, a pulsing ring on the ground, a marker you can see through walls and a dot on the minimap.',
+      'The Shop can now have items bought with real money (paid to the owner, like the wolf). They show up there when the owner adds some.',
+      'Admin: Events → Every hour runs the piece-hunt event by itself: 30 minutes on, then a 30-minute break, every hour, until it is turned off. START IT NOW runs it straight away if you are late; ending it skips just that hour.',
+      'Admin: the seasonal event can now run as a whole season that ends by itself on the day you pick (a week after the holiday to start with), with its own special guns and glowing gun skins.',
+      'Admin: give or take that season\'s rewards and gun skins (and how many sweets someone has) for any player.',
+      'Admin: a new 💵 Shop tab: add real-money items to the Shop (coins, gun skins, guns, special gear, the wolf, or anything else), then give them to whoever paid you.',
+    ],
+  },
+  {
     v: '5.45', date: '21 Oct 2026', title: 'Admin: guns in every mode',
     items: [
       'Admin: player names can now show next to emails in Supabase (one-time setup, see the guide).',

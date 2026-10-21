@@ -1,15 +1,28 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
-import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
+import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, EVENT_LEVEL, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
-import { GUNS } from './guns.js';
+import { GUNS, HALLOWEEN_GUNS } from './guns.js';
 import { ACHIEVEMENTS } from '../shared/achievements.js';
 import { priceTag, termsHtml } from '../shared/terms.js';
 import { isHalloween } from './halloween.js';
+
+// what an admin's real-money shop item can give: [value for the form, label]. value is give or give:what
+const PAID_OPTIONS = [
+  ['coins', '🪙 Coins (how many below)'], ['candy', '🍬 Candy (how many below)'], ['wolf', '🐺 The wolf companion'],
+  ...SHOP.filter((d) => d.kind === 'gun').map((d) => [`gun:${d.id}`, `🔫 Gun: ${d.name}`]),
+  ...SPECIAL_GEAR.map((g) => [`gear:${g.id}`, `${g.icon} Special gear: ${g.name}`]),
+  ...CANDY_SHOP.map(([kind, id, label]) => [`cosmetic:cos_${kind}_${id}`, `🎃 ${kind === 'finish' ? 'Gun skin' : kind[0].toUpperCase() + kind.slice(1)}: ${kind === 'avatar' ? `${id} ` : ''}${label}`]),
+  ['none', '✨ Something else (you sort it out)'],
+];
+function paidGives(i) {
+  if (i.give === 'coins' || i.give === 'candy') return `${i.amount} ${i.give === 'coins' ? '🪙 coins' : '🍬 candy'}`;
+  return (PAID_OPTIONS.find(([v]) => v === (i.what ? `${i.give}:${i.what}` : i.give))?.[1] || '').replace(/ \(.*\)$/, '');
+}
 
 const TOKEN_KEY = 'deadplains.token';
 const GUEST_KEY = 'deadplains.guest';
@@ -468,9 +481,16 @@ export class Account {
       return this._setUnread({});
     }
     try {
-      const { unread, requests, timeoutMins, groupUnread, announce, event, features } = await this._api('/messages/unread');
+      const { unread, requests, timeoutMins, groupUnread, announce, event, season, paidItems, features } = await this._api('/messages/unread');
       this._setEvent(event || null);
-      if (features && this.cfg) this.cfg.features = features; // a feature an admin just deployed
+      if (this.cfg) {
+        if (features) this.cfg.features = features; // a feature an admin just deployed
+        if (paidItems) this.cfg.paidItems = paidItems;
+        if (JSON.stringify(season || null) !== JSON.stringify(this.cfg.season || null)) {
+          this.cfg.season = season || null;
+          this._changed();
+        }
+      }
       this.timeoutMins = timeoutMins || 0;
       this._setAnnounce(announce || null);
       this.groupUnread = groupUnread || 0;
@@ -570,6 +590,27 @@ export class Account {
   get event() {
     const e = this.liveEvent !== undefined ? this.liveEvent : this.cfg?.event || null;
     return e && (!e.endsAt || e.endsAt > Date.now()) ? e : null;
+  }
+  // the season the admin started (Halloween until a week after), or null
+  get season() {
+    const s = this.cfg?.season;
+    return s && s.endsAt > Date.now() ? s : null;
+  }
+  async adminSeason(body) {
+    const r = await this._api('/admin/season', { method: 'POST', body });
+    if (this.cfg) this.cfg.season = r.season;
+    this._changed();
+    return r;
+  }
+  // the admin's real-money shop items: [{ id, name, icon, price, desc, give, amount, what }]
+  get paidItems() {
+    return this.cfg?.paidItems || [];
+  }
+  async adminPaidItems(body) {
+    const r = await this._api('/admin/paid-items', { method: 'POST', body });
+    if (this.cfg) this.cfg.paidItems = r.paidItems;
+    this._changed();
+    return r;
   }
   _setEvent(e) {
     if (JSON.stringify(e) === JSON.stringify(this.liveEvent)) return;
@@ -1193,14 +1234,14 @@ export class AccountUI {
       <h4>${title}</h4>
       <div class="pick-row" data-kind="${kind}">
         ${list
-          .map(([id, need, label, extra]) => {
+          .map(([id, need, label, extra, glow]) => {
             const locked = need > lvl && !a.items[cosmeticItemId(kind, id)];
             // Halloween ones: only for candy, and only shown while it's on (or once you have them)
             const candy = need >= EVENT_LEVEL ? CANDY_SHOP.find(([k, i]) => k === kind && i === id)?.[3] : null;
             if (candy && locked && !isHalloween()) return '';
             const price = locked && !candy ? cosmeticPrice(kind, id) : null;
             const tip = locked ? (candy ? 'Halloween: buy it with candy in the Shop' : `Unlocks at level ${need}, or buy it in the shop`) : esc(label || id);
-            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${tip}">${render(id, label, extra)}${locked ? `<i>${candy ? `🎃 🍬${candy}` : `Lv ${need} · 🪙${price}`}</i>` : ''}</button>`;
+            return `<button class="pick ${p[kind] === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-id="${esc(id)}" ${locked ? 'disabled' : ''} title="${tip}">${render(id, label, extra, glow)}${locked ? `<i>${candy ? `🎃 🍬${candy}` : `Lv ${need} · 🪙${price}`}</i>` : ''}</button>`;
           })
           .join('')}
       </div>`;
@@ -1211,7 +1252,7 @@ export class AccountUI {
       ${section('color', 'Name colour', NAME_COLORS, (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
       ${section('title', 'Title', TITLES, (id) => esc(id))}
       ${section('crosshair', 'Crosshair', CROSSHAIRS, (id, label) => `<span class="swatch" style="background:${id}"></span>${label}`)}
-      ${section('finish', 'Gun finish', FINISHES, (id, label, color) => `<span class="swatch" style="background:${color}"></span>${label}`)}
+      ${section('finish', 'Gun finish', FINISHES, (id, label, color, glow) => `<span class="swatch${glow ? ' glow' : ''}" style="background:${color};${glow ? `--glow:${glow}` : ''}"></span>${label}`)}
       ${this._petPicker(p)}
       <h4>Quick chat wheel <span class="muted small">(press Z in game · up to ${QUICK_LEN} letters each · leave one empty for the default)</span></h4>
       <form id="quick-form" class="quick-chat">
@@ -1391,15 +1432,28 @@ export class AccountUI {
   _candyShop() {
     const a = this.account;
     const names = { avatar: 'Avatar', color: 'Name colour', title: 'Title', crosshair: 'Crosshair', finish: 'Gun finish' };
-    const cards = CANDY_SHOP.map(([kind, id, label, price, color]) => {
+    const cards = CANDY_SHOP.map(([kind, id, label, price, color, glow]) => {
       const owned = !!a.items[cosmeticItemId(kind, id)] || a.unlockLevel >= EVENT_LEVEL;
-      const show = kind === 'avatar' ? `<span class="big">${id}</span>` : kind === 'color' || kind === 'crosshair' ? `<span class="swatch" style="background:${id}"></span>${esc(label)}` : kind === 'finish' ? `<span class="swatch" style="background:${color}"></span>${esc(label)}` : `<b>${esc(id)}</b>`;
-      return `<div class="cos-item candy"><span class="muted small">${names[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-candy="${cosmeticItemId(kind, id)}" ${a.candy < price ? 'disabled' : ''}>🍬 ${price}</button>`}</div>`;
+      const show = kind === 'avatar' ? `<span class="big">${id}</span>` : kind === 'color' || kind === 'crosshair' ? `<span class="swatch" style="background:${id}"></span>${esc(label)}` : kind === 'finish' ? `<span class="swatch${glow ? ' glow' : ''}" style="background:${color};${glow ? `--glow:${glow}` : ''}"></span>${esc(label)}${glow ? ' <span class="glow-tag">✨ GLOWS</span>' : ''}` : `<b>${esc(id)}</b>`;
+      return `<div class="cos-item candy"><span class="muted small">${glow ? 'Halloween gun skin' : names[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-candy="${cosmeticItemId(kind, id)}" ${a.candy < price ? 'disabled' : ''}>🍬 ${price}</button>`}</div>`;
     }).join('');
     return `<div class="candy-shop"><div class="shop-head"><span class="coins big">🍬 ${a.candy}</span>
-        <span><b>🎃 HALLOWEEN SHOP</b> <span class="muted">· only while Halloween is on · zombies drop candy (bosses a big pile) · yours for good</span></span></div>
+        <span><b>🎃 HALLOWEEN SHOP</b> <span class="muted">· only while Halloween is on${a.season ? ` (until the end of ${esc(new Date(a.season.endsAt - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' }))})` : ''} · zombies drop candy (bosses a big pile) · yours for good · Halloween guns (${HALLOWEEN_GUNS.map((g) => GUNS[g].icon).join(' ')}) hide around the maps</span></span></div>
       ${a.loggedIn ? '' : '<p class="muted small">Log in to collect candy and spend it.</p>'}
       <div class="cos-list">${cards}</div></div>`;
+  }
+  // the admin's real-money items: paid to the owner in person, who hands them out
+  _paidShop() {
+    const a = this.account;
+    if (!a.paidItems.length) return '';
+    const note = esc(a.cfg?.payNote || 'paid cash in hand to the site owner');
+    const cards = a.paidItems.map((i) => {
+      const have = a.items[`paid_${i.id}`] || 0;
+      return `<div class="shop-card"><div class="si">${esc(i.icon)}</div><div class="sn">${esc(i.name)}</div><div class="sd">${esc(i.desc || paidGives(i))}</div>${have ? `<div class="owned-count">Bought${have > 1 ? ` ×${have}` : ''} ✓</div>` : ''}<span class="pet-price">${esc(i.price)}</span></div>`;
+    });
+    return `<h4>💵 Real money <span class="muted small">(${note})</span></h4>
+      <p class="small">${a.loggedIn ? `To buy one: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and what you're buying. They give it to you, then it shows up on your account.` : 'Log in first: it goes on your account.'}</p>
+      <div class="shop-grid">${cards.join('')}</div>`;
   }
   _shop() {
     const a = this.account;
@@ -1446,6 +1500,7 @@ export class AccountUI {
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>
       <h4>Items</h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>
+      ${this._paidShop()}
       <h4>🐺 Pets <span class="muted small">(real money)</span></h4>
       ${this._petPicker({ ...a.profile }, true)}
       <h4>Cosmetics <span class="muted small">(skip the level requirement)</span></h4>
@@ -1508,7 +1563,7 @@ export class AccountUI {
     const solo = act && act.inSolo();
     const mp = act && act.inMP();
     const sec = this.adminSec || 'players';
-    const tabs = [['players', '👥 Players'], ['game', '🎮 Game'], ['mp', '🌐 Multiplayer'], ['events', '🎉 Events'], ['me', '🛠️ Account & server']];
+    const tabs = [['players', '👥 Players'], ['game', '🎮 Game'], ['mp', '🌐 Multiplayer'], ['events', '🎉 Events'], ['shop', '💵 Shop'], ['me', '🛠️ Account & server']];
     this.body.innerHTML = `
       <div class="asubtabs">${tabs.map(([id, n]) => `<button class="chipbtn ${id === sec ? 'on' : ''}" data-asec="${id}">${n}</button>`).join('')}</div>
       <div id="admin-msg" class="msg admin-msg"></div>
@@ -1655,11 +1710,34 @@ export class AccountUI {
         <p class="muted small" id="admin-event-desc">${esc(EVENT_PRESETS[0].desc)}</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-event-stop">⏹ END THE EVENT NOW</button></div>
       </div>
-      <div class="acard"><h4>🎃 Halloween <span class="muted small">(nobody sees it until you start the Halloween Night event above)</span></h4>
+      <div class="acard"><h4>⏰ Every hour <span class="muted small">(the third-person piece hunt by itself: ${SCHEDULE_MINUTES} minutes on, then a ${60 - SCHEDULE_MINUTES}-minute break, every hour, never stopping until you turn it off)</span></h4>
+        <div id="admin-sched-status" class="muted small"></div>
+        <form class="auth inline admin-row" id="admin-sched">
+          <select name="preset" title="Which event">${EVENT_PRESETS.map((p, i) => `<option value="${i}">${p.theme === 'halloween' ? '🎃' : '🧩'} ${esc(p.name)}</option>`).join('')}</select>
+          <label class="small">at minute <input name="at" type="number" min="0" max="59" value="0" style="width:4.5em" /></label>
+          <label class="small"><input type="checkbox" name="announce" checked /> Announce each one</label>
+          <button class="btn small" data-on="1">⏰ TURN ON</button><button class="btn small ghost" data-on="0">TURN OFF</button>
+        </form>
+        <div class="admin-grid"><button class="btn small" id="admin-sched-now">▶ START IT NOW (${SCHEDULE_MINUTES} MIN)</button></div>
+        <p class="muted small">Late, or want it early? START IT NOW runs the picked event for ${SCHEDULE_MINUTES} minutes straight away. END THE EVENT NOW (above) stops this hour's one; it comes back next hour. An event you start by hand always wins.</p>
+      </div>
+      <div class="acard"><h4>🎃 Halloween season <span class="muted small">(nobody sees it until you start it)</span></h4>
+        <div id="admin-season-status" class="muted small">${a.season ? `<b class="hot">🟢 ON</b> until the end of ${esc(new Date(a.season.endsAt - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' }))}` : 'Off.'}</div>
+        <form class="auth inline admin-row" id="admin-season"><label class="small">until the end of <input name="until" type="date" value="${new Date(halloweenEnd() - 1).toISOString().slice(0, 10)}" /></label>
+          <label class="small"><input type="checkbox" name="announce" checked /> Announce it</label>
+          <button class="btn small">🎃 START HALLOWEEN</button></form>
+        <div class="admin-grid"><button class="btn small ghost" id="admin-season-stop">END HALLOWEEN NOW</button></div>
+        <p class="muted small">The whole game goes Halloween for everyone until that day (a week after Halloween to start with), then it ends by itself. The Halloween Night event above does the same just while it's on, and it also stops by itself a week after Halloween. Halloween guns (${HALLOWEEN_GUNS.map((id) => `${GUNS[id].icon} ${GUNS[id].name}`).join(', ')}) turn up around the maps, and the shop sells glowing Halloween gun skins for candy.</p>
         <p class="muted small">While it's on, every map (solo and online) turns into a foggy purple night with jack-o'-lanterns, little graveyards, bubbling cauldrons, pumpkin-head scarecrows, string lights, ghosts and bats, and the zombies wear pumpkin heads. Maps already loaded change when the next one loads.</p>
         <p class="muted small">Candy: zombies drop sweets while it's on (bosses a big pile), spent in the 🎃 Halloween shop at the top of the Shop on cosmetics nobody else can get (gun finishes, avatars, titles, name colours, crosshairs).</p>
         <div class="admin-grid"><button class="btn small ghost" id="admin-candy">🍬 GIVE ME 200 CANDY (TEST)</button></div>
         <div class="admin-grid"><button class="btn small ghost" id="admin-halloween-preview">${act?.halloweenPreview?.() ? '👻 PREVIEW ON (ONLY YOU) · TURN OFF' : '👻 PREVIEW IT (ONLY YOU)'}</button></div></div>
+      <div class="acard"><h4>🎁 Give Halloween stuff <span class="muted small">(to anyone: candy, gun skins and the rest of the Halloween shop)</span></h4>
+        <form class="auth inline admin-row" id="admin-give-candy"><input name="u" maxlength="40" placeholder="Player name" required /><input name="n" type="number" placeholder="Candy (minus takes away)" required /><button class="btn small">🍬 GIVE CANDY</button></form>
+        <form class="auth inline admin-row" id="admin-give-cos"><input name="u" maxlength="40" placeholder="Player name" required />
+          <select name="item">${CANDY_SHOP.map(([kind, id, label, , , glow]) => `<option value="${cosmeticItemId(kind, id)}">${kind === 'finish' ? `🔫 Gun skin: ${esc(label)}${glow ? ' (glows)' : ''}` : `${{ avatar: 'Avatar', color: 'Name colour', title: 'Title', crosshair: 'Crosshair' }[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}`}</option>`).join('')}</select>
+          <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE</button></form>
+      </div>
       <div class="acard"><h4>ℹ️ How it works</h4>
         <p class="muted small">While it's on, the <b>JOIN EVENT</b> button in Multiplayer (under the room code) lights up. Everyone plays in <b>one match</b> (${EVENT_MAX_PLAYERS} players a room: when one fills up, a new one opens; no host): <b>Red vs Blue vs the zombies</b>, seen from behind their character, starting as the <b>Survivor</b>.
         Teams score ${EVENT_POINTS.player} points for an enemy, ${EVENT_POINTS.zombie} for a zombie, ${EVENT_POINTS.special} for a big or mutated one and ${EVENT_POINTS.boss} for a boss (one comes every 3 minutes). A new match starts by itself after each one.
@@ -1671,6 +1749,24 @@ export class AccountUI {
           <button class="btn small ghost" data-mypieces="none">RESET MY PIECES</button>
         </div>
         <p class="muted small">You have ${totalPieces(a.items)}/${PIECE_COUNT} pieces. For a player: MANAGE in the Players tab.</p>
+      </div>
+    </section>
+    <section class="asec" data-sec="shop">
+      <div class="acard"><h4>💵 Sell something for real money <span class="muted small">(it shows in everyone's Shop; they pay you, you give it to them below)</span></h4>
+        <form class="auth inline admin-row" id="admin-paid-add">
+          <input name="icon" maxlength="8" placeholder="Icon (emoji)" value="💵" style="width:5.5em" />
+          <input name="name" maxlength="40" placeholder="Name, e.g. Coin Pack" required />
+          <input name="price" maxlength="20" placeholder="Price, e.g. $1" required style="width:7em" />
+          <select name="give" title="What they get when you give it to them">${PAID_OPTIONS.map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join('')}</select>
+          <input name="amount" type="number" min="0" placeholder="How many (coins/candy)" style="width:12em" />
+          <input name="desc" maxlength="200" placeholder="What it is (shown in the Shop)" />
+          <button class="btn small">➕ ADD TO SHOP</button>
+        </form>
+        <p class="muted small">"Something else" gives nothing by itself: use it for anything you sort out yourself. Players see the price and "pay the owner and tell them your player name". Same name again replaces that item.</p>
+      </div>
+      <div class="acard"><h4>🛒 In the shop now</h4><div id="admin-paid-list" class="admin-players"></div>
+        <form class="auth inline admin-row" id="admin-paid-give"><input name="u" maxlength="40" placeholder="Player name" required /><select name="id" id="admin-paid-pick"></select>
+          <button class="btn small" data-on="1">🎁 THEY PAID: GIVE IT</button><button class="btn small ghost" data-on="0">TAKE IT BACK</button></form>
       </div>
     </section>
     <section class="asec" data-sec="me">
@@ -1809,11 +1905,145 @@ export class AccountUI {
         el.innerHTML = e
           ? `<b class="hot">🟢 LIVE: ${esc(e.name)}</b> · started by ${esc(e.by)} · ${e.endsAt ? `ends ${esc(new Date(e.endsAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))}` : 'until you end it'} · ${e.boost}× drops<br/>${r.rooms} event match(es) · <b>${r.players}</b> player(s) in them · ${e.pieces || 0} piece(s) found`
           : 'No event is on. Start one below.';
+        showSched(r.schedule);
       } catch (err) {
         el.textContent = err.message;
       }
     };
+    // the hourly event
+    const sched = document.getElementById('admin-sched');
+    const showSched = (s) => {
+      const el = document.getElementById('admin-sched-status');
+      if (!el || !s) return;
+      sched.preset.value = String(s.preset);
+      sched.at.value = String(s.at);
+      sched.announce.checked = s.announce;
+      const p = EVENT_PRESETS[s.preset] || EVENT_PRESETS[0];
+      // the next one (or this one, while it's on), in your time
+      const now = Date.now();
+      let t = Math.floor((now - s.at * 60000) / 3600000) * 3600000 + s.at * 60000;
+      if (now - t >= SCHEDULE_MINUTES * 60000) t += 3600000;
+      const at = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      el.innerHTML = s.on ? `<b class="hot">🟢 ON</b>: ${esc(p.name)}, ${SCHEDULE_MINUTES} minutes every hour · ${t <= now ? `on now until ${at(t + SCHEDULE_MINUTES * 60000)}` : `next at ${at(t)}`}` : 'Off: nothing starts by itself.';
+    };
+    let schedOn = true;
+    sched.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (schedOn = b.dataset.on === '1')));
+    sched.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const r = await a.adminEvent({ action: 'schedule', on: schedOn, preset: Number(sched.preset.value), at: Number(sched.at.value), announce: sched.announce.checked });
+        msg(r.note);
+        showSched(r.schedule);
+        evStatus();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    document.getElementById('admin-sched-now').onclick = async () => {
+      const p = EVENT_PRESETS[Number(sched.preset.value)] || EVENT_PRESETS[0];
+      if (a.event && !confirm(`${a.event.name} is already on. Replace it with ${p.name} for ${SCHEDULE_MINUTES} minutes?`)) return;
+      try {
+        msg((await a.adminEvent({ action: 'start', name: p.name, theme: p.theme || null, minutes: SCHEDULE_MINUTES, boost: p.boost, announce: sched.announce.checked })).note);
+        evStatus();
+      } catch (err) {
+        msg(err.message);
+      }
+    };
+    // the Halloween season
+    const seasonForm = document.getElementById('admin-season');
+    const seasonStatus = () => {
+      const el = document.getElementById('admin-season-status');
+      if (el) el.innerHTML = a.season ? `<b class="hot">🟢 ON</b> until the end of ${esc(new Date(a.season.endsAt - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' }))}` : 'Off.';
+    };
+    seasonForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!a.season && !confirm('Start Halloween for everyone now?')) return;
+      try {
+        msg((await a.adminSeason({ action: 'start', until: seasonForm.until.value, announce: seasonForm.announce.checked })).note);
+        seasonStatus();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    document.getElementById('admin-season-stop').onclick = async () => {
+      if (!a.season || !confirm('End Halloween for everyone now?')) return;
+      try {
+        msg((await a.adminSeason({ action: 'stop' })).note);
+        seasonStatus();
+      } catch (err) {
+        msg(err.message);
+      }
+    };
+    // Halloween stuff for anyone
+    document.getElementById('admin-give-candy').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      try {
+        msg((await a.adminPlayer(String(f.get('u')).trim(), 'candy', { n: Number(f.get('n')) })).note);
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    const cosForm = document.getElementById('admin-give-cos');
+    let cosOn = true;
+    cosForm.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (cosOn = b.dataset.on === '1')));
+    cosForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(cosForm);
+      try {
+        msg((await a.adminPlayer(String(f.get('u')).trim(), 'cosmetic', { item: f.get('item'), on: cosOn })).note);
+      } catch (err) {
+        msg(err.message);
+      }
+    });
     evStatus();
+    // the real-money shop items
+    const paidList = () => {
+      const list = a.paidItems;
+      document.getElementById('admin-paid-list').innerHTML = list.length
+        ? list.map((i) => `<div class="admin-player"><span>${esc(i.icon)} <b>${esc(i.name)}</b> · ${esc(i.price)} · <span class="muted small">${esc(paidGives(i))}</span></span><button class="btn small ghost" data-paidrm="${esc(i.id)}">REMOVE</button></div>`).join('')
+        : '<p class="muted small">Nothing yet: add something above.</p>';
+      document.getElementById('admin-paid-pick').innerHTML = list.map((i) => `<option value="${esc(i.id)}">${esc(i.icon)} ${esc(i.name)} (${esc(i.price)})</option>`).join('');
+      this.body.querySelectorAll('[data-paidrm]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          if (!confirm('Take it out of the shop?')) return;
+          try {
+            msg((await a.adminPaidItems({ action: 'remove', id: b.dataset.paidrm })).note);
+            paidList();
+          } catch (err) {
+            msg(err.message);
+          }
+        }),
+      );
+    };
+    paidList();
+    document.getElementById('admin-paid-add').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const [give, what = ''] = String(f.get('give')).split(':');
+      const name = String(f.get('name')).trim();
+      const same = a.paidItems.find((i) => i.name.toLowerCase() === name.toLowerCase());
+      try {
+        msg((await a.adminPaidItems({ action: 'add', id: same?.id, name, icon: f.get('icon'), price: f.get('price'), desc: f.get('desc'), give, what, amount: Number(f.get('amount')) || 0 })).note);
+        e.target.reset();
+        paidList();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    const paidGive = document.getElementById('admin-paid-give');
+    let paidOn = true;
+    paidGive.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (paidOn = b.dataset.on === '1')));
+    paidGive.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(paidGive);
+      if (!f.get('id')) return msg('Add something to the shop first.');
+      try {
+        msg((await a.adminPlayer(String(f.get('u')).trim(), 'paid', { id: f.get('id'), on: paidOn })).note);
+      } catch (err) {
+        msg(err.message);
+      }
+    });
     // picking an event fills in its length and drop rate (you can still change them)
     const ac = document.getElementById('admin-candy');
     if (ac) ac.onclick = () => a.adminCandy(200).then(msg, (e) => msg(e.message));

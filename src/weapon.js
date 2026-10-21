@@ -76,9 +76,10 @@ export class Weapon {
   }
 
   // Gun finish from the player's profile (hex colour or null for standard).
-  setFinish(color) {
-    if (this.finish === color) return;
+  setFinish(color, glow = null) {
+    if (this.finish === color && this.glow === glow) return;
     this.finish = color;
+    this.glow = glow; // a Halloween skin that glows
     for (const m of Object.values(this.models)) m.group.removeFromParent();
     this.models = {};
     if (this.slots.length) this._show(this.cur);
@@ -237,7 +238,8 @@ export class Weapon {
   _model(id, mut = null) {
     const key = `${id}|${mut || ''}`;
     if (!this.models[key]) {
-      const gun = buildGun(id, { finish: this.gunFinish?.[id] ?? this.finish, mutation: mut });
+      const skin = this.gunFinish?.[id];
+      const gun = buildGun(id, { finish: skin ?? this.finish, glow: skin ? null : this.glow, mutation: mut });
       const hands = buildHands(GUNS[id]);
       gun.group.add(hands.left, hands.right);
       gun.group.scale.setScalar(SCALE);
@@ -258,7 +260,8 @@ export class Weapon {
     m.group.visible = true;
     m.group.add(this.muzzle);
     this.muzzle.position.set(0, m.muzzleY, m.muzzleZ);
-    this.flash.scale.setScalar(def.id === 'smg' ? 0.22 : def.id === 'shotgun' || def.id === 'sniper' ? 0.45 : 0.32);
+    const look = def.base || def.id;
+    this.flash.scale.setScalar(look === 'smg' ? 0.22 : look === 'shotgun' || look === 'sniper' ? 0.45 : 0.32);
   }
 
   _dropEmpty() {
@@ -408,7 +411,7 @@ export class Weapon {
     const by = Math.abs(Math.cos(this.bobT)) * 0.012 * bobAmt;
 
     const a = this.ads;
-    const sightY = -(SIGHT_Y[def.id] ?? 0.08) * SCALE;
+    const sightY = -(SIGHT_Y[def.base || def.id] ?? 0.08) * SCALE;
     const h = this.holder;
     h.position.set(
       (REST.x + this.offset.x) * (1 - a) + bx + this.swayX * (1 - a * 0.7) - this.sprintBlend * 0.08,
