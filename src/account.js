@@ -1796,13 +1796,6 @@ export class AccountUI {
       <form class="auth inline admin-row" id="admin-setpw"><input name="who" maxlength="120" placeholder="Player name or email" required autocomplete="off" /><input name="pw" maxlength="72" placeholder="New password (6+ characters)" required autocomplete="off" /><button class="btn small">🔑 SET PASSWORD</button></form>
       <p class="muted small">Works even with a made-up email. It also tells you the email they log in with.</p>
       </div>
-      <div class="acard"><h4>🐺 Wolf companion <span class="muted small">(real money: when someone pays you, give them the wolf here)</span></h4>
-      <form class="auth inline admin-row" id="admin-wolf"><input name="u" maxlength="40" placeholder="Player name" required /><button class="btn small" data-on="1">🐺 GIVE WOLF</button><button class="btn small ghost" data-on="0">TAKE WOLF</button></form>
-      <form class="auth inline admin-row" id="admin-wolf-lvl"><input name="u" maxlength="40" placeholder="Player name" required /><input name="n" type="number" min="-20" max="20" value="1" placeholder="Levels (minus takes away)" required /><button class="btn small">⏫ ADD WOLF LEVELS</button></form>
-      <form class="auth inline admin-row" id="admin-wolf-price"><input name="p" maxlength="20" placeholder="Wolf price (now ${esc(a.wolfPrice)})" required /><button class="btn small">SET WOLF PRICE</button></form>
-      <form class="auth inline admin-row" id="admin-wolf-lvlprice"><input name="p" maxlength="20" placeholder="Price of one level (now ${esc(a.wolfLevelPrice)})" required /><button class="btn small">SET LEVEL PRICE</button></form>
-      <p class="muted small">Players see this price in the Shop and Profile, ${esc(a.cfg?.payNote || 'paid cash in hand to the site owner')}. You can also give or take it with MANAGE on a player.</p>
-      </div>
     </section>
     <section class="asec" data-sec="game">
       ${solo || mp ? '' : '<p class="muted small">Most of these need a game running (solo, or a co-op room you host): start one, then press F2.</p>'}
@@ -1988,14 +1981,20 @@ export class AccountUI {
         </form>
         <p class="muted small">🪙 Coins: players buy it themselves from the Shop. 💵 Real money: they pay you, then you give it to them below. Name tags and name colours are new ones nobody else has; they wear them from the Locker. "Something else" gives nothing by itself. Same name again replaces that item. Change the Shop's order with ✏️ EDIT in the corner of the Shop.</p>
       </div>
-      <div class="acard"><h4>💵 ${DEAL_PRICE} Deals <span class="muted small">(someone paid you ${DEAL_PRICE}: give them the one they picked)</span></h4>
-        <form class="auth inline admin-row" id="admin-give-deal"><input name="u" maxlength="40" placeholder="Player name" required />
-          <select name="item">${DEAL_ITEMS.map((id) => SHOP.find((d) => d.id === id)).map((d) => `<option value="item:${d.id}">${d.icon} Run item: ${esc(d.name)} (+1)</option>`).join('')}${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${KIND_NAMES[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</select>
+      <div class="acard"><h4>🎁 Someone paid you <span class="muted small">(real money: give them what they bought · the wolf, wolf levels, your specials and the ${DEAL_PRICE} Deals, all here)</span></h4>
+        <form class="auth inline admin-row" id="admin-give-paid"><input name="u" maxlength="40" placeholder="Player name" required />
+          <select name="what">
+            <optgroup label="🐺 Wolf companion (${esc(a.wolfPrice)}, a level ${esc(a.wolfLevelPrice)})"><option value="wolf">🐺 The wolf</option><option value="wolflvl">⏫ 1 wolf level</option></optgroup>
+            <optgroup label="💵 Specials (your items)" id="admin-give-specials"></optgroup>
+            <optgroup label="💵 ${DEAL_PRICE} Deals">${DEAL_ITEMS.map((id) => SHOP.find((d) => d.id === id)).map((d) => `<option value="item:${d.id}">${d.icon} Run item: ${esc(d.name)} (+1)</option>`).join('')}${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${KIND_NAMES[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</optgroup>
+          </select>
           <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE BACK</button></form>
+        <p class="muted small">You can also give or take any of these with MANAGE on a player.</p>
       </div>
-      <div class="acard"><h4>🛒 In the shop now</h4><div id="admin-paid-list" class="admin-players"></div>
-        <form class="auth inline admin-row" id="admin-paid-give"><input name="u" maxlength="40" placeholder="Player name" required /><select name="id" id="admin-paid-pick"></select>
-          <button class="btn small" data-on="1">🎁 THEY PAID: GIVE IT</button><button class="btn small ghost" data-on="0">TAKE IT BACK</button></form>
+      <div class="acard"><h4>🛒 In the shop now <span class="muted small">(your specials)</span></h4><div id="admin-paid-list" class="admin-players"></div></div>
+      <div class="acard"><h4>🐺 Wolf prices <span class="muted small">(shown in the Shop and Profile, ${esc(a.cfg?.payNote || 'paid cash in hand to the site owner')})</span></h4>
+      <form class="auth inline admin-row" id="admin-wolf-price"><input name="p" maxlength="20" placeholder="Wolf price (now ${esc(a.wolfPrice)})" required /><button class="btn small">SET WOLF PRICE</button></form>
+      <form class="auth inline admin-row" id="admin-wolf-lvlprice"><input name="p" maxlength="20" placeholder="Price of one level (now ${esc(a.wolfLevelPrice)})" required /><button class="btn small">SET LEVEL PRICE</button></form>
       </div>
     </section>
     <section class="asec" data-sec="me">
@@ -2080,28 +2079,6 @@ export class AccountUI {
         msg(r.note);
         e.target.reset();
         this._adminPlayers(this.adminQuery || '');
-      } catch (err) {
-        msg(err.message);
-      }
-    });
-    const wolfForm = document.getElementById('admin-wolf');
-    let wolfOn = true;
-    wolfForm.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (wolfOn = b.dataset.on === '1')));
-    wolfForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      try {
-        const r = await a.adminPlayer(String(new FormData(wolfForm).get('u')).trim(), 'wolf', { on: wolfOn });
-        msg(r.note);
-        wolfForm.reset();
-      } catch (err) {
-        msg(err.message);
-      }
-    });
-    document.getElementById('admin-wolf-lvl').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
-      try {
-        msg((await a.adminPlayer(String(f.get('u')).trim(), 'wolflevel', { levels: Number(f.get('n')) })).note);
       } catch (err) {
         msg(err.message);
       }
@@ -2231,7 +2208,7 @@ export class AccountUI {
       document.getElementById('admin-paid-list').innerHTML = list.length
         ? list.map((i) => `<div class="admin-player"><span>${esc(i.icon)} <b>${esc(i.name)}</b> · ${esc(i.price)} · <span class="muted small">${esc(paidGives(i))}</span></span><span><button class="btn small" data-paidedit="${esc(i.id)}">✏️ EDIT</button> <button class="btn small ghost" data-paidrm="${esc(i.id)}">🗑️ DELETE</button></span></div>`).join('')
         : '<p class="muted small">Nothing yet: add something above.</p>';
-      document.getElementById('admin-paid-pick').innerHTML = list.map((i) => `<option value="${esc(i.id)}">${esc(i.icon)} ${esc(i.name)} (${esc(i.price)})</option>`).join('');
+      document.getElementById('admin-give-specials').innerHTML = list.map((i) => `<option value="paid:${esc(i.id)}">${esc(i.icon)} ${esc(i.name)} (${esc(i.price)})</option>`).join('');
       // edit it right in the Shop (edit mode, its form open)
       this.body.querySelectorAll('[data-paidedit]').forEach((b) =>
         b.addEventListener('click', () => {
@@ -2299,28 +2276,23 @@ export class AccountUI {
         msg(err.message);
       }
     });
-    const dealForm = document.getElementById('admin-give-deal');
-    let dealOn = true;
-    dealForm.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (dealOn = b.dataset.on === '1')));
-    dealForm.addEventListener('submit', async (e) => {
+    // one form for everything bought with real money
+    const giveForm = document.getElementById('admin-give-paid');
+    let giveOn = true;
+    giveForm.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (giveOn = b.dataset.on === '1')));
+    giveForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const f = new FormData(dealForm);
+      const f = new FormData(giveForm);
+      const u = String(f.get('u')).trim();
+      const what = String(f.get('what') || '');
       try {
-        const item = String(f.get('item'));
-        msg((await (item.startsWith('item:') ? a.adminPlayer(String(f.get('u')).trim(), 'consumable', { item: item.slice(5), n: dealOn ? 1 : -1 }) : a.adminPlayer(String(f.get('u')).trim(), 'cosmetic', { item, on: dealOn }))).note);
-      } catch (err) {
-        msg(err.message);
-      }
-    });
-    const paidGive = document.getElementById('admin-paid-give');
-    let paidOn = true;
-    paidGive.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (paidOn = b.dataset.on === '1')));
-    paidGive.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const f = new FormData(paidGive);
-      if (!f.get('id')) return msg('Add something to the shop first.');
-      try {
-        msg((await a.adminPlayer(String(f.get('u')).trim(), 'paid', { id: f.get('id'), on: paidOn })).note);
+        const r =
+          what === 'wolf' ? await a.adminPlayer(u, 'wolf', { on: giveOn })
+          : what === 'wolflvl' ? await a.adminPlayer(u, 'wolflevel', { levels: giveOn ? 1 : -1 })
+          : what.startsWith('paid:') ? await a.adminPlayer(u, 'paid', { id: what.slice(5), on: giveOn })
+          : what.startsWith('item:') ? await a.adminPlayer(u, 'consumable', { item: what.slice(5), n: giveOn ? 1 : -1 })
+          : await a.adminPlayer(u, 'cosmetic', { item: what, on: giveOn });
+        msg(r.note);
       } catch (err) {
         msg(err.message);
       }

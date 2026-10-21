@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.60', date: '21 Oct 2026', title: 'Admin: one place for paid items',
+    items: ['Admins: everything people buy with real money (the wolf, wolf levels, your specials and the 50c Deals) is now given from one 🎁 Someone paid you card in Admin → 💵 Shop.'],
+  },
+  {
     v: '5.59', date: '21 Oct 2026', title: 'Turn your character',
     items: ['Drag your character (mouse or finger) in the Locker, or in the home-screen line-up, to turn it around and see it from every side.'],
   },
