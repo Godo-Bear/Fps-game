@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.58', date: '21 Oct 2026', title: 'Smoother waves, faster running, pieces only in the event',
+    items: [
+      'Less lag in late waves: waves have fewer zombies (at most 28, and at most 16 up at once), but each one is tougher as the waves go on.',
+      'You run faster: walking is quicker and sprinting goes from 9.5 to 11.',
+      '🧩 Puzzle pieces now only drop in the piece-hunt event (every hour, on the hour). The 🎃 Halloween match drops candy instead.',
+    ],
+  },
+  {
     v: '5.57', date: '21 Oct 2026', title: 'Astronaut skin (admins)',
     items: [
       'New: the 🧑‍🚀 Astronaut character, for admins only. Change the visor, stripes, suit and panel colours in Locker → Character, or pick a ready-made look (Moon white, Mars red, Gold visor, Stealth, Galaxy).',

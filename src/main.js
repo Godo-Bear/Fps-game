@@ -179,19 +179,23 @@ function loadMap(id) {
 }
 
 // ---------------------------------------------------------------- waves (solo)
-// A wave never has more than WAVE_CAP zombies (bosses on top). Later waves get harder by
-// swapping walkers for tougher types instead of piling on more bodies.
-const WAVE_CAP = 50;
+// A wave never has more than WAVE_CAP zombies (bosses on top), and only a few are up at once (lots of zombies
+// lag). Later waves get harder by swapping walkers for tougher types and making each zombie tougher instead of
+// piling on more bodies.
+const WAVE_CAP = 28;
 let adminWaveCap = WAVE_CAP;
 const rawWaveSize = (n) => 6 + n * 4 + Math.floor(n * n * 0.15);
+const smallWaveSize = (n) => 5 + n * 2 + Math.floor(n * n * 0.05);
 function waveConfig(n) {
   const raw = rawWaveSize(n);
-  const total = Math.min(raw, adminWaveCap);
+  const total = Math.min(smallWaveSize(n), adminWaveCap);
   return {
     total,
     // how much bigger the wave "wanted" to be: turned into nastier types
     pressure: raw / total,
-    maxAlive: Math.min(10 + n * 2, 30),
+    // and into tougher zombies (more health, a bit more damage)
+    tough: n <= 2 ? 1 : Math.min(3, 1 + (raw / total - 1) * 0.45),
+    maxAlive: Math.min(8 + n, 16),
     interval: Math.max(0.3, 1.3 - n * 0.07),
     boss: n % 5 === 0 ? 1 + Math.floor(n / 10) : 0,
   };
@@ -249,6 +253,13 @@ const isNightWave = (w) => (adminNight === 'night' ? true : adminNight === 'day'
 function nightType(n) {
   if (Math.random() < 0.35) return n >= 5 ? ['runner', 'spitter', 'crawler', 'brute'][Math.floor(Math.random() * 4)] : 'runner';
   return nextType(n);
+}
+// fewer zombies per wave, so each one is tougher
+function toughen(z, k = 1) {
+  if (k <= 1) return;
+  z.maxHp *= k;
+  z.hp = z.maxHp;
+  z.damage *= 1 + (k - 1) * 0.3;
 }
 function nightBuff(z) {
   z.maxHp *= NIGHT.hp;
@@ -367,6 +378,7 @@ function updateWave(dt) {
     if (game.spawnT <= 0 && game.toSpawn > 0 && alive < cfg.maxAlive) {
       const z = zombies.spawn(game.night ? nightType(game.wave) : nextType(game.wave), game.wave, spawnAnchor(), Math.random() < mutatedChance(game.wave) + (game.night ? NIGHT.mutated : 0));
       if (game.night) nightBuff(z);
+      toughen(z, cfg.tough);
       roomZombieHp(z);
       waveSpawnExtras(z);
       game.toSpawn--;
@@ -2777,7 +2789,9 @@ const pieceMarkMat = (() => {
 })();
 // a kill might drop a piece (rarer for plain zombies, always for a boss), boosted by the admin's drop rate
 function eventDropChance(kind, x, z) {
-  const boost = account.eventFor(mp.lobby?.code)?.boost || 1; // this room's event: the Halloween one or the main one
+  // pieces only come from the piece-hunt event (the Halloween match drops candy instead)
+  if (account.eventFor(mp.lobby?.code) === account.hwEvent) return;
+  const boost = account.event?.boost || 1;
   if (Math.random() > Math.min(1, (DROP_CHANCE[kind] || 0) * boost)) return;
   if (ev.drops.length >= 4) return;
   const g = new THREE.Group();
@@ -2938,7 +2952,7 @@ function renderEventCard() {
   $('mp-event-hw-info').classList.toggle('hidden', !hw);
   if (hw) {
     $('mp-event-hw').classList.add('live');
-    $('mp-event-hw-info').innerHTML = `🎃 Halloween Night: Red vs Blue vs the pumpkin-head zombies, third person, <b>${hw.boost}× piece drops</b> and candy · open all through Halloween · ${fmtLeft(hw.endsAt)}`;
+    $('mp-event-hw-info').innerHTML = `🎃 Halloween Night: Red vs Blue vs the pumpkin-head zombies, third person, 🍬 candy and Halloween guns (🧩 pieces are only in the piece-hunt event) · open all through Halloween · ${fmtLeft(hw.endsAt)}`;
   }
 }
 async function joinEvent(which = null) {

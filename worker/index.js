@@ -1284,9 +1284,9 @@ export class GameDB extends DurableObject {
     // a puzzle piece picked up in an event match: the server picks which one
     if (path === '/event/piece' && method === 'POST') {
       // the Halloween match's rooms are its own; any other event room belongs to the main event
-      const hw = this._hwEvent();
-      const key = hw?.rooms?.includes(me.room) ? 'hwEvent' : 'event';
-      const ev = key === 'hwEvent' ? hw : this._event();
+      // pieces only come from the piece-hunt event, not the Halloween match
+      if (this._hwEvent()?.rooms?.includes(me.room)) return err('Pieces only come from the piece-hunt event');
+      const ev = this._event();
       if (!ev) return err('No event is on right now');
       const room = me.room ? this.rooms.get(me.room) : null;
       if (!room || room.mode !== 'event') return err('Pieces only come from event matches');
@@ -1304,7 +1304,7 @@ export class GameDB extends DurableObject {
       else coins += DUPLICATE_COINS; // every piece found already: coins instead
       this.sql.exec('UPDATE users SET items = ?, coins = ? WHERE id = ?', JSON.stringify(items), coins, me.id);
       ev.pieces = (ev.pieces || 0) + 1;
-      this._setConfig(key, ev);
+      this._setConfig('event', ev);
       const user = this.sql.exec('SELECT * FROM users WHERE id = ?', me.id).toArray()[0];
       return json({ piece, coins: piece ? 0 : DUPLICATE_COINS, user: this._publicUser(user, true) });
     }
