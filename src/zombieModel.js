@@ -277,7 +277,7 @@ function loadOne(def) {
 
 // Gives a zombie its model (or leaves the blocks if the model isn't loaded / is switched off).
 export function attachZombieModel(z) {
-  if (!templates.length || !enabled) return;
+  if (!templates.length || (!enabled && !z.type.hw)) return; // the Halloween specials always get it
   // runners want a model that can really run; everyone else gets either, for variety
   const runner = z.typeId === 'runner';
   const choices = runner && templates.some((t) => t.def.run) ? templates.filter((t) => t.def.run) : templates;
@@ -324,6 +324,13 @@ export function attachZombieModel(z) {
   mat.color.setHex(BV ? z.skinMat.color.getHex() : TINT[z.typeId] ?? 0xffffff);
   if (BV) mat.color.lerp(new THREE.Color(0xffffff), 0.45);
   mat.emissive = new THREE.Color(z.baseEmissive);
+  if (z.type.ghost) {
+    // the Phantom: a pale, glowing, see-through zombie
+    mat.map = null;
+    mat.color.setHex(0xe8e4ff);
+    mat.emissive.setHex(0x6a4aff);
+    mat.emissiveIntensity = 0.75;
+  }
   // hide the blocks (they still catch bullets) and show the model instead
   z.body.traverse((o) => {
     if (o.isMesh) o.visible = false;

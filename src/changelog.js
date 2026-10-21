@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.63', date: '21 Oct 2026', title: 'Spookier Halloween zombies',
+    items: [
+      'The Halloween special zombies always use the 3D zombie models now (even with the old block zombies picked in Settings).',
+      '👻 The Phantom is a real ghost: pale, glowing and see-through, floating off the ground with a purple trail.',
+    ],
+  },
+  {
     v: '5.62', date: '21 Oct 2026', title: 'Event zombies fixed',
     items: ["Fixed: in events with friends the zombies could freeze. One player's game moves the zombies for everyone, and if that player switched tabs or locked their phone the zombies stopped. Now someone else takes over straight away."],
   },

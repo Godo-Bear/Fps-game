@@ -143,7 +143,7 @@ class Zombie {
     this.skinMat = new THREE.MeshStandardMaterial({ color: pick(T.skin), roughness: 0.9, flatShading: true });
     this.shirtMat = new THREE.MeshStandardMaterial({ color: pick(T.shirt), roughness: 1, flatShading: true });
     this.pantsMat = new THREE.MeshStandardMaterial({ color: pick(T.pants), roughness: 1, flatShading: true });
-    this.baseEmissive = mutated ? 0x1c4a06 : 0x000000;
+    this.baseEmissive = T.ghost ? 0x3a2a9a : mutated ? 0x1c4a06 : 0x000000; // the Phantom glows a ghostly purple
     this.mats = [this.skinMat, this.shirtMat, this.pantsMat];
     const eyeMat = new THREE.MeshBasicMaterial({ color: mutated && !BV ? 0x6dff2a : BV ? BV.eyes : isHalloween() && T.eyes === 0xffd34d ? 0xff8a1a : T.eyes });
     if (BV) this.skinMat.color.setHex(BV.skin);
@@ -512,6 +512,12 @@ export class ZombieManager {
       this.audio.groan(rp, 0.6, true);
       return;
     }
+  }
+  _ghostFx(z, dt) {
+    z.ghostT = (z.ghostT || 0) + dt;
+    z.body.position.y = 0.35 + Math.sin(z.ghostT * 2.2 + z.phase) * 0.12;
+    const rp = z.root.position;
+    if (Math.random() < dt * 10) this.effects.burst(new THREE.Vector3(rp.x + rand(-0.3, 0.3), rp.y + 0.4, rp.z + rand(-0.3, 0.3)), { count: 1, color: [0xb06bff, 0xe8d8ff], speed: 0.3, size: 0.14, life: 0.9, grav: -0.6, up: 0.4 });
   }
   _puff(at) {
     this.effects.burst(new THREE.Vector3(at.x, at.y + 1, at.z), { count: 18, color: [0xb06bff, 0x6a2aff, 0xe8d8ff], speed: 2.2, size: 0.18, life: 0.6, grav: -1, up: 1 });
@@ -904,6 +910,8 @@ export class ZombieManager {
       }
       if (z.jaw.parent) z.jaw.position.y = -0.12 - Math.abs(Math.sin(z.phase * 1.7)) * 0.04;
       animateZombieModel(z, dt, { moving, speed: z.speed * speedMul, attacking: z.windup > 0 && !T.bloated });
+      // the Phantom floats off the ground, bobbing, and leaves a faint purple trail
+      if (T.ghost) this._ghostFx(z, dt);
       // runners kick up dust: you can see the fast ones coming
       if (z.typeId === 'runner' && moving && Math.random() < dt * 7) this.effects.dust(new THREE.Vector3(rp.x + rand(-0.3, 0.3), rp.y + 0.1, rp.z + rand(-0.3, 0.3)));
 
@@ -1194,6 +1202,7 @@ export class ZombieManager {
       if (speed > 0.3) z.phase += dt * speed * 2.6 / z.scale;
       const sw = speed > 0.3 ? Math.sin(z.phase) : 0;
       animateZombieModel(z, dt, { moving: speed > 0.3, speed });
+      if (z.type.ghost) this._ghostFx(z, dt);
       if (z.type.crawl) {
         z.armL.rotation.x = -1.6 + sw * 0.7;
         z.armR.rotation.x = -1.6 - sw * 0.7;
