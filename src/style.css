@@ -3864,3 +3864,20 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
   color: #ffd23a;
   letter-spacing: 0.05em;
 }
+
+/* the home-screen line-up: a player wearing a character skin stands above their name */
+.fn-skin {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  margin-bottom: -18px;
+  pointer-events: none;
+}
+.fn-skin-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.fn-slot.skinned .fn-plate {
+  padding: 8px 8px 8px;
+  position: relative;
+}

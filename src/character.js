@@ -469,7 +469,7 @@ export class CharacterPreview {
         return requestAnimationFrame(loop);
       }
       this.offT = 0;
-      this.spin += 0.012;
+      this.spin += this.spinSpeed ?? 0.012; // 0: stands still facing you (the home-screen line-up)
       if (this.char) this.char.root.rotation.y = this.spin;
       this.char?.mixer?.update(1 / 60);
       this.renderer.render(this.scene, this.camera);

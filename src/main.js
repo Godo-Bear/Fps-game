@@ -8,6 +8,7 @@ import { coinsForRun } from '../shared/shop.js';
 import { MASTERY_TIERS, tierFor } from '../shared/mastery.js';
 import { Account, AccountUI } from './account.js';
 import { candyPiece, isHalloween, jackOLantern, setHalloween } from './halloween.js';
+import { CharacterPreview } from './character.js';
 import { priceTag } from '../shared/terms.js';
 import { GameAudio } from './audio.js';
 import { Controls } from './controls.js';
@@ -4268,7 +4269,38 @@ function partyFollow() {
   }
 }
 // The lobby line-up: you in the middle, your party either side, empty spots to invite friends.
-// Names instead of character skins.
+// Anyone wearing a character skin (SWAT, Adventurer, King: unlocked with event pieces) stands there as it, like
+// Fortnite; everyone else is just their name.
+const skinOf = (m) => {
+  const look = m.profile?.look;
+  return look?.model && look.model !== 'man' ? look : null;
+};
+const lineupSkins = new Map(); // key -> { canvas, preview }, kept while they're in the line-up
+function placeSkins(el) {
+  const used = new Set();
+  for (const spot of el.querySelectorAll('[data-skin]')) {
+    const key = spot.dataset.skin;
+    used.add(key);
+    let s = lineupSkins.get(key);
+    if (!s) {
+      const canvas = document.createElement('canvas');
+      canvas.className = 'fn-skin-canvas';
+      canvas.width = 240;
+      canvas.height = 360;
+      spot.appendChild(canvas);
+      const preview = new CharacterPreview(canvas);
+      preview.spinSpeed = 0;
+      preview.spin = 0; // facing you
+      preview.show(JSON.parse(spot.dataset.look));
+      s = { canvas, preview };
+      lineupSkins.set(key, s);
+    } else spot.appendChild(s.canvas);
+  }
+  for (const [key, s] of lineupSkins) if (!used.has(key)) {
+    s.preview.dispose();
+    lineupSkins.delete(key);
+  }
+}
 function renderPartyBar() {
   const p = account.party;
   const me = { username: account.name, profile: account.profile, level: account.level, me: true, leader: !!p && account.partyLeader, online: true };
@@ -4281,8 +4313,10 @@ function renderPartyBar() {
       if (m.empty) {
         return `<button class="fn-slot empty" data-invite="1"><div class="fn-plus">+</div><div class="fn-name">${account.loggedIn ? 'INVITE' : 'LOG IN'}</div><div class="fn-pad"></div></button>`;
       }
-      return `<div class="fn-slot ${m.me ? 'me' : ''}">
+      const skin = skinOf(m);
+      return `<div class="fn-slot ${m.me ? 'me' : ''} ${skin ? 'skinned' : ''}">
         ${m.leader ? '<div class="fn-crown">👑</div>' : ''}
+        ${skin ? `<div class="fn-skin" data-skin="${esc(`${m.username}|${JSON.stringify(skin)}`)}" data-look="${esc(JSON.stringify(skin))}"></div>` : ''}
         <div class="fn-plate" style="--c:${esc(m.profile?.color || '#ffffff')}">
           <div class="fn-name">${esc(m.username)}</div>
           <div class="fn-title">${esc(m.profile?.title || '')}</div>
@@ -4297,6 +4331,7 @@ function renderPartyBar() {
     last.lineup = html;
     // in a party: where it's playing, and a way out
     el.innerHTML = html + (p ? `<div class="fn-room">${p.room ? `Party room <b>${esc(p.room)}</b>` : ''}<button class="btn small ghost fn-leave" data-leave-party>🚪 LEAVE PARTY</button></div>` : '');
+    placeSkins(el);
   }
 }
 $('party-bar').addEventListener('click', async (e) => {
@@ -4880,15 +4915,6 @@ accountUI.adminActions = {
     if (MODES[mp.lobby.mode]?.event) return 'No bots in events.';
     mp.send({ t: 'bots', n });
     return n ? `${n} bots will play in this room${mp.inMatch ? '' : ' when the match starts'}.` : 'No more bots in this room.';
-  },
-  // admin: a new Hide and Seek room on Hideaway Village, ready for people to join
-  async hideSeekRoom() {
-    if (mp.inMatch || mp.lobby) return 'Leave the room you are in first.';
-    const err = await mp.create();
-    if (err) return err;
-    mp.send({ t: 'mode', mode: 'hide' });
-    accountUI.close();
-    return `Hide and Seek room ${mp.lobby?.code || ''} made: share the code, then press START.`;
   },
   // admin: join any room by its code (private ones too)
   async joinRoom(code) {

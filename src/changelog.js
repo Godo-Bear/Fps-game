@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.47', date: '21 Oct 2026', title: 'Skins in the lobby',
+    items: [
+      'The home-screen line-up now shows you (and your party) wearing your character skin, like Fortnite: SWAT, Adventurer or King, once you have unlocked one with event puzzle pieces. Players without a skin still show just their name.',
+      'Admin: the Hide and Seek room button is gone from the admin panel (Hide and Seek is in the normal mode list).',
+    ],
+  },
+  {
     v: '5.46', date: '21 Oct 2026', title: 'Easier-to-find puzzle pieces',
     items: [
       'Event puzzle pieces are much easier to spot: a bigger piece, a tall orange beam, a pulsing ring on the ground, a marker you can see through walls and a dot on the minimap.',
