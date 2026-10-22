@@ -894,8 +894,15 @@ export class Account {
     if (this.user) this._api('/weekly', { method: 'POST', body: { wave, score } }).catch(() => {});
   }
   // tells the live leaderboard which wave you're on (logged-in players only)
+  // (resolves with the server's answer: dropin is an admin asking to join this solo game)
   live(wave, score) {
-    if (this.user) this._api('/live', { method: 'POST', body: { wave, score } }).catch(() => {});
+    return this.user ? this._api('/live', { method: 'POST', body: { wave, score } }).catch(() => ({})) : Promise.resolve({});
+  }
+  adminDropin(username) {
+    return this._api('/admin/dropin', { method: 'POST', body: { username } });
+  }
+  adminDropinStatus(username) {
+    return this._api(`/admin/dropin?u=${encodeURIComponent(username)}`);
   }
   liveEnd() {
     if (this.user) this._api('/live', { method: 'POST', body: { end: true } }).catch(() => {});
@@ -2702,8 +2709,8 @@ export class AccountUI {
         <span class="muted">Lv ${u.level} · ${status}</span>
         <span class="actions">${btns}</span></div>`;
       return `<div class="friend admin-player" data-u="${esc(u.username)}"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b>${u.admin ? ' ⭐' : ''}
-        <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${u.email ? `📧 ${esc(u.email)} · ` : ''}${status}</span>
-        <span class="actions"><button data-mng title="Coins, kick, timeout, ban, level, name and stats">MANAGE</button></span></div>
+        <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${u.email ? `📧 ${esc(u.email)} · ` : ''}${u.solo ? `playing solo, wave ${u.solo}` : status}</span>
+        <span class="actions">${u.solo && !me ? '<button data-dropin title="Join their solo game: it becomes a private co-op game at the same wave">🎮 JOIN</button>' : ''}<button data-mng title="Coins, kick, timeout, ban, level, name and stats">MANAGE</button></span></div>
         <div class="manage-box hidden" data-box="${esc(u.username)}"></div>`;
     };
     const list = r.players.length ? r.players.map(row).join('') : `<p class="muted small">${q ? 'Nobody with that name.' : 'No players yet.'}</p>`;
@@ -2717,6 +2724,32 @@ export class AccountUI {
       e.preventDefault();
       this._adminPlayers(q);
     };
+    // join someone's solo game: ask, then wait for their game to open a room
+    el.querySelectorAll('[data-dropin]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const name = b.closest('[data-u]').dataset.u;
+        const say = (t) => (document.getElementById('admin-msg').textContent = t);
+        b.disabled = true;
+        try {
+          say((await a.adminDropin(name)).note);
+          for (let i = 0; i < 45; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+            const r = await a.adminDropinStatus(name);
+            if (r.code) {
+              say(`Joining ${name}'s game…`);
+              this.close();
+              say(await this.adminActions.joinRoom(r.code));
+              return;
+            }
+            if (r.gone) break;
+          }
+          say(`${name}'s game didn't answer (they may have stopped playing). Try again.`);
+        } catch (err) {
+          say(err.message);
+        }
+        b.disabled = false;
+      }),
+    );
     el.querySelectorAll('[data-mng]').forEach((b) =>
       b.addEventListener('click', () => {
         const name = b.closest('[data-u]').dataset.u;

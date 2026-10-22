@@ -432,7 +432,8 @@ export class Multiplayer {
       const timer = setTimeout(() => done('Connection timed out'), 8000);
       ws.onopen = () => {
         const a = this.ctx.account;
-        ws.send(JSON.stringify({ t: 'join', name: a.loggedIn ? a.name : this._guestName(), token: a.token, guest: a.loggedIn ? null : a.guestId, avatar: a.profile.avatar, color: a.profile.color }));
+        // dropin: our solo game is becoming a co-op room for an admin to join (map: the one we were on)
+        ws.send(JSON.stringify({ t: 'join', name: a.loggedIn ? a.name : this._guestName(), token: a.token, guest: a.loggedIn ? null : a.guestId, avatar: a.profile.avatar, color: a.profile.color, dropin: create && this.dropinMap ? 1 : 0, map: this.dropinMap || undefined }));
       };
       ws.onmessage = (e) => {
         let m;
@@ -541,6 +542,9 @@ export class Multiplayer {
         teamsMode = !!MODES[m.mode].teams;
         this.inMatch = true;
         this.matchSettings = cleanSettings(m.mode, m.settings);
+        // an admin joined a solo game: co-op carries on from the wave it was on (not one of the usual choices)
+        const w = m.settings?.wave;
+        if (MODES[m.mode]?.coop && Number.isInteger(w) && w >= 1 && w <= 300) this.matchSettings.wave = w;
         this.myLevel = 0;
         this.jugg = m.jugg || 0;
         this.endsAt = Date.now() + (m.endsAt - m.now);

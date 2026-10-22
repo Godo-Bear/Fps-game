@@ -155,6 +155,7 @@ export class GameDB extends DurableObject {
     this.dms = new Map(); // user id -> [count, windowStart] (friend chat)
     this.questReports = new Map(); // user id -> [count, windowStart]
     this.masteryReports = new Map();
+    this.dropins = new Map(); // user id -> { admin, wave, at, code }: an admin joining that player's solo game
   }
 
   // The player's saved games; the old single save (from before named games) moves in as the first one.
@@ -609,7 +610,8 @@ export class GameDB extends DurableObject {
   _adminRow(u) {
     const now = Date.now();
     return {
-      username: u.username, email: u.email || '', level: levelFromXp(u.xp), coins: u.coins || 0, admin: !!u.admin, online: now - u.last_seen < ONLINE_MS,
+      username: u.username, email: u.email || '',
+      solo: now - (u.live_at || 0) < 45000 && !(u.room && now - u.last_seen < ONLINE_MS) ? u.live_wave || 1 : 0, // the wave of their solo game level: levelFromXp(u.xp), coins: u.coins || 0, admin: !!u.admin, online: now - u.last_seen < ONLINE_MS,
       room: now - u.last_seen < ONLINE_MS ? u.room || null : null, banned: !!u.banned, lastSeen: u.last_seen, timeoutMins: u.timeout_until > now ? Math.ceil((u.timeout_until - now) / 60000) : 0,
     };
   }
@@ -637,11 +639,18 @@ export class GameDB extends DurableObject {
         gid, now, now, room, name, ip
       );
     }
+    let dropin = null;
     if (u) {
       const room = typeof body.room === 'string' && /^[A-Z0-9]{5}$/.test(body.room) ? body.room : null;
       this.sql.exec('UPDATE users SET room = ?, last_ip = ? WHERE id = ?', room, ip && ip !== 'local' ? ip : u.last_ip, u.id);
+      // their solo game turning into a co-op room for an admin to join
+      const d = this.dropins.get(u.id);
+      if (d && !d.code && body.dropin && room && Date.now() - d.at < 90000) {
+        d.code = room;
+        dropin = { wave: d.wave, admin: d.admin };
+      }
     }
-    return json({ user: u ? this._publicUser(u, true) : null, words: this._words() });
+    return json({ user: u ? this._publicUser(u, true) : null, words: this._words(), dropin });
   }
 
   // Calls from the game rooms (never from players: the front door refuses the header).
@@ -890,6 +899,11 @@ export class GameDB extends DurableObject {
         'UPDATE users SET live_wave = ?, live_score = ?, live_at = ?, best_wave = MAX(best_wave, ?), best_score = MAX(best_score, ?), last_seen = ? WHERE id = ?',
         wave, score, now, wave, score, now, me.id
       );
+      const d = this.dropins.get(me.id);
+      if (d && !d.code && now - d.at < 90000) {
+        d.wave = Math.max(1, wave);
+        return json({ ok: true, dropin: d.admin });
+      }
       return json({ ok: true });
     }
 
@@ -1476,6 +1490,33 @@ export class GameDB extends DurableObject {
       this._setConfig('shopEdits', edits);
       return json({ shopEdits: edits, note: body.reset ? 'Back to how it was.' : body.hidden ? 'Taken out of the Shop (anyone who has it keeps it).' : 'Saved.' });
     }
+    // admin: join a player's solo game. Their game turns it into a private co-op room (same wave) next time it
+    // checks in (every few seconds), then the admin's game joins it.
+    if (path === '/admin/dropin' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const u = typeof body.username === 'string' ? this._byName(body.username) : null;
+      if (!u) return err('No player with that name', 404);
+      if (u.id === me.id) return err("That's you");
+      const now = Date.now();
+      if (!(now - (u.live_at || 0) < 45000) || (u.room && now - u.last_seen < ONLINE_MS)) return err(`${u.username} isn't in a solo game right now`);
+      this.dropins.set(u.id, { admin: me.username, wave: Math.max(1, u.live_wave || 1), at: now, code: null });
+      return json({ note: `Asking ${u.username}'s game to let you in (a few seconds)…` });
+    }
+    if (path === '/admin/dropin' && method === 'GET') {
+      if (!me.admin) return err('Admins only', 403);
+      const u = this._byName(String(url.searchParams.get('u') || ''));
+      const d = u && this.dropins.get(u.id);
+      if (!d || d.admin !== me.username) return json({ gone: true });
+      if (d.code) {
+        this.dropins.delete(u.id);
+        return json({ code: d.code });
+      }
+      if (Date.now() - d.at > 90000) {
+        this.dropins.delete(u.id);
+        return json({ gone: true });
+      }
+      return json({ waiting: true });
+    }
     // admin: give a player a new password (they forgot it, maybe with a made-up email). By player name or email.
     // With Supabase logins it needs SUPABASE_SERVICE_ROLE_KEY on the Worker (a secret: never sent to anyone).
     if (path === '/admin/set-password' && method === 'POST') {
@@ -2013,7 +2054,9 @@ export class Room extends DurableObject {
       .catch(() => {});
   }
   get _set() {
-    return cleanSettings(this.mode, this.settings[this.mode]);
+    const set = cleanSettings(this.mode, this.settings[this.mode]);
+    if (this.dropinWave && this.mode === 'coop') set.wave = this.dropinWave; // an admin joined their solo game: same wave
+    return set;
   }
 
   async fetch(request) {
@@ -2157,12 +2200,13 @@ export class Room extends DurableObject {
       case 'join': {
         if (p.joined) return;
         let name = typeof m.name === 'string' && NAME.test(m.name.trim()) ? m.name.trim() : `Guest${p.id}`;
+        let dropin = null;
         // ask the database who this is, whether they're banned or timed out, and for the blocked words
         try {
           const res = await this._db.fetch('https://db/api/internal/join', {
             method: 'POST',
             headers: { 'x-internal': '1' },
-            body: JSON.stringify({ token: typeof m.token === 'string' ? m.token : null, ip: p.ip, room: this.code, guest: typeof m.guest === 'string' ? m.guest : null, name }),
+            body: JSON.stringify({ token: typeof m.token === 'string' ? m.token : null, ip: p.ip, room: this.code, guest: typeof m.guest === 'string' ? m.guest : null, name, dropin: !!m.dropin }),
           });
           const r = await res.json();
           if (r.blocked) {
@@ -2176,6 +2220,7 @@ export class Room extends DurableObject {
             return;
           }
           this._setWords(r.words);
+          dropin = r.dropin || null;
           const user = r.user;
           if (!user && typeof m.guest === 'string' && /^[a-f0-9]{24}$/.test(m.guest)) p.guestId = m.guest;
           if (user) {
@@ -2228,6 +2273,15 @@ export class Room extends DurableObject {
           this._spawn(p);
           this._fillBots(); // a bot makes room for a real player
         } else if (this.mode === 'event' && this.phase === 'lobby') this._startMatch(); // events start as soon as someone's in
+        else if (dropin && m.dropin && this.phase === 'lobby' && this._humans().length === 1) {
+          // a solo game an admin is joining: a private co-op match at the wave they were on, straight away
+          this.mode = 'coop';
+          if (MP_MAPS.includes(m.map)) this.map = m.map;
+          this.dropinWave = Math.max(1, Math.min(300, dropin.wave | 0));
+          this.open = false;
+          this._broadcast(this._lobby()); // (the games need the co-op settings before the match starts)
+          this._startMatch();
+        }
         this._broadcast({ t: 'msg', text: `${p.name} joined` }, p);
         break;
       }

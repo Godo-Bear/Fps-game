@@ -2,6 +2,12 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.67', date: '22 Oct 2026', title: 'Admins can join solo games',
+    items: [
+      'Admins: 🎮 JOIN next to anyone playing solo (Admin → Players → Every player). Their game is saved, then carries on as a private co-op game at the same wave, and you drop straight in.',
+    ],
+  },
+  {
     v: '5.66', date: '22 Oct 2026', title: 'Admins are friends with everyone',
     items: ['Admins are friends with every player: they show in each other\'s Friends list, so you can chat, invite to a party and join each other without a friend request.'],
   },

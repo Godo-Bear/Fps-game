@@ -1798,13 +1798,35 @@ function openSupply(gun) {
 // Live leaderboard: logged-in players send the wave they're on while a zombie run is going.
 const live = { t: 0, wave: 0, on: false };
 function updateLive(dt) {
-  if (!account.loggedIn || !zombieGame() || usingCheats() || game.wave < 1) return;
+  if (game.mode === 'solo' || !account.loggedIn || !zombieGame() || usingCheats() || game.wave < 1) return; // (solo: the timer below)
   live.t -= dt;
   if (live.wave === game.wave && live.t > 0) return;
   live.t = 15;
   live.wave = game.wave;
   live.on = true;
   account.live(game.wave, game.score);
+}
+// solo: every few seconds, even while paused, so an admin can drop in quickly
+setInterval(() => {
+  if (game.mode !== 'solo' || !['playing', 'paused', 'choosing'].includes(game.state)) return;
+  if (!account.loggedIn || usingCheats() || game.wave < 1 || game.phase === 'tutorial') return;
+  live.wave = game.wave;
+  live.on = true;
+  account.live(game.wave, game.score).then((r) => r?.dropin && adminDropin(r.dropin));
+}, 6000);
+// An admin wants to join this solo game: it's saved, then carries on as a private co-op game at the same wave
+let droppingIn = false;
+async function adminDropin(admin) {
+  if (droppingIn || game.mode !== 'solo' || game.weekly || tut.on || mp.lobby) return;
+  droppingIn = true;
+  persistRun(); // the solo game stays in Saved Games
+  endLive();
+  banner(`⭐ ${admin} IS JOINING`, 'Your game turns into co-op at the same wave', 'gold', 2.6);
+  mp.dropinMap = game.map;
+  const err = await mp.create();
+  mp.dropinMap = null;
+  droppingIn = false;
+  if (err) subBanner(`Couldn't open your game to ${admin}: ${err}`, 3);
 }
 function endLive() {
   if (live.on) account.liveEnd();
