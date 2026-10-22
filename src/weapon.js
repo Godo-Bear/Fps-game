@@ -123,6 +123,7 @@ export class Weapon {
   }
 
   magSize(stats, def = this.def) {
+    if (def.utility) return def.mag; // items: their uses don't grow with magazine upgrades
     return Math.max(1, Math.round(def.mag * (1 + stats.magBonus / 30)));
   }
 
@@ -152,6 +153,11 @@ export class Weapon {
     const have = this.slots.findIndex((s) => s.def.id === id);
     if (have >= 0) {
       const slot = this.slots[have];
+      if (def.utility) {
+        // another of an item you have: more uses
+        slot.ammo += keep ? keep.ammo : def.mag;
+        return 'ammo';
+      }
       if (slot.reserve !== Infinity) slot.reserve += keep ? keep.ammo + (keep.reserve === Infinity ? this.magSize(stats, def) * 2 : keep.reserve) : this.magSize(stats, def) * 2;
       if (mut && slot.mut !== mut) {
         slot.mut = mut;
@@ -427,7 +433,8 @@ export class Weapon {
       this.flash.material.rotation = Math.random() * Math.PI;
       if (def.reloadStyle === 'bolt') this.boltT = 1 / (def.fireRate * stats.fireRateMul);
     }
-    if (s.ammo === 0 && s.reserve === 0 && def.reserve !== Infinity && this.reloading <= 0 && this.switchT <= 0 && !trigger) {
+    // (not in the frame it fired: the shot still has to happen with this gun, e.g. an item's last use)
+    if (s.ammo === 0 && s.reserve === 0 && def.reserve !== Infinity && this.reloading <= 0 && this.switchT <= 0 && !trigger && shots === 0) {
       this._dropEmpty();
     }
 
@@ -446,7 +453,7 @@ export class Weapon {
     this.flash.visible = this.flashT > 0;
     this.light.intensity = this.flashT > 0 ? 6 : 0;
 
-    const canAim = aim && !sprinting && this.reloading <= 0 && this.switchT <= 0;
+    const canAim = aim && !sprinting && this.reloading <= 0 && this.switchT <= 0 && !def.utility;
     this.ads += ((canAim ? 1 : 0) - this.ads) * Math.min(1, dt * (def.scope ? 9 : 12));
     this.sprintBlend += ((sprinting ? 1 : 0) - this.sprintBlend) * Math.min(1, dt * 8);
     if (moving) this.bobT += dt * speed * 1.4;

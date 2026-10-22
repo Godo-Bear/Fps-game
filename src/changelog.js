@@ -2,6 +2,16 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.72', date: '22 Oct 2026', title: 'Items: grappler, rift, launch pad and more',
+    items: [
+      'New items (like Fortnite) turn up on the maps instead of guns now and then. They go in your backpack: pick one and click to use it.',
+      '🪝 Grappler (10 uses): hook anything and get pulled to it. 🌀 Rift-To-Go: pop out high in the sky and glide down. 🚀 Launch Pad: put it down, step on it, fly up and glide.',
+      '💫 Shockwave Grenade (3): throws you and the zombies near it flying (it doesn\'t hurt you). 🩹 Med Kit (2): heals you to full (+50 in PvP).',
+      'New Shop upgrade: 🔦 Flashlight (4 levels): brighter at night, reaches further and lights a wider area, in every mode.',
+      'Admins: 🪝 GIVE EVERY ITEM in the Game tab.',
+    ],
+  },
+  {
     v: '5.71', date: '22 Oct 2026', title: 'Gun pictures',
     items: [
       'The inventory shows a picture of each gun\'s real 3D model (with its mutation glow) instead of an emoji.',

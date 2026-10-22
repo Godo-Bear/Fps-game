@@ -245,8 +245,37 @@ export const GUNS = {
     hands: { grip: [0, -0.1, 0.12], fore: [-0.01, -0.07, -0.34] },
     ads: [0, -0.045, -0.36],
   },
+  // ---- items (Fortnite-style): they go in the backpack like guns, and "firing" uses one (mag = how many uses)
+  grapple: {
+    id: 'grapple', utility: 'grapple', name: 'Grappler', tier: 'rare', icon: '🪝', desc: 'Shoot a hook at anything and get pulled to it',
+    damage: 0, pellets: 1, fireRate: 1.6, mag: 10, reload: 0, reserve: 0, spread: 0, auto: false, recoil: 0.01, kick: 0.4, zoomFov: 70, sound: 'crossbow',
+    hands: { grip: [0, -0.09, 0.06], fore: [-0.03, -0.12, 0.08] },
+  },
+  rift: {
+    id: 'rift', utility: 'rift', name: 'Rift-To-Go', tier: 'epic', icon: '🌀', desc: 'Opens a rift: you pop out high in the sky and glide down',
+    damage: 0, pellets: 1, fireRate: 1, mag: 1, reload: 0, reserve: 0, spread: 0, auto: false, recoil: 0, kick: 0.2, zoomFov: 75, sound: 'knife',
+    hands: { grip: [0, -0.06, 0.04], fore: [-0.08, -0.1, 0.02] },
+  },
+  shockwave: {
+    id: 'shockwave', utility: 'shockwave', name: 'Shockwave Grenade', tier: 'epic', icon: '💫', desc: 'Throw it: everything near the blast (you too) gets launched',
+    damage: 0, pellets: 1, fireRate: 1.4, mag: 3, reload: 0, reserve: 0, spread: 0, auto: false, recoil: 0, kick: 0.3, zoomFov: 75, sound: 'knife',
+    hands: { grip: [0, -0.06, 0.04], fore: [-0.08, -0.1, 0.02] },
+  },
+  launchpad: {
+    id: 'launchpad', utility: 'launchpad', name: 'Launch Pad', tier: 'rare', icon: '🚀', desc: 'Put it down and step on it: up you go, then glide',
+    damage: 0, pellets: 1, fireRate: 1, mag: 1, reload: 0, reserve: 0, spread: 0, auto: false, recoil: 0, kick: 0.2, zoomFov: 75, sound: 'knife',
+    hands: { grip: [0, -0.06, 0.04], fore: [-0.08, -0.1, 0.02] },
+  },
+  medkit: {
+    id: 'medkit', utility: 'medkit', name: 'Med Kit', tier: 'rare', icon: '🩹', desc: 'Heals you to full',
+    damage: 0, pellets: 1, fireRate: 0.5, mag: 2, reload: 0, reserve: 0, spread: 0, auto: false, recoil: 0, kick: 0.2, zoomFov: 75, sound: 'knife',
+    hands: { grip: [0, -0.06, 0.04], fore: [-0.08, -0.1, 0.02] },
+  },
 };
 export const HALLOWEEN_GUNS = Object.keys(GUNS).filter((id) => GUNS[id].halloween);
+// the items, and how often each turns up on the map (instead of a gun)
+export const ITEM_DROPS = [['grapple', 3], ['medkit', 3], ['launchpad', 2], ['shockwave', 2], ['rift', 1]];
+const ITEM_CHANCE = 0.25;
 
 export const TIER_COLOR = { common: 0xcfc6b0, rare: 0x3d8bff, epic: 0xb04dff, legendary: 0xffb020 };
 export const TIER_CSS = { common: '#cfc6b0', rare: 'var(--rare)', epic: 'var(--epic)', legendary: 'var(--legendary)' };
@@ -273,6 +302,11 @@ export const randomMutation = () => MUTATION_IDS[Math.floor(Math.random() * MUTA
 export function rollGun(rand = Math.random) {
   // Halloween: now and then one of its guns instead
   if (isHalloween() && rand() < 0.22) return HALLOWEEN_GUNS[Math.floor(rand() * HALLOWEEN_GUNS.length)];
+  // now and then an item (grappler, rift, launch pad...) instead
+  if (rand() < ITEM_CHANCE) {
+    let w = rand() * ITEM_DROPS.reduce((n, [, k]) => n + k, 0);
+    for (const [id, k] of ITEM_DROPS) if ((w -= k) < 0) return id;
+  }
   let r = rand();
   for (const row of GUN_DROP_TABLE) {
     if (r < row.chance) return row.guns[Math.floor(rand() * row.guns.length)];
@@ -524,6 +558,57 @@ function buildGunBase(id) {
       part(g, B(0.03, 0.06, 0.03), M.orange, 0, 0.1, -0.15);
       out.muzzleZ = -0.64;
       out.muzzleY = 0.03;
+      break;
+    }
+    // ---- the items
+    case 'grapple': {
+      // a chunky pistol with a hook sticking out of the barrel
+      part(g, B(0.07, 0.1, 0.3), M.dark, 0, 0, -0.08);
+      part(g, B(0.05, 0.13, 0.06), M.dark, 0, -0.1, 0.06, -0.3);
+      part(g, C(0.035, 0.035, 0.14, 10), M.orange, 0, 0.0, -0.27, H);
+      const hook = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: 0.3, metalness: 0.7 });
+      part(g, B(0.015, 0.015, 0.1), hook, 0, 0, -0.38);
+      part(g, B(0.015, 0.06, 0.015), hook, 0, 0.025, -0.43, 0.6);
+      part(g, B(0.015, 0.06, 0.015), hook, 0, -0.025, -0.43, -0.6);
+      out.muzzleZ = -0.45;
+      break;
+    }
+    case 'rift': {
+      // a swirling purple orb in a little frame
+      const orb = new THREE.MeshStandardMaterial({ color: 0x8a3cff, emissive: 0x6a2aff, emissiveIntensity: 1.2, roughness: 0.2 });
+      part(g, new THREE.SphereGeometry(0.08, 16, 12), orb, 0, 0, -0.15);
+      part(g, new THREE.TorusGeometry(0.1, 0.012, 8, 20), M.metal, 0, 0, -0.15);
+      part(g, new THREE.TorusGeometry(0.1, 0.012, 8, 20), M.metal, 0, 0, -0.15, 0, H);
+      out.muzzleZ = -0.2;
+      break;
+    }
+    case 'shockwave': {
+      // a blue grenade with glowing bands
+      const blue = new THREE.MeshStandardMaterial({ color: 0x2a6ad0, emissive: 0x3a8aff, emissiveIntensity: 0.6, roughness: 0.3 });
+      part(g, new THREE.SphereGeometry(0.075, 16, 12), blue, 0, 0, -0.12);
+      part(g, new THREE.TorusGeometry(0.076, 0.01, 8, 20), M.metal, 0, 0, -0.12, H);
+      part(g, C(0.02, 0.02, 0.04, 8), M.metal, 0, 0.08, -0.12);
+      out.muzzleZ = -0.2;
+      break;
+    }
+    case 'launchpad': {
+      // a folded pad with a yellow arrow
+      part(g, B(0.3, 0.05, 0.3), M.dark, 0, 0, -0.15);
+      part(g, B(0.26, 0.012, 0.26), M.orange, 0, 0.03, -0.15);
+      part(g, B(0.06, 0.014, 0.14), M.metal, 0, 0.04, -0.12);
+      part(g, new THREE.ConeGeometry(0.07, 0.08, 3), M.metal, 0, 0.04, -0.23, -H);
+      out.muzzleZ = -0.3;
+      break;
+    }
+    case 'medkit': {
+      // a white case with a red cross
+      const white = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.6 });
+      const red = new THREE.MeshBasicMaterial({ color: 0xd42a1f });
+      part(g, B(0.26, 0.16, 0.12), white, 0, 0, -0.15);
+      part(g, B(0.16, 0.05, 0.005), red, 0, 0, -0.21);
+      part(g, B(0.05, 0.12, 0.005), red, 0, 0, -0.211);
+      part(g, B(0.1, 0.03, 0.02), M.dark, 0, 0.095, -0.15);
+      out.muzzleZ = -0.22;
       break;
     }
     default:

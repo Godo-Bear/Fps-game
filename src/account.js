@@ -1634,7 +1634,7 @@ export class AccountUI {
       halloween: () => (isHalloween() ? this._candyShop() : ''),
       paid: () => this._paidShop(edit, editForm, tools),
       deals: () => this._deals(),
-      upgrades: () => `<h4>Upgrades <span class="muted small">(solo runs)</span></h4>
+      upgrades: () => `<h4>Upgrades <span class="muted small">(solo runs; the flashlight in every mode)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>`,
       guns: () => `<h4>Starting gun <span class="muted small">(Own it, equip it: you spawn holding it in every mode, with unlimited ammo)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>`,
@@ -1850,6 +1850,7 @@ export class AccountUI {
       <div class="acard"><h4>⚡ Actions</h4>
       <div class="admin-grid">
         <button class="btn small" data-run="guns" ${solo || mp ? '' : 'disabled'}>GIVE ALL GUNS</button>
+        <button class="btn small" data-run="items" ${solo || mp ? '' : 'disabled'}>🪝 GIVE EVERY ITEM</button>
         <button class="btn small" data-run="mutate" ${solo || mp ? '' : 'disabled'}>MUTATE ALL MY GUNS</button>
         <button class="btn small" data-run="powerups" ${solo || mp ? '' : 'disabled'}>MAX ALL POWER-UPS</button>
         <button class="btn small" data-run="heal" ${solo || mp ? '' : 'disabled'}>FULL HEAL + OVERHEAL</button>

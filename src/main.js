@@ -18,7 +18,7 @@ import { DefendPoints } from './defend.js';
 import { Structures } from './structures.js';
 import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
 import { Effects } from './effects.js';
-import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, setArmLook, randomMutation, rollGun } from './guns.js';
+import { GUNS, MUTATIONS, TIER_CSS, buildGun, loadGunModels, setArmLook, randomMutation, rollGun } from './guns.js';
 import { clearGunIcons, gunIcon } from './gunIcons.js';
 import { Minimap } from './minimap.js';
 import { Avatar, FLAG_BITS, Multiplayer } from './multiplayer.js';
@@ -77,7 +77,7 @@ let weather = null;
 
 let stats = baseStats();
 weapon.reset(stats);
-weapon.onDrop = (def) => subBanner(`${def.name} is out of ammo`, 1.8);
+weapon.onDrop = (def) => subBanner(def.utility ? `${def.name} used up` : `${def.name} is out of ammo`, 1.8);
 const projectiles = [];
 const owned = new Map();
 const medkits = [];
@@ -304,9 +304,13 @@ function setNight(on, announce = false) {
 const flashlight = new THREE.SpotLight(0xfff2d8, 0, 48, 0.42, 0.55, 1.4);
 scene.add(flashlight, flashlight.target);
 const _fl = new THREE.Vector3();
+// the Shop's Flashlight upgrade: each level brighter, further and wider
 function updateFlashlight() {
   const k = weather && settings.flashlight ? weather.nightK : 0;
-  flashlight.intensity = k * 60;
+  const lvl = Math.min(4, account.items?.flashlight || 0);
+  flashlight.intensity = k * 60 * (1 + lvl * 0.45);
+  flashlight.distance = 48 + lvl * 14;
+  flashlight.angle = 0.42 + lvl * 0.07;
   flashlight.visible = k > 0.02 && !player.dead && !inMenu();
   if (!flashlight.visible) return;
   camera.getWorldDirection(_fl);
@@ -846,6 +850,7 @@ const targets = () => (zombieGame() ? zombies.parts : isEvent() ? zombies.parts.
 function fireShot(moving, speed) {
   const def = weapon.def;
   if (def.melee) return meleeAttack();
+  if (def.utility) return useItem(def);
   audio.shot(def.sound, stats.explosive > 0);
   player.addRecoil(def.recoil * (1 - weapon.ads * 0.4) * (player.crouching ? 0.7 : 1));
   camera.updateMatrixWorld();
@@ -1713,6 +1718,197 @@ function throwGrenade() {
   questAdd('grenades');
 }
 
+// ---------------------------------------------------------------- items (Fortnite-style): grappler, rift, shockwave, launch pad, med kit
+const move = { grapple: null, glide: false, pads: [] };
+const rope = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0xe8e8e8 }));
+rope.visible = false;
+rope.frustumCulled = false;
+scene.add(rope);
+const padGeo = new THREE.CylinderGeometry(0.9, 1, 0.18, 16);
+const padMat = new THREE.MeshStandardMaterial({ color: 0x2c2e31, roughness: 0.6 });
+const padTop = new THREE.MeshBasicMaterial({ color: 0xffb020 });
+const _hook = new THREE.Vector3();
+// where the aim ray first hits something solid or the ground (null: nothing within reach)
+function aimPoint(reach) {
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(_dir);
+  camera.getWorldPosition(_origin);
+  raycaster.set(_origin, _dir);
+  raycaster.far = reach;
+  const hit = raycaster.intersectObjects(world.solids, false)[0];
+  let best = hit ? hit.distance : Infinity;
+  for (let d = 0.5; d < Math.min(best, reach); d += 0.5) {
+    const x = _origin.x + _dir.x * d;
+    const z = _origin.z + _dir.z * d;
+    if (_origin.y + _dir.y * d <= heightAt(x, z)) {
+      best = d;
+      break;
+    }
+  }
+  return best < reach ? _hook.copy(_origin).addScaledVector(_dir, best) : null;
+}
+function useItem(def) {
+  const refund = () => (weapon.slot.ammo += 1); // (didn't happen: you keep the use)
+  switch (def.utility) {
+    case 'grapple': {
+      const at = aimPoint(55);
+      if (!at) {
+        subBanner('Too far to hook', 0.9);
+        return refund();
+      }
+      move.grapple = { point: at.clone(), t: 0 };
+      move.glide = false;
+      audio.shot('crossbow');
+      break;
+    }
+    case 'rift': {
+      // through the rift: high above where you are, then glide down
+      effects.burst(player.pos.clone().setY(player.pos.y + 1), { count: 40, color: [0xb06bff, 0x6a2aff, 0xe8d8ff], speed: 4, size: 0.25, life: 0.8, grav: -2, up: 2 });
+      player.pos.y = Math.max(player.pos.y, heightAt(player.pos.x, player.pos.z)) + 60;
+      player.vel.set(0, 0, 0);
+      player.onGround = false;
+      move.grapple = null;
+      move.glide = true;
+      effects.burst(player.pos.clone(), { count: 40, color: [0xb06bff, 0x6a2aff, 0xe8d8ff], speed: 5, size: 0.3, life: 1, grav: 0, up: 0 });
+      audio.powerup?.('epic');
+      banner('🌀 RIFT', 'Glide down: steer with WASD', 'gold', 1.6);
+      break;
+    }
+    case 'shockwave': {
+      camera.updateMatrixWorld();
+      camera.getWorldDirection(_dir);
+      camera.getWorldPosition(_origin);
+      const mesh = buildGun('shockwave').group;
+      mesh.scale.setScalar(1.4);
+      mesh.position.copy(_origin).addScaledVector(_dir, 0.6);
+      mesh.position.y -= 0.15;
+      scene.add(mesh);
+      const vel = _dir.clone().multiplyScalar(18);
+      vel.y += 3.5;
+      thrown.push({ mesh, vel, fuse: 1.6, bounced: 0, shock: true });
+      audio.swing(0.7);
+      break;
+    }
+    case 'launchpad': {
+      // in front of you on the ground (or a roof)
+      camera.getWorldDirection(_dir);
+      const x = player.pos.x + _dir.x * 2.6;
+      const z = player.pos.z + _dir.z * 2.6;
+      const y = Math.max(heightAt(x, z), world.colliders.floorAt(x, z, 0.5, player.pos.y + 1.5));
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(padGeo, padMat));
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.02, 16), padTop);
+      top.position.y = 0.1;
+      g.add(top);
+      g.position.set(x, y + 0.09, z);
+      scene.add(g);
+      move.pads.push({ g, t: 120, cd: 0 });
+      audio.click(0.6, 0.3);
+      subBanner('🚀 Launch pad down: step on it', 1.4);
+      break;
+    }
+    case 'medkit': {
+      const pvp = game.mode === 'mp' && !isCoop();
+      if (player.health >= stats.maxHealth) {
+        subBanner('You\'re already at full health', 1);
+        return refund();
+      }
+      if (pvp) mp.send({ t: 'heal', amount: 50 }); // (the room keeps PvP health: up to 50)
+      else player.health = stats.maxHealth;
+      effects.burst(player.pos.clone().setY(player.pos.y + 1), { count: 20, color: [0x6dff8a, 0xffffff], speed: 1.5, size: 0.15, life: 0.8, grav: -2, up: 1.5 });
+      audio.powerup?.('rare');
+      subBanner(pvp ? '🩹 +50 HP' : '🩹 Full health', 1.2);
+      break;
+    }
+  }
+}
+// the Shockwave Grenade going off: you and the zombies near it go flying (no damage to you)
+function shockBlast(at) {
+  effects.burst(at, { count: 50, color: [0x3a8aff, 0x9fd0ff, 0xffffff], speed: 10, size: 0.22, life: 0.6, grav: 2, up: 1 });
+  audio.explosion(at);
+  const R = 7;
+  const dx = player.pos.x - at.x;
+  const dz = player.pos.z - at.z;
+  const hd = Math.hypot(dx, dz);
+  if (!player.dead && Math.hypot(hd, player.pos.y + 1 - at.y) < R) {
+    const k = 1 - (hd / R) * 0.4;
+    player.vel.set((dx / (hd || 1)) * 15 * k, 16 * k + 4, (dz / (hd || 1)) * 15 * k);
+    player.onGround = false;
+    move.grapple = null;
+  }
+  if (zombieGame() && simHost()) {
+    for (const z of zombies.list) {
+      if (!z.alive) continue;
+      const zx = z.root.position.x - at.x;
+      const zz = z.root.position.z - at.z;
+      const d = Math.hypot(zx, zz);
+      if (d > R) continue;
+      const push = (1 - d / R) * 4 + 1;
+      z.root.position.x += (zx / (d || 1)) * push;
+      z.root.position.z += (zz / (d || 1)) * push;
+      z.root.position.y += 0.1;
+      z.vy = z.typeId === 'boss' ? 3 : 9;
+      z.slowT = 1.5;
+      z.slowAmt = 0.7;
+      if (zombies.damage(z, 25 * stats.damageMul)) onKill(z, false);
+    }
+  }
+}
+// every frame: the grapple pulling you, gliding down, and the launch pads
+function updateItems(dt) {
+  const gr = move.grapple;
+  if (gr) {
+    gr.t += dt;
+    const to = gr.point.clone().sub(player.pos);
+    to.y += 0.6;
+    const d = to.length();
+    if (d < 1.8 || gr.t > 2.5 || player.dead) {
+      move.grapple = null;
+      player.vel.multiplyScalar(0.55); // keep a bit of the swing
+    } else {
+      player.vel.copy(to.multiplyScalar(30 / d));
+      player.onGround = false;
+      weapon.muzzleWorld(_muzzle);
+      rope.geometry.attributes.position.setXYZ(0, _muzzle.x, _muzzle.y, _muzzle.z);
+      rope.geometry.attributes.position.setXYZ(1, gr.point.x, gr.point.y, gr.point.z);
+      rope.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+  rope.visible = !!move.grapple;
+  if (move.glide) {
+    // a glider: falling slowly, and you can steer
+    if (player.vel.y < -6) player.vel.y = -6;
+    if (player.onGround || player.dead) move.glide = false;
+  }
+  for (let i = move.pads.length - 1; i >= 0; i--) {
+    const p = move.pads[i];
+    p.t -= dt;
+    p.cd -= dt;
+    if (p.t <= 0) {
+      scene.remove(p.g);
+      move.pads.splice(i, 1);
+      continue;
+    }
+    const pos = p.g.position;
+    if (p.cd <= 0 && !player.dead && Math.hypot(player.pos.x - pos.x, player.pos.z - pos.z) < 1.1 && Math.abs(player.pos.y - pos.y) < 1) {
+      p.cd = 0.8;
+      player.vel.y = 25;
+      player.onGround = false;
+      move.glide = true;
+      effects.burst(pos.clone(), { count: 24, color: [0xffb020, 0xffffff], speed: 4, size: 0.18, life: 0.5, grav: 4, up: 3 });
+      audio.click(0.4, 0.4);
+    }
+  }
+}
+// a new map or match: no items left out
+function clearItems() {
+  move.grapple = null;
+  move.glide = false;
+  rope.visible = false;
+  for (const p of move.pads) scene.remove(p.g);
+  move.pads.length = 0;
+}
+
 const _next = new THREE.Vector3();
 function updateThrown(dt) {
   throwCd = Math.max(0, throwCd - dt);
@@ -1738,13 +1934,15 @@ function updateThrown(dt) {
       g.vel.x *= 0.5;
       g.vel.z *= 0.5;
       g.bounced++;
+      if (g.shock) g.fuse = Math.min(g.fuse, 0.05); // the shockwave goes off when it lands
     }
     pos.copy(_next);
     g.mesh.rotation.x += dt * Math.hypot(g.vel.x, g.vel.z) * 3;
     if (g.fuse <= 0) {
       scene.remove(g.mesh);
       thrown.splice(i, 1);
-      grenadeBlast(pos.clone().setY(pos.y + 0.2));
+      if (g.shock) shockBlast(pos.clone().setY(pos.y + 0.2));
+      else grenadeBlast(pos.clone().setY(pos.y + 0.2));
     }
   }
 }
@@ -1973,19 +2171,21 @@ const hudPic = (x) => {
   const url = gunIcon(x.def.id, x.mut);
   return url ? `<img class="slot-pic" src="${url}" alt="" />` : '';
 };
-const ammoText = (x) => (x.def.melee ? '' : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`);
+const ammoText = (x) => (x.def.melee ? '' : x.def.utility ? `${x.ammo} use${x.ammo === 1 ? '' : 's'}` : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`);
 // the big card on top: a gun's picture, rarity and stats (x: a slot, or { def, mut } for one that isn't yours yet)
 function invInfo(x, tag = '') {
   const d = x.def;
   const bar = (label, k) => `<div class="inv-stat"><span>${label}</span><i><b style="width:${Math.round(Math.max(0.04, Math.min(1, k)) * 100)}%"></b></i></div>`;
-  const stats = d.melee
+  const stats = d.utility
+    ? `<p class="inv-desc">${esc(d.desc || '')}</p>`
+    : d.melee
     ? bar('Damage', d.damage / 150) + bar('Speed', d.fireRate / 3)
     : bar('Damage', (d.damage * (d.pellets || 1)) / 160) + bar('Fire rate', d.fireRate / 16) + bar('Magazine', d.mag / 100) + bar('Reload speed', 1 - (d.reload || 0) / 4.5);
   const name = x.mut ? `${MUTATIONS[x.mut].name} ${d.name}` : d.name;
   return `<div class="inv-card" style="--c: ${gunColor(d, x.mut)}">
       <div class="inv-big">${gunPic(d, x.mut, 'inv-bigpic')}${tag ? `<em>${tag}</em>` : ''}</div>
       <div class="inv-about"><div class="inv-rar">${x.mut ? MUTATIONS[x.mut].name.toUpperCase() : RARITY[d.tier] || ''}</div><h3>${esc(name)}</h3>
-        ${x.ammo !== undefined && !d.melee ? `<div class="inv-ammo">AMMO ${ammoText(x)}</div>` : ''}${stats}</div>
+        ${x.ammo !== undefined && !d.melee ? `<div class="inv-ammo">${d.utility ? '' : 'AMMO '}${ammoText(x)}</div>` : ''}${stats}</div>
     </div>`;
 }
 function renderInventory() {
@@ -3645,6 +3845,7 @@ function startGame(save = null, name = null, { weekly = false } = {}) {
   weapon.reset(stats);
   applyProfile();
   clearProjectiles();
+  clearItems();
   pickups.clear();
   pickups.topUp(5, player.pos, 0.06);
   supply.clear();
@@ -3725,6 +3926,7 @@ function toMenu() {
   zombies.clear();
   clearMedkits();
   clearProjectiles();
+  clearItems();
   pickups.clear();
   supply.clear();
   document.body.classList.remove('infected');
@@ -3833,6 +4035,7 @@ const mp = new Multiplayer({
     const set = mp.settings;
     if (!MODES[mode].gungame && !MODES[mode].infection && set.pickups !== 'off') pickups.topUp(7, null, 0.08);
     clearProjectiles();
+    clearItems();
     clearMedkits();
     player.reset(100);
     Object.assign(game, { wave: 0, kills: 0, petKills: 0, headshots: 0, score: 0, scrap: START_SCRAP, grenades: 2, phase: 'countdown', timer: 8, toSpawn: 0, bossToSpawn: 0, night: false, spent: 0, perks: new Set(), mod: null, special: null, forceMod: null, weekly: false });
@@ -4503,7 +4706,7 @@ const cheats = { god: false, ammo: false, fly: false, speed: false, onehit: fals
 // game for everyone else: freezing or slowing the zombies stays solo-only)
 const cheatsOn = () => account.admin && (game.mode === 'solo' || game.mode === 'mp');
 const SOLO_ONLY_CHEATS = ['freeze', 'slowmo'];
-const MP_ADMIN_ACTIONS = ['guns', 'mutate', 'powerups', 'heal', 'repairbuilds', 'points', 'allbadges', 'scrap', 'nades', 'infinitereserve', 'removeguns', 'unmutate', 'resetpowerups', 'noscrap'];
+const MP_ADMIN_ACTIONS = ['guns', 'items', 'mutate', 'powerups', 'heal', 'repairbuilds', 'points', 'allbadges', 'scrap', 'nades', 'infinitereserve', 'removeguns', 'unmutate', 'resetpowerups', 'noscrap'];
 // the server applies god mode and one-hit kills in PvP, so it has to know
 function sendCheats() {
   if (game.mode === 'mp' && account.admin) mp.send({ t: 'cheat', god: !!cheats.god, onehit: !!cheats.onehit });
@@ -5249,8 +5452,12 @@ accountUI.adminActions = {
     if (game.mode === 'mp' && !MP_ADMIN_ACTIONS.includes(action) && !simHost()) return 'That one controls the zombies and waves, so in multiplayer it only works in a co-op room you host.';
     switch (action) {
       case 'guns':
-        for (const id of Object.keys(GUNS)) if (id !== 'rifle') weapon.give(id, stats);
+        for (const id of Object.keys(GUNS)) if (id !== 'rifle' && !GUNS[id].utility) weapon.give(id, stats);
         return 'All guns added.';
+      case 'items':
+        // one of each item (grappler, rift, shockwave, launch pad, med kit)
+        for (const id of Object.keys(GUNS)) if (GUNS[id].utility) weapon.give(id, stats);
+        return 'Every item added: 🪝 Grappler, 🌀 Rift-To-Go, 💫 Shockwave Grenade, 🚀 Launch Pad and 🩹 Med Kit.';
       case 'mutate': {
         const muts = Object.keys(MUTATIONS);
         weapon.slots.forEach((s, i) => {
@@ -5522,6 +5729,7 @@ function update(dt) {
   if (weapon.ammo === 0 && weapon.slot.reserve > 0 && weapon.reloading <= 0 && !trigger) weapon.startReload(stats);
   updateProjectiles(dt);
   updateThrown(dt);
+  updateItems(dt);
   if (build.on) updateBuildGhost();
   updateRevive(dt);
   updateMapProps(dt);

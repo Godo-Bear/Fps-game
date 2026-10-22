@@ -4331,3 +4331,9 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
 .hw-gun span {
   font-size: 34px;
 }
+
+.inv-desc {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: #dbe6ff;
+}
