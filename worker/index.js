@@ -611,7 +611,9 @@ export class GameDB extends DurableObject {
     const now = Date.now();
     return {
       username: u.username, email: u.email || '',
-      solo: now - (u.live_at || 0) < 45000 && !(u.room && now - u.last_seen < ONLINE_MS) ? u.live_wave || 1 : 0, // the wave of their solo game level: levelFromXp(u.xp), coins: u.coins || 0, admin: !!u.admin, online: now - u.last_seen < ONLINE_MS,
+      // the wave of their solo game (0: not playing solo)
+      solo: now - (u.live_at || 0) < 45000 && !(u.room && now - u.last_seen < ONLINE_MS) ? u.live_wave || 1 : 0,
+      level: levelFromXp(u.xp), coins: u.coins || 0, admin: !!u.admin, online: now - u.last_seen < ONLINE_MS,
       room: now - u.last_seen < ONLINE_MS ? u.room || null : null, banned: !!u.banned, lastSeen: u.last_seen, timeoutMins: u.timeout_until > now ? Math.ceil((u.timeout_until - now) / 60000) : 0,
     };
   }

@@ -5,6 +5,7 @@ export const CHANGELOG = [
     v: '5.67', date: '22 Oct 2026', title: 'Admins can join solo games',
     items: [
       'Admins: 🎮 JOIN next to anyone playing solo (Admin → Players → Every player). Their game is saved, then carries on as a private co-op game at the same wave, and you drop straight in.',
+      'Fixed: the admin player lists showed "Lv undefined" and "undefined" coins.',
     ],
   },
   {
