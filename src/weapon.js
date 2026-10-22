@@ -285,6 +285,28 @@ export class Weapon {
     this.flash.scale.setScalar(look === 'smg' ? 0.22 : look === 'shotgun' || look === 'sniper' ? 0.45 : 0.32);
   }
 
+  // Takes slot i out of your hands (dropped on purpose). Returns it, or null for the knife.
+  removeAt(i) {
+    const s = this.slots[i];
+    if (!s || s.def.melee || this.slots.length < 2) return null;
+    const cur = this.slots[this.cur];
+    const last = this.slots[this.last];
+    this.slots.splice(i, 1);
+    this.pending = -1;
+    if (s === cur) {
+      // holding it: switch to the last gun (or the knife)
+      const back = last !== s && this.slots.includes(last) ? last : this.slots.find((x) => x.def.melee) || this.slots[0];
+      this.cur = this.last = this.slots.indexOf(back);
+      this.reloading = 0;
+      this._show(this.cur);
+      this.switchT = SWITCH_TIME * 0.5;
+    } else {
+      this.cur = this.slots.indexOf(cur);
+      this.last = Math.max(0, this.slots.indexOf(last));
+    }
+    return s;
+  }
+
   _dropEmpty() {
     const s = this.slot;
     if (s.def.reserve === Infinity || s.ammo > 0 || s.reserve > 0) return;

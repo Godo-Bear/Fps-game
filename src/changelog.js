@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.69', date: '22 Oct 2026', title: 'Drop guns',
+    items: ['Drop a gun: press X to drop the one you\'re holding, or tap a gun in 🎒 My guns (I) and press 🗑️ DROP. It lands on the ground (walk away and back to pick it up again). The knife stays with you.'],
+  },
+  {
     v: '5.68', date: '22 Oct 2026', title: 'Backpack: 10 guns, your order',
     items: [
       'You can carry up to 10 guns (the knife doesn\'t count). Pick up, buy or get a new one when you\'re full and you choose which gun to swap out (it drops on the ground), or cancel and leave it.',

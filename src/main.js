@@ -1967,7 +1967,7 @@ function renderInventory() {
   if (s) $('inv-new').innerHTML = `<div class="inv-slot new" style="--c: ${s.mut ? MUTATIONS[s.mut].css : TIER_CSS[def.tier]}"><span class="inv-ic">${def.icon || '🔫'}</span><span class="inv-n">${esc(s.mut ? `${MUTATIONS[s.mut].name} ${def.name}` : def.name)}</span><span class="inv-a">NEW</span></div>`;
   $('inv-sub').innerHTML = s
     ? 'Pick a gun to swap out for it (it drops on the ground), or cancel to leave it.'
-    : `Up to ${MAX_GUNS} guns (the knife doesn't count). Drag a gun onto another, or tap one then another, to swap their places: the number keys follow this order.`;
+    : `Up to ${MAX_GUNS} guns (the knife doesn't count). Drag a gun onto another, or tap one then another, to swap their places: the number keys follow this order. Tap one and press DROP to leave it on the ground (or X while playing).`;
   $('inv-grid').innerHTML = weapon.slots
     .map((x, i) => {
       const key = i < 9 ? i + 1 : i === 9 ? 0 : '';
@@ -1978,6 +1978,8 @@ function renderInventory() {
     })
     .join('');
   $('inv-cancel').classList.toggle('hidden', !s);
+  // a gun picked (not the knife): it can be dropped
+  $('inv-drop').classList.toggle('hidden', !!s || inv.pick < 0 || !!weapon.slots[inv.pick]?.def.melee);
   $('inv-done').classList.toggle('hidden', !!s);
 }
 function swapInto(i) {
@@ -2020,6 +2022,22 @@ $('inv-grid').addEventListener('drop', (e) => {
   inv.pick = -1;
   renderInventory();
 });
+// drops a gun on the ground (X while playing: the one you're holding)
+function dropGun(i = weapon.cur) {
+  if (fixedGuns() || player.dead) return;
+  const s = weapon.removeAt(i);
+  if (!s) return subBanner("You can't drop the knife", 1.4);
+  pickups.drop(s.def.id, s.mut, player.pos);
+  inv.skip = { x: player.pos.x, z: player.pos.z }; // (not straight back into your hands)
+  subBanner(`Dropped the ${weapon.displayName(s)}`, 1.4);
+  audio.click?.(0.6, 0.15);
+}
+$('inv-drop').addEventListener('click', () => {
+  if (inv.pick < 0) return;
+  dropGun(inv.pick);
+  inv.pick = -1;
+  renderInventory();
+});
 $('inv-done').addEventListener('click', closeInventory);
 $('inv-cancel').addEventListener('click', closeInventory);
 $('pause-guns').addEventListener('click', (e) => {
@@ -2029,8 +2047,8 @@ $('pause-guns').addEventListener('click', (e) => {
 
 function onPickGun(id, mut) {
   if (fixedGuns()) return false; // gun game and zombie players keep what the mode gives them
+  if (inv.skip) return false; // they just dropped or left the guns here: wait until they walk away
   if (backpackFull(id)) {
-    if (inv.skip) return false; // they said no to the ones here: wait until they walk away
     openInventory({ id, mut: mut || null, fromGround: true, done: () => questAdd('gunsPicked') });
     return false;
   }
@@ -4420,6 +4438,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyH') toggleTank();
   if (e.code === 'KeyP') toggleView();
   if (e.code === 'KeyI') return openInventory();
+  if (e.code === 'KeyX') return dropGun();
   const digit = /^Digit([0-9])$/.exec(e.code);
   if (digit) weapon.equip(digit[1] === '0' ? 9 : Number(digit[1]) - 1);
 });
@@ -4950,7 +4969,7 @@ const ALL_SETTING_ROWS = [...SETTING_ROWS, VIEW_ROW, ...GUN_ROWS, ...MORE_SETTIN
 let showAllSettings = false;
 const CONTROL_LIST = [
   ['WASD / arrows', 'Move'], ['Mouse', 'Look'], ['Left click', 'Shoot'], ['Right click', 'Aim / scope'], ['R', 'Reload'], ['Shift', 'Sprint'],
-  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-9, 0 / wheel', 'Switch gun'], ['I', 'My guns (change their order)'], ['Q', 'Last gun'], ['V', 'Knife stab'],
+  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-9, 0 / wheel', 'Switch gun'], ['I', 'My guns (change their order)'], ['X', 'Drop the gun you\'re holding'], ['Q', 'Last gun'], ['V', 'Knife stab'],
   ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
   ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];
