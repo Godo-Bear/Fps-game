@@ -1268,7 +1268,7 @@ export class AccountUI {
     const status = (u) => (u.banned ? '<b class="bad">BANNED</b>' : u.timeoutMins ? '<b class="bad">timed out</b>' : u.room ? `in <b>${esc(u.room)}</b>` : '');
     const acc = r.accounts
       .map((u) => `<div class="friend admin-player"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b>${u.admin ? ' ⭐' : ''}
-        <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · best wave ${u.bestWave} · ${u.games} games · joined ${date(u.created)} · seen ${ago(u.lastSeen)} ${status(u)}</span>
+        <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${u.email ? `📧 ${esc(u.email)} · ` : ''}best wave ${u.bestWave} · ${u.games} games · joined ${date(u.created)} · seen ${ago(u.lastSeen)} ${status(u)}</span>
         <span class="actions"><button data-manage="${esc(u.username)}">MANAGE</button></span></div>`)
       .join('');
     const guests = r.guests
@@ -1788,7 +1788,7 @@ export class AccountUI {
       <div class="admin-grid"><button class="btn small ghost" id="admin-announce-clear">TAKE DOWN THE ANNOUNCEMENT</button></div>
       </div>
       <div class="acard"><h4>👥 Every player <span class="muted small">(online first)</span></h4>
-      <form class="auth inline admin-row" id="admin-find"><input name="q" maxlength="40" placeholder="Search by name (empty: everyone)" /><button class="btn small">FIND</button></form>
+      <form class="auth inline admin-row" id="admin-find"><input name="q" maxlength="80" placeholder="Search by name or email (empty: everyone)" /><button class="btn small">FIND</button></form>
       <div id="admin-players" class="admin-players muted">Loading…</div>
       <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="40" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
       </div>
@@ -2702,7 +2702,7 @@ export class AccountUI {
         <span class="muted">Lv ${u.level} · ${status}</span>
         <span class="actions">${btns}</span></div>`;
       return `<div class="friend admin-player" data-u="${esc(u.username)}"><span class="dot ${u.online ? 'on' : ''}"></span><b>${esc(u.username)}</b>${u.admin ? ' ⭐' : ''}
-        <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${status}</span>
+        <span class="muted">Lv ${u.level} · 🪙 ${u.coins} · ${u.email ? `📧 ${esc(u.email)} · ` : ''}${status}</span>
         <span class="actions"><button data-mng title="Coins, kick, timeout, ban, level, name and stats">MANAGE</button></span></div>
         <div class="manage-box hidden" data-box="${esc(u.username)}"></div>`;
     };

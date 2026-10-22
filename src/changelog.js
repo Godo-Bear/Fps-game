@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.65', date: '22 Oct 2026', title: 'Admin: emails in the player list',
+    items: ['Admins: the player lists (👥 Every player, and the accounts list) show the email each player logs in with, and you can search by email.'],
+  },
+  {
     v: '5.64', date: '21 Oct 2026', title: 'Late waves run smoothly, scarier Witch and Reaper',
     items: [
       'Much less lag in late waves (wave 50, 75 and up): at most 2 bosses at once (they get tougher instead of more of them), bosses call in fewer extra zombies, and Halloween bosses no longer carry real lights (they made the game stutter).',

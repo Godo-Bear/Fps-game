@@ -125,7 +125,7 @@ export class GameDB extends DurableObject {
     // and later: bans, timeouts, which room you're in (for admins) and your last IP (for bans)
     for (const col of ['save TEXT', 'coins INTEGER NOT NULL DEFAULT 0', "items TEXT NOT NULL DEFAULT '{}'", 'saves TEXT', 'quests TEXT', 'mastery TEXT',
       'banned INTEGER NOT NULL DEFAULT 0', 'timeout_until INTEGER NOT NULL DEFAULT 0', 'room TEXT', 'last_ip TEXT',
-      'achievements TEXT', 'sb_id TEXT', 'paid INTEGER NOT NULL DEFAULT 0', 'paid_until TEXT', 'live_wave INTEGER NOT NULL DEFAULT 0', 'live_score INTEGER NOT NULL DEFAULT 0', 'live_at INTEGER NOT NULL DEFAULT 0']) {
+      'achievements TEXT', 'sb_id TEXT', 'paid INTEGER NOT NULL DEFAULT 0', 'paid_until TEXT', 'live_wave INTEGER NOT NULL DEFAULT 0', 'live_score INTEGER NOT NULL DEFAULT 0', 'live_at INTEGER NOT NULL DEFAULT 0', 'email TEXT']) {
       try {
         this.sql.exec(`ALTER TABLE users ADD COLUMN ${col}`);
       } catch {
@@ -576,10 +576,38 @@ export class GameDB extends DurableObject {
     };
   }
 
+  // Login emails for the admin's player list. They're saved when someone logs in; players who haven't logged in since
+  // are looked up in Supabase (needs SUPABASE_SERVICE_ROLE_KEY) and saved too.
+  async _fillEmails(rows) {
+    const key = this.env.SUPABASE_SERVICE_ROLE_KEY;
+    const missing = rows.filter((u) => u.sb_id && !u.email);
+    if (!this.paywall || !key || !missing.length) return;
+    const base = String(this.env.SUPABASE_URL).replace(/\/+$/, '');
+    const headers = { apikey: key, authorization: `Bearer ${key}` };
+    const want = new Map(missing.map((u) => [u.sb_id, u]));
+    try {
+      for (let page = 1; page <= 10 && want.size; page++) {
+        const r = await fetch(`${base}/auth/v1/admin/users?page=${page}&per_page=1000`, { headers });
+        if (!r.ok) return;
+        const users = (await r.json()).users || [];
+        for (const x of users) {
+          const u = want.get(x.id);
+          if (!u || !x.email) continue;
+          u.email = x.email;
+          this.sql.exec('UPDATE users SET email = ? WHERE id = ?', x.email, u.id);
+          want.delete(x.id);
+        }
+        if (users.length < 1000) break;
+      }
+    } catch {
+      /* Supabase unreachable: no emails this time */
+    }
+  }
+
   _adminRow(u) {
     const now = Date.now();
     return {
-      username: u.username, level: levelFromXp(u.xp), coins: u.coins || 0, admin: !!u.admin, online: now - u.last_seen < ONLINE_MS,
+      username: u.username, email: u.email || '', level: levelFromXp(u.xp), coins: u.coins || 0, admin: !!u.admin, online: now - u.last_seen < ONLINE_MS,
       room: now - u.last_seen < ONLINE_MS ? u.room || null : null, banned: !!u.banned, lastSeen: u.last_seen, timeoutMins: u.timeout_until > now ? Math.ceil((u.timeout_until - now) / 60000) : 0,
     };
   }
@@ -709,7 +737,7 @@ export class GameDB extends DurableObject {
         user = this.sql.exec('SELECT * FROM users WHERE sb_id = ?', sb.id).toArray()[0];
       }
       if (user.banned) return json({ error: 'This account has been banned', banned: true }, 403);
-      this.sql.exec('UPDATE users SET paid = 1, paid_until = ?, last_seen = ?, last_ip = ? WHERE id = ?', sb.paidUntil, Date.now(), ip, user.id);
+      this.sql.exec('UPDATE users SET paid = 1, paid_until = ?, last_seen = ?, last_ip = ?, email = ? WHERE id = ?', sb.paidUntil, Date.now(), ip, sb.email || null, user.id);
       user = this.sql.exec('SELECT * FROM users WHERE id = ?', user.id).toArray()[0];
       await this._supabaseName(body.access_token, user.username);
       return json({ token: await this._session(user), user: { ...this._publicUser(user, true), email: sb.email, paidUntil: sb.paidUntil } });
@@ -992,10 +1020,16 @@ export class GameDB extends DurableObject {
     // admin: everyone online on every server (or a name search), plus who's banned
     if (path === '/admin/players' && method === 'GET') {
       if (!me.admin) return err('Admins only', 403);
-      const q = String(url.searchParams.get('q') || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
-      const rows = q
-        ? this.sql.exec("SELECT * FROM users WHERE username LIKE ? ESCAPE '\\' ORDER BY last_seen DESC LIMIT 40", `${q.replace(/_/g, '\\_')}%`).toArray()
-        : this.sql.exec('SELECT * FROM users ORDER BY (last_seen > ?) DESC, last_seen DESC LIMIT 300', Date.now() - ONLINE_MS).toArray();
+      const raw = String(url.searchParams.get('q') || '').trim().slice(0, 80);
+      const q = raw.replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
+      // an email (or part of one) searches the login emails
+      const byEmail = raw.includes('@') || raw.includes('.');
+      const rows = byEmail
+        ? this.sql.exec("SELECT * FROM users WHERE lower(email) LIKE ? ESCAPE '\\' ORDER BY last_seen DESC LIMIT 40", `%${raw.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`).toArray()
+        : q
+          ? this.sql.exec("SELECT * FROM users WHERE username LIKE ? ESCAPE '\\' ORDER BY last_seen DESC LIMIT 40", `${q.replace(/_/g, '\\_')}%`).toArray()
+          : this.sql.exec('SELECT * FROM users ORDER BY (last_seen > ?) DESC, last_seen DESC LIMIT 300', Date.now() - ONLINE_MS).toArray();
+      await this._fillEmails(rows);
       const banned = this.sql.exec('SELECT * FROM users WHERE banned = 1 OR timeout_until > ? ORDER BY username LIMIT 100', Date.now()).toArray();
       // guests (no account): everyone, or the ones whose room name / id matches
       const gq = q.toLowerCase();
@@ -1014,6 +1048,7 @@ export class GameDB extends DurableObject {
       const args = q ? [like] : [];
       const total = this.sql.exec(`SELECT COUNT(*) AS n FROM users ${where}`, ...args).one().n;
       const rows = this.sql.exec(`SELECT * FROM users ${where} ORDER BY last_seen DESC LIMIT 50 OFFSET ?`, ...args, page * 50).toArray();
+      await this._fillEmails(rows);
       const guestTotal = this.sql.exec('SELECT COUNT(*) AS n FROM guests').one().n;
       const guests = q ? [] : this.sql.exec('SELECT * FROM guests ORDER BY last_seen DESC LIMIT 50 OFFSET ?', page * 50).toArray();
       const now = Date.now();
