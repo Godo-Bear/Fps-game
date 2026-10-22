@@ -232,7 +232,9 @@ export class GameDB extends DurableObject {
     return { party: { id, room: p.room, leader: members.find((m) => m.leader)?.username, members }, invites };
   }
 
+  // admins are friends with everyone (without a row in friends for each player)
   _areFriends(a, b) {
+    if (this.sql.exec('SELECT 1 FROM users WHERE id IN (?, ?) AND admin = 1', a, b).toArray()[0]) return true;
     return !!this.sql.exec("SELECT 1 FROM friends WHERE status = 'accepted' AND ((a = ? AND b = ?) OR (a = ? AND b = ?))", a, b, b, a).toArray()[0];
   }
 
@@ -1671,6 +1673,13 @@ export class GameDB extends DurableObject {
     }
 
     if (path === '/friends' && method === 'GET') {
+      if (me.admin) {
+        // an admin: everyone (online first)
+        const all = this.sql.exec('SELECT * FROM users WHERE id != ? ORDER BY (last_seen > ?) DESC, last_seen DESC LIMIT 500', me.id, Date.now() - ONLINE_MS).toArray();
+        const friends = all.map((u) => this._publicUser(u));
+        friends.sort((x, y) => Number(y.online) - Number(x.online) || y.level - x.level);
+        return json({ friends, incoming: [], outgoing: [] });
+      }
       const rows = this.sql
         .exec(
           `SELECT f.a, f.b, f.status, u.* FROM friends f JOIN users u ON u.id = CASE WHEN f.a = ? THEN f.b ELSE f.a END
@@ -1683,10 +1692,13 @@ export class GameDB extends DurableObject {
       const outgoing = [];
       for (const r of rows) {
         const u = this._publicUser(r);
+        if (r.admin) continue; // added below
         if (r.status === 'accepted') friends.push(u);
         else if (r.b === me.id) incoming.push(u);
         else outgoing.push(u);
       }
+      // every admin is everyone's friend
+      for (const a of this.sql.exec('SELECT * FROM users WHERE admin = 1 AND id != ?', me.id).toArray()) friends.push(this._publicUser(a));
       friends.sort((x, y) => Number(y.online) - Number(x.online) || y.level - x.level);
       return json({ friends, incoming, outgoing });
     }
@@ -1921,6 +1933,7 @@ export class GameDB extends DurableObject {
       if (other.id === me.id) return err("You can't friend yourself");
       const mine = this.sql.exec('SELECT * FROM friends WHERE a = ? AND b = ?', me.id, other.id).toArray()[0];
       const theirs = this.sql.exec('SELECT * FROM friends WHERE a = ? AND b = ?', other.id, me.id).toArray()[0];
+      if ((me.admin || other.admin) && action !== 'accept') return err('Admins are already friends with everyone');
       if (action === 'request') {
         if (mine?.status === 'accepted' || theirs?.status === 'accepted') return err('Already friends');
         if (theirs) {

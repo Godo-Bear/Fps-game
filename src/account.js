@@ -2812,7 +2812,7 @@ export class AccountUI {
         </div>`;
       el.innerHTML = `${partyHtml}
         ${incoming.length ? `<h4>Requests</h4>${incoming.map((u) => row(u, `<button data-f="accept" data-u="${esc(u.username)}">Accept</button><button data-f="remove" data-u="${esc(u.username)}">Decline</button>`)).join('')}` : ''}
-        <h4>Friends (${friends.length})</h4>
+        <h4>Friends (${friends.length})${this.account.admin ? ' <span class="muted small">(admins are friends with everyone)</span>' : ''}</h4>
         ${
           friends.length
             ? friends

@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.66', date: '22 Oct 2026', title: 'Admins are friends with everyone',
+    items: ['Admins are friends with every player: they show in each other\'s Friends list, so you can chat, invite to a party and join each other without a friend request.'],
+  },
+  {
     v: '5.65', date: '22 Oct 2026', title: 'Admin: emails in the player list',
     items: ['Admins: the player lists (👥 Every player, and the accounts list) show the email each player logs in with, and you can search by email.'],
   },
