@@ -3,7 +3,10 @@
 export const CHANGELOG = [
   {
     v: '5.71', date: '22 Oct 2026', title: 'Gun pictures',
-    items: ['The inventory shows a picture of each gun\'s real 3D model (with its mutation glow) instead of an emoji.'],
+    items: [
+      'The inventory shows a picture of each gun\'s real 3D model (with its mutation glow) instead of an emoji.',
+      'Gun pictures in the gun list on your screen while playing, the Shop\'s starting guns, and the Halloween guns in the Halloween shop too.',
+    ],
   },
   {
     v: '5.70', date: '22 Oct 2026', title: 'New inventory look',

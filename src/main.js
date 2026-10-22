@@ -1968,6 +1968,11 @@ const gunPic = (def, mut, cls) => {
   const url = gunIcon(def.id, mut);
   return url ? `<img class="${cls}" src="${url}" alt="" draggable="false" />` : `<span class="${cls} emoji">${def.icon || '🔫'}</span>`;
 };
+// the HUD's gun list: a small picture next to each name
+const hudPic = (x) => {
+  const url = gunIcon(x.def.id, x.mut);
+  return url ? `<img class="slot-pic" src="${url}" alt="" />` : '';
+};
 const ammoText = (x) => (x.def.melee ? '' : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`);
 // the big card on top: a gun's picture, rarity and stats (x: a slot, or { def, mut } for one that isn't yours yet)
 function invInfo(x, tag = '') {
@@ -2767,7 +2772,7 @@ function updateHud(dt) {
   if (last.slots !== slotsKey) {
     last.slots = slotsKey;
     $('slots').innerHTML = weapon.slots
-      .map((x, i) => `<div class="slot ${i === weapon.cur ? 'active' : ''}" style="--c: ${x.mut ? MUTATIONS[x.mut].css : TIER_CSS[x.def.tier]}"><b>${i < 9 ? i + 1 : i === 9 ? 0 : '·'}</b>${esc(weapon.displayName(x))}</div>`)
+      .map((x, i) => `<div class="slot ${i === weapon.cur ? 'active' : ''}" style="--c: ${x.mut ? MUTATIONS[x.mut].css : TIER_CSS[x.def.tier]}"><b>${i < 9 ? i + 1 : i === 9 ? 0 : '·'}</b>${hudPic(x)}${esc(weapon.displayName(x))}</div>`)
       .join('');
   }
   // sights and scopes
@@ -5839,8 +5844,9 @@ loadZombieModel();
 // the owner's gun models (the MK14 is the LMG): swap them in once loaded
 loadGunModels().then(() => {
   weapon.refreshModels();
-  clearGunIcons(); // the inventory pictures, with the real models now
+  clearGunIcons(); // the gun pictures, with the real models now
   if (invOpen()) renderInventory();
+  last.slots = null; // (the HUD's gun list too)
   pickups.refreshModels?.();
 });
 // the tank model (the block tank is used until it has loaded)

@@ -7,6 +7,7 @@ import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
 import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery, tierFor } from '../shared/mastery.js';
 import { GUNS, HALLOWEEN_GUNS } from './guns.js';
+import { gunIcon } from './gunIcons.js';
 import { ACHIEVEMENTS } from '../shared/achievements.js';
 import { priceTag, termsHtml } from '../shared/terms.js';
 import { isHalloween } from './halloween.js';
@@ -1523,7 +1524,11 @@ export class AccountUI {
       return `<div class="cos-item candy"><span class="muted small">${glow ? 'Halloween gun skin' : KIND_NAMES[kind]}</span> ${show} ${owned ? '<span class="maxed">OWNED</span>' : `<button class="btn small" data-candy="${cosmeticItemId(kind, id)}" ${a.candy < price ? 'disabled' : ''}>🍬 ${price}</button>`}</div>`;
     }).join('');
     return `<div class="candy-shop"><div class="shop-head"><span class="coins big">🍬 ${a.candy}</span>
-        <span><b>🎃 HALLOWEEN SHOP</b> <span class="muted">· only while Halloween is on${a.season ? ` (until the end of ${esc(new Date(a.season.endsAt - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' }))})` : ''} · zombies drop candy (bosses a big pile) · yours for good · Halloween guns (${HALLOWEEN_GUNS.map((g) => GUNS[g].icon).join(' ')}) hide around the maps</span></span></div>
+        <span><b>🎃 HALLOWEEN SHOP</b> <span class="muted">· only while Halloween is on${a.season ? ` (until the end of ${esc(new Date(a.season.endsAt - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' }))})` : ''} · zombies drop candy (bosses a big pile) · yours for good · Halloween guns hide around the maps</span></span></div>
+      <div class="hw-guns">${HALLOWEEN_GUNS.map((g) => {
+        const pic = gunIcon(g);
+        return `<div class="hw-gun">${pic ? `<img src="${pic}" alt="" />` : `<span>${GUNS[g].icon}</span>`}<b>${esc(GUNS[g].name)}</b></div>`;
+      }).join('')}</div>
       ${a.loggedIn ? '' : '<p class="muted small">Log in to collect candy and spend it.</p>'}
       <div class="cos-list">${cards}</div></div>`;
   }
@@ -1607,7 +1612,9 @@ export class AccountUI {
         button = price === null ? '<span class="maxed">MAX</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
       }
       if (def.hidden) button = '<span class="maxed">TAKEN OUT</span>';
-      return `<div class="shop-card ${def.hidden ? 'gone' : ''}">${tools(`shop:${def.id}`, def.hidden)}<div class="si">${esc(def.icon)}</div><div class="sn">${esc(def.name)}</div><div class="sd">${esc(def.desc)}</div>${status}${button}</div>`;
+      // guns: a picture of the gun itself
+      const pic = def.kind === 'gun' && gunIcon(def.gun);
+      return `<div class="shop-card ${def.hidden ? 'gone' : ''}">${tools(`shop:${def.id}`, def.hidden)}<div class="si">${pic ? `<img class="shop-gunpic" src="${pic}" alt="" />` : esc(def.icon)}</div><div class="sn">${esc(def.name)}</div><div class="sd">${esc(def.desc)}</div>${status}${button}</div>`;
     };
     const lists = COSMETIC_LISTS;
     const names = KIND_NAMES;
