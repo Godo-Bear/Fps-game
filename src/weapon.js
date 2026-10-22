@@ -165,6 +165,27 @@ export class Weapon {
     return 'new';
   }
 
+  // Swaps slot i for a new gun (the backpack was full).
+  replace(i, id, stats, mut = null) {
+    const def = GUNS[id];
+    this.slots[i] = { def, ammo: this.magSize(stats, def), reserve: def.reserve, mut };
+    if (i === this.cur) {
+      this.reloading = 0;
+      this._show(i);
+    } else this.equip(i);
+  }
+  // Swaps two slots' places (the player's own order); what you're holding stays in your hands.
+  swap(a, b) {
+    if (a === b || !this.slots[a] || !this.slots[b]) return;
+    const cur = this.slots[this.cur];
+    const last = this.slots[this.last];
+    const pend = this.pending >= 0 ? this.slots[this.pending] : null;
+    [this.slots[a], this.slots[b]] = [this.slots[b], this.slots[a]];
+    this.cur = this.slots.indexOf(cur);
+    this.last = Math.max(0, this.slots.indexOf(last));
+    this.pending = pend ? this.slots.indexOf(pend) : -1;
+  }
+
   refillMags(stats) {
     for (const s of this.slots) s.ammo = Math.max(s.ammo, this.magSize(stats, s.def));
   }

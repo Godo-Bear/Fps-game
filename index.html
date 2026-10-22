@@ -252,9 +252,20 @@
         <h2 id="pause-title">PAUSED</h2>
         <p>Click to continue</p>
         <button id="resume-btn" class="btn">RESUME</button>
+        <button id="pause-guns" class="btn ghost">🎒 MY GUNS (I)</button>
         <button id="pause-view" class="btn ghost">👁 VIEW: FIRST PERSON (P)</button>
         <button id="pause-settings" class="btn ghost">⚙ SETTINGS</button>
         <button id="quit-btn" class="btn ghost">EXIT TO MENU</button>
+      </div>
+    </div>
+
+    <div id="inventory" class="overlay hidden">
+      <div class="inv-panel">
+        <h2 id="inv-title">🎒 YOUR GUNS</h2>
+        <div id="inv-new" class="hidden"></div>
+        <p id="inv-sub" class="muted"></p>
+        <div id="inv-grid" class="inv-grid"></div>
+        <div class="inv-btns"><button id="inv-cancel" class="btn ghost">CANCEL</button><button id="inv-done" class="btn">DONE</button></div>
       </div>
     </div>
 

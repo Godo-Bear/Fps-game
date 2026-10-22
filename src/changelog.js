@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.68', date: '22 Oct 2026', title: 'Backpack: 10 guns, your order',
+    items: [
+      'You can carry up to 10 guns (the knife doesn\'t count). Pick up, buy or get a new one when you\'re full and you choose which gun to swap out (it drops on the ground), or cancel and leave it.',
+      'Press I (or 🎒 MY GUNS in the pause menu) to see your guns and change their order: drag one onto another, or tap one then another. The number keys follow your order, and 0 is the 10th gun.',
+    ],
+  },
+  {
     v: '5.67', date: '22 Oct 2026', title: 'Admins can join solo games',
     items: [
       'Admins: 🎮 JOIN next to anyone playing solo (Admin → Players → Every player). Their game is saved, then carries on as a private co-op game at the same wave, and you drop straight in.',

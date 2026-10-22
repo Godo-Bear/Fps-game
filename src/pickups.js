@@ -77,6 +77,27 @@ export class GunPickups {
     i.ring.material.dispose();
   }
 
+  // Takes the nearest gun like this off the ground (it went into a full backpack).
+  take(id, mut, pos) {
+    let best = -1;
+    let bestD = 3;
+    this.items.forEach((i, n) => {
+      const d = Math.hypot(i.root.position.x - pos.x, i.root.position.z - pos.z);
+      if (i.id === id && (i.mut || null) === (mut || null) && d < bestD) {
+        best = n;
+        bestD = d;
+      }
+    });
+    if (best < 0) return;
+    this._remove(this.items[best]);
+    this.items.splice(best, 1);
+  }
+  // Drops a gun on the ground next to the player (swapped out of a full backpack).
+  drop(id, mut, pos) {
+    const a = Math.random() * Math.PI * 2;
+    this.spawn(id, { x: pos.x + Math.cos(a) * 1.2, z: pos.z + Math.sin(a) * 1.2 }, mut || null);
+  }
+
   // Calls onPick(id) when the player touches a gun; the gun is removed if onPick returns true.
   update(dt, playerPos, onPick) {
     for (let n = this.items.length - 1; n >= 0; n--) {

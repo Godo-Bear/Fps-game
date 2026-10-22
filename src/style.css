@@ -4061,3 +4061,86 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
 .xh-skull::before { content: '💀'; }
 .xh-pumpkin::before { content: '🎃'; }
 .xh-bat::before { content: '🦇'; }
+
+/* ---------------------------------------------------------------- the backpack (I): your guns, in your order */
+.inv-panel {
+  width: min(760px, 100%);
+  text-align: center;
+}
+.inv-panel h2 {
+  margin: 0 0 6px;
+}
+.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 14px 0 18px;
+}
+.inv-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 8px 10px;
+  border: 2px solid color-mix(in srgb, var(--c) 55%, transparent);
+  border-radius: 8px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 18%, rgba(0, 0, 0, 0.55)), rgba(0, 0, 0, 0.6));
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.inv-slot:hover {
+  transform: translateY(-2px);
+  border-color: var(--c);
+}
+.inv-slot.held {
+  box-shadow: 0 0 0 2px #ffd38a inset;
+}
+.inv-slot.picked {
+  border-color: #ffd34d;
+  box-shadow: 0 0 14px rgba(255, 211, 77, 0.7);
+  transform: translateY(-3px);
+}
+.inv-slot.off {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.inv-slot.new {
+  width: 170px;
+  margin: 8px auto 0;
+  cursor: default;
+  border-color: var(--c);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--c) 60%, transparent);
+}
+.inv-k {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+.inv-ic {
+  font-size: 30px;
+  line-height: 1;
+}
+.inv-n {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--c);
+}
+.inv-a {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.inv-btns {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+#inventory {
+  background: radial-gradient(ellipse at center, rgba(20, 14, 9, 0.9), rgba(6, 4, 2, 0.96));
+}
+.inv-panel h2 {
+  font-size: clamp(24px, 5vw, 40px);
+}

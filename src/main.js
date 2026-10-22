@@ -560,6 +560,15 @@ function buyShop(sh) {
     audio.empty();
     return;
   }
+  if (sh.kind !== 'perk' && backpackFull(sh.id)) {
+    // a full backpack: pay once they've picked what it replaces
+    return openInventory({ id: sh.id, mut: null, done: () => {
+      game.spent = (game.spent || 0) + price;
+      const slot = weapon.slots.find((sl) => sl.def.id === sh.id);
+      if (slot && slot.reserve !== Infinity) slot.reserve = Math.max(slot.reserve, weapon.magSize(stats, slot.def) * 6);
+      achieve('wallbuy');
+    } });
+  }
   game.spent = (game.spent || 0) + price;
   if (sh.kind === 'perk') {
     PERKS[sh.id].apply();
@@ -1781,7 +1790,13 @@ function openSupply(gun) {
   const coop = game.mode === 'solo' || isCoop();
   if (coop) player.health = Math.max(player.health, stats.maxHealth);
   let what = 'full health';
-  if (gun && GUNS[gun] && !fixedGuns()) {
+  if (gun && GUNS[gun] && !fixedGuns() && backpackFull(gun)) {
+    openInventory({ id: gun, mut: null, done: () => {
+      const slot = weapon.slots.find((s) => s.def.id === gun);
+      if (slot && slot.reserve !== Infinity) slot.reserve = Math.max(slot.reserve, weapon.magSize(stats, GUNS[gun]) * 6);
+    } });
+    what = `${GUNS[gun].icon} ${GUNS[gun].name} (your backpack is full) + full health`;
+  } else if (gun && GUNS[gun] && !fixedGuns()) {
     weapon.give(gun, stats);
     const slot = weapon.slots.find((s) => s.def.id === gun);
     if (slot && slot.reserve !== Infinity) slot.reserve = Math.max(slot.reserve, weapon.magSize(stats, GUNS[gun]) * 6);
@@ -1917,8 +1932,108 @@ function modeLoadoutBase() {
   return false;
 }
 
+// ---------------------------------------------------------------- the backpack
+// At most MAX_GUNS guns (the knife doesn't count). A new one when it's full: pick a gun to swap out (it drops on the
+// ground), or leave it. The player sets the order (I): the number keys follow it.
+const MAX_GUNS = 10;
+const inv = { swap: null, pick: -1, skip: null };
+const gunCount = () => weapon.slots.filter((s) => !s.def.melee).length;
+const backpackFull = (id) => gunCount() >= MAX_GUNS && !GUNS[id]?.melee && !weapon.slots.some((s) => s.def.id === id);
+const invOpen = () => !$('inventory').classList.contains('hidden');
+// swap: { id, mut, done(slot) } a gun that wants in (from the ground, a wall buy or a supply drop)
+function openInventory(swap = null) {
+  if (fixedGuns() || player.dead || !['playing', 'paused'].includes(game.state)) return;
+  inv.swap = swap;
+  inv.pick = -1;
+  trigger = false;
+  aim = false;
+  player.keys.clear();
+  game.state = 'paused'; // (before the mouse is let go, so it doesn't show the pause screen)
+  showOnly('inventory');
+  renderInventory();
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeInventory() {
+  if (inv.swap) inv.skip = { x: player.pos.x, z: player.pos.z }; // left it: don't ask again until they walk away
+  inv.swap = null;
+  pauseFor('PAUSED', game.mode === 'mp' ? 'The match keeps going! Click to continue' : 'Click to continue');
+  lock();
+}
+function renderInventory() {
+  const s = inv.swap;
+  const def = s && GUNS[s.id];
+  $('inv-title').textContent = s ? `🎒 BACKPACK FULL (${MAX_GUNS} GUNS)` : '🎒 YOUR GUNS';
+  $('inv-new').classList.toggle('hidden', !s);
+  if (s) $('inv-new').innerHTML = `<div class="inv-slot new" style="--c: ${s.mut ? MUTATIONS[s.mut].css : TIER_CSS[def.tier]}"><span class="inv-ic">${def.icon || '🔫'}</span><span class="inv-n">${esc(s.mut ? `${MUTATIONS[s.mut].name} ${def.name}` : def.name)}</span><span class="inv-a">NEW</span></div>`;
+  $('inv-sub').innerHTML = s
+    ? 'Pick a gun to swap out for it (it drops on the ground), or cancel to leave it.'
+    : `Up to ${MAX_GUNS} guns (the knife doesn't count). Drag a gun onto another, or tap one then another, to swap their places: the number keys follow this order.`;
+  $('inv-grid').innerHTML = weapon.slots
+    .map((x, i) => {
+      const key = i < 9 ? i + 1 : i === 9 ? 0 : '';
+      const ammo = x.def.melee ? '' : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`;
+      const off = s && x.def.melee; // the knife always stays
+      return `<div class="inv-slot ${inv.pick === i ? 'picked' : ''} ${i === weapon.cur ? 'held' : ''} ${off ? 'off' : ''}" draggable="${!s}" data-i="${i}" style="--c: ${x.mut ? MUTATIONS[x.mut].css : TIER_CSS[x.def.tier]}">
+        <b class="inv-k">${key}</b><span class="inv-ic">${x.def.icon || '🔫'}</span><span class="inv-n">${esc(weapon.displayName(x))}</span><span class="inv-a">${ammo}</span></div>`;
+    })
+    .join('');
+  $('inv-cancel').classList.toggle('hidden', !s);
+  $('inv-done').classList.toggle('hidden', !!s);
+}
+function swapInto(i) {
+  const s = inv.swap;
+  const old = weapon.slots[i];
+  if (!s || !old || old.def.melee) return;
+  if (s.fromGround) pickups.take(s.id, s.mut, player.pos);
+  pickups.drop(old.def.id, old.mut, player.pos);
+  weapon.replace(i, s.id, stats, s.mut);
+  s.done?.(i);
+  subBanner(`Swapped the ${old.def.name} for the ${GUNS[s.id].name}`, 1.8);
+  audio.pickup();
+  inv.swap = null;
+  inv.skip = { x: player.pos.x, z: player.pos.z }; // (the old gun is at your feet now)
+  closeInventory();
+}
+$('inv-grid').addEventListener('click', (e) => {
+  const el = e.target.closest('.inv-slot');
+  if (!el) return;
+  const i = Number(el.dataset.i);
+  if (inv.swap) return swapInto(i);
+  if (inv.pick < 0) inv.pick = i;
+  else {
+    weapon.swap(inv.pick, i);
+    inv.pick = -1;
+  }
+  renderInventory();
+});
+$('inv-grid').addEventListener('dragstart', (e) => {
+  const el = e.target.closest('.inv-slot');
+  if (el) e.dataTransfer.setData('text/plain', el.dataset.i);
+});
+$('inv-grid').addEventListener('dragover', (e) => e.preventDefault());
+$('inv-grid').addEventListener('drop', (e) => {
+  e.preventDefault();
+  const el = e.target.closest('.inv-slot');
+  const from = Number(e.dataTransfer.getData('text/plain'));
+  if (!el || inv.swap || !Number.isInteger(from)) return;
+  weapon.swap(from, Number(el.dataset.i));
+  inv.pick = -1;
+  renderInventory();
+});
+$('inv-done').addEventListener('click', closeInventory);
+$('inv-cancel').addEventListener('click', closeInventory);
+$('pause-guns').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openInventory();
+});
+
 function onPickGun(id, mut) {
   if (fixedGuns()) return false; // gun game and zombie players keep what the mode gives them
+  if (backpackFull(id)) {
+    if (inv.skip) return false; // they said no to the ones here: wait until they walk away
+    openInventory({ id, mut: mut || null, fromGround: true, done: () => questAdd('gunsPicked') });
+    return false;
+  }
   const def = GUNS[id];
   const result = weapon.give(id, stats, mut);
   if (result === 'new') questAdd('gunsPicked');
@@ -2543,7 +2658,7 @@ function updateZombieMarkers() {
   if (arrows.innerHTML !== html) arrows.innerHTML = html;
 }
 
-const OVERLAYS = ['menu', 'pause', 'choose', 'gameover', 'mp-menu', 'lobby', 'mp-end', 'newgame', 'saves-menu'];
+const OVERLAYS = ['menu', 'pause', 'inventory', 'choose', 'gameover', 'mp-menu', 'lobby', 'mp-end', 'newgame', 'saves-menu'];
 function showOnly(id) {
   // leaving the lobby closes whichever lobby tab was open
   if (id !== 'menu') closeLobbyPages();
@@ -2604,7 +2719,7 @@ function updateHud(dt) {
   if (last.slots !== slotsKey) {
     last.slots = slotsKey;
     $('slots').innerHTML = weapon.slots
-      .map((x, i) => `<div class="slot ${i === weapon.cur ? 'active' : ''}" style="--c: ${x.mut ? MUTATIONS[x.mut].css : TIER_CSS[x.def.tier]}"><b>${i + 1}</b>${esc(weapon.displayName(x))}</div>`)
+      .map((x, i) => `<div class="slot ${i === weapon.cur ? 'active' : ''}" style="--c: ${x.mut ? MUTATIONS[x.mut].css : TIER_CSS[x.def.tier]}"><b>${i < 9 ? i + 1 : i === 9 ? 0 : '·'}</b>${esc(weapon.displayName(x))}</div>`)
       .join('');
   }
   // sights and scopes
@@ -4266,6 +4381,10 @@ document.addEventListener('keydown', (e) => {
     choose(Number(e.code.slice(-1)) - 1);
     return;
   }
+  if (invOpen() && (e.code === 'KeyI' || e.code === 'Escape')) {
+    e.preventDefault();
+    return closeInventory();
+  }
   if (e.code === 'KeyM') audio.setMuted(!audio.muted);
   if (e.code === 'Tab' && game.mode === 'mp' && mp.inMatch) {
     e.preventDefault();
@@ -4300,8 +4419,9 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') useShield();
   if (e.code === 'KeyH') toggleTank();
   if (e.code === 'KeyP') toggleView();
-  const digit = /^Digit([1-9])$/.exec(e.code);
-  if (digit) weapon.equip(Number(digit[1]) - 1);
+  if (e.code === 'KeyI') return openInventory();
+  const digit = /^Digit([0-9])$/.exec(e.code);
+  if (digit) weapon.equip(digit[1] === '0' ? 9 : Number(digit[1]) - 1);
 });
 document.addEventListener('keyup', (e) => {
   player.keys.delete(e.code);
@@ -4830,7 +4950,7 @@ const ALL_SETTING_ROWS = [...SETTING_ROWS, VIEW_ROW, ...GUN_ROWS, ...MORE_SETTIN
 let showAllSettings = false;
 const CONTROL_LIST = [
   ['WASD / arrows', 'Move'], ['Mouse', 'Look'], ['Left click', 'Shoot'], ['Right click', 'Aim / scope'], ['R', 'Reload'], ['Shift', 'Sprint'],
-  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-8 / wheel', 'Switch gun'], ['Q', 'Last gun'], ['V', 'Knife stab'],
+  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-9, 0 / wheel', 'Switch gun'], ['I', 'My guns (change their order)'], ['Q', 'Last gun'], ['V', 'Knife stab'],
   ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
   ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];
@@ -5355,6 +5475,7 @@ function update(dt) {
   updateReadyUp();
   questFlushT -= dt;
   if (questFlushT <= 0) flushQuests();
+  if (inv.skip && Math.hypot(player.pos.x - inv.skip.x, player.pos.z - inv.skip.z) > 3) inv.skip = null;
   if (!player.dead) pickups.update(dt, player.pos, onPickGun);
   updateSupply(dt);
   updateLive(dt);
