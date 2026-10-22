@@ -21,7 +21,8 @@ export class GunPickups {
     return Math.max(terrain, top);
   }
 
-  spawn(id, spot, mut = null) {
+  // keep: { ammo, reserve } a gun someone dropped keeps what was in it
+  spawn(id, spot, mut = null, keep = null) {
     const def = GUNS[id];
     const color = mut ? MUTATIONS[mut].color : TIER_COLOR[def.tier];
     const root = new THREE.Group();
@@ -52,7 +53,7 @@ export class GunPickups {
     root.add(ring);
 
     this.scene.add(root);
-    this.items.push({ id, mut, spot, root, spin, beam, ring, t: Math.random() * 10 });
+    this.items.push({ id, mut, spot, root, spin, beam, ring, keep, t: Math.random() * 10 });
   }
 
   // Fills empty loot spots until `count` guns are on the map. Some come out mutated.
@@ -79,6 +80,7 @@ export class GunPickups {
 
   // Takes the nearest gun like this off the ground (it went into a full backpack).
   take(id, mut, pos) {
+    // (returns its keep: the ammo a dropped gun still had)
     let best = -1;
     let bestD = 3;
     this.items.forEach((i, n) => {
@@ -88,14 +90,16 @@ export class GunPickups {
         bestD = d;
       }
     });
-    if (best < 0) return;
+    if (best < 0) return null;
+    const keep = this.items[best].keep;
     this._remove(this.items[best]);
     this.items.splice(best, 1);
+    return keep;
   }
   // Drops a gun on the ground next to the player (swapped out of a full backpack).
-  drop(id, mut, pos) {
+  drop(id, mut, pos, keep = null) {
     const a = Math.random() * Math.PI * 2;
-    this.spawn(id, { x: pos.x + Math.cos(a) * 1.2, z: pos.z + Math.sin(a) * 1.2 }, mut || null);
+    this.spawn(id, { x: pos.x + Math.cos(a) * 1.2, z: pos.z + Math.sin(a) * 1.2 }, mut || null, keep);
   }
 
   // Calls onPick(id) when the player touches a gun; the gun is removed if onPick returns true.
@@ -110,7 +114,7 @@ export class GunPickups {
       const dx = playerPos.x - i.root.position.x;
       const dz = playerPos.z - i.root.position.z;
       const dy = playerPos.y - i.root.position.y;
-      if (dx * dx + dz * dz < 1.5 * 1.5 && dy > -1 && dy < 1.6 && onPick(i.id, i.mut)) {
+      if (dx * dx + dz * dz < 1.5 * 1.5 && dy > -1 && dy < 1.6 && onPick(i.id, i.mut, i.keep)) {
         this._remove(i);
         this.items.splice(n, 1);
       }

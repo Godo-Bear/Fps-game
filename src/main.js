@@ -1959,36 +1959,60 @@ function closeInventory() {
   pauseFor('PAUSED', game.mode === 'mp' ? 'The match keeps going! Click to continue' : 'Click to continue');
   lock();
 }
+// how a gun looks in the backpack: its rarity colour and name
+const RARITY = { common: 'COMMON', rare: 'RARE', epic: 'EPIC', legendary: 'LEGENDARY' };
+const gunColor = (def, mut) => (mut ? MUTATIONS[mut].css : TIER_CSS[def.tier]);
+const ammoText = (x) => (x.def.melee ? '' : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`);
+// the big card on top: a gun's picture, rarity and stats (x: a slot, or { def, mut } for one that isn't yours yet)
+function invInfo(x, tag = '') {
+  const d = x.def;
+  const bar = (label, k) => `<div class="inv-stat"><span>${label}</span><i><b style="width:${Math.round(Math.max(0.04, Math.min(1, k)) * 100)}%"></b></i></div>`;
+  const stats = d.melee
+    ? bar('Damage', d.damage / 150) + bar('Speed', d.fireRate / 3)
+    : bar('Damage', (d.damage * (d.pellets || 1)) / 160) + bar('Fire rate', d.fireRate / 16) + bar('Magazine', d.mag / 100) + bar('Reload speed', 1 - (d.reload || 0) / 4.5);
+  const name = x.mut ? `${MUTATIONS[x.mut].name} ${d.name}` : d.name;
+  return `<div class="inv-card" style="--c: ${gunColor(d, x.mut)}">
+      <div class="inv-big"><span>${d.icon || '🔫'}</span>${tag ? `<em>${tag}</em>` : ''}</div>
+      <div class="inv-about"><div class="inv-rar">${x.mut ? MUTATIONS[x.mut].name.toUpperCase() : RARITY[d.tier] || ''}</div><h3>${esc(name)}</h3>
+        ${x.ammo !== undefined && !d.melee ? `<div class="inv-ammo">AMMO ${ammoText(x)}</div>` : ''}${stats}</div>
+    </div>`;
+}
 function renderInventory() {
   const s = inv.swap;
   const def = s && GUNS[s.id];
-  $('inv-title').textContent = s ? `🎒 BACKPACK FULL (${MAX_GUNS} GUNS)` : '🎒 YOUR GUNS';
-  $('inv-new').classList.toggle('hidden', !s);
-  if (s) $('inv-new').innerHTML = `<div class="inv-slot new" style="--c: ${s.mut ? MUTATIONS[s.mut].css : TIER_CSS[def.tier]}"><span class="inv-ic">${def.icon || '🔫'}</span><span class="inv-n">${esc(s.mut ? `${MUTATIONS[s.mut].name} ${def.name}` : def.name)}</span><span class="inv-a">NEW</span></div>`;
+  $('inv-title').textContent = s ? 'BACKPACK FULL' : 'INVENTORY';
+  $('inv-count').textContent = `${gunCount()} / ${MAX_GUNS} GUNS`;
+  const show = inv.pick >= 0 ? inv.pick : weapon.cur;
+  $('inv-info').innerHTML = s ? invInfo({ def, mut: s.mut, ...(s.keep || {}) }, 'NEW') : weapon.slots[show] ? invInfo(weapon.slots[show], show === weapon.cur ? 'IN HAND' : '') : '';
   $('inv-sub').innerHTML = s
-    ? 'Pick a gun to swap out for it (it drops on the ground), or cancel to leave it.'
-    : `Up to ${MAX_GUNS} guns (the knife doesn't count). Drag a gun onto another, or tap one then another, to swap their places: the number keys follow this order. Tap one and press DROP to leave it on the ground (or X while playing).`;
+    ? `Pick a gun to swap out for the <b>${esc(def.name)}</b> (it drops on the ground), or cancel to leave it.`
+    : 'Drag a gun onto another (or tap one, then another) to swap their places: the number keys follow this order. Tap one and press DROP to leave it on the ground (X while playing).';
   $('inv-grid').innerHTML = weapon.slots
     .map((x, i) => {
       const key = i < 9 ? i + 1 : i === 9 ? 0 : '';
-      const ammo = x.def.melee ? '' : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`;
       const off = s && x.def.melee; // the knife always stays
-      return `<div class="inv-slot ${inv.pick === i ? 'picked' : ''} ${i === weapon.cur ? 'held' : ''} ${off ? 'off' : ''}" draggable="${!s}" data-i="${i}" style="--c: ${x.mut ? MUTATIONS[x.mut].css : TIER_CSS[x.def.tier]}">
-        <b class="inv-k">${key}</b><span class="inv-ic">${x.def.icon || '🔫'}</span><span class="inv-n">${esc(weapon.displayName(x))}</span><span class="inv-a">${ammo}</span></div>`;
+      return `<div class="inv-slot ${inv.pick === i ? 'picked' : ''} ${i === weapon.cur ? 'held' : ''} ${off ? 'off' : ''}" draggable="${!s}" data-i="${i}" style="--c: ${gunColor(x.def, x.mut)}" title="${esc(weapon.displayName(x))}">
+        <b class="inv-k">${key}</b><span class="inv-ic">${x.def.icon || '🔫'}</span><span class="inv-a">${x.def.melee ? '' : x.reserve === Infinity ? '∞' : x.ammo + x.reserve}</span></div>`;
     })
     .join('');
   $('inv-cancel').classList.toggle('hidden', !s);
+  $('inv-done').classList.toggle('hidden', !!s);
   // a gun picked (not the knife): it can be dropped
   $('inv-drop').classList.toggle('hidden', !!s || inv.pick < 0 || !!weapon.slots[inv.pick]?.def.melee);
-  $('inv-done').classList.toggle('hidden', !!s);
 }
+// pointing at a slot shows that gun in the big card
+$('inv-grid').addEventListener('mouseover', (e) => {
+  const x = weapon.slots[Number(e.target.closest('.inv-slot')?.dataset.i)];
+  if (x) $('inv-info').innerHTML = invInfo(x, x === weapon.slot ? 'IN HAND' : '');
+});
+$('inv-grid').addEventListener('mouseleave', () => renderInventory());
 function swapInto(i) {
   const s = inv.swap;
   const old = weapon.slots[i];
   if (!s || !old || old.def.melee) return;
-  if (s.fromGround) pickups.take(s.id, s.mut, player.pos);
-  pickups.drop(old.def.id, old.mut, player.pos);
-  weapon.replace(i, s.id, stats, s.mut);
+  const keep = s.fromGround ? pickups.take(s.id, s.mut, player.pos) : null;
+  pickups.drop(old.def.id, old.mut, player.pos, { ammo: old.ammo, reserve: old.reserve });
+  weapon.replace(i, s.id, stats, s.mut, keep);
   s.done?.(i);
   subBanner(`Swapped the ${old.def.name} for the ${GUNS[s.id].name}`, 1.8);
   audio.pickup();
@@ -2027,7 +2051,7 @@ function dropGun(i = weapon.cur) {
   if (fixedGuns() || player.dead) return;
   const s = weapon.removeAt(i);
   if (!s) return subBanner("You can't drop the knife", 1.4);
-  pickups.drop(s.def.id, s.mut, player.pos);
+  pickups.drop(s.def.id, s.mut, player.pos, { ammo: s.ammo, reserve: s.reserve }); // (it keeps its ammo)
   inv.skip = { x: player.pos.x, z: player.pos.z }; // (not straight back into your hands)
   subBanner(`Dropped the ${weapon.displayName(s)}`, 1.4);
   audio.click?.(0.6, 0.15);
@@ -2045,15 +2069,15 @@ $('pause-guns').addEventListener('click', (e) => {
   openInventory();
 });
 
-function onPickGun(id, mut) {
+function onPickGun(id, mut, keep = null) {
   if (fixedGuns()) return false; // gun game and zombie players keep what the mode gives them
   if (inv.skip) return false; // they just dropped or left the guns here: wait until they walk away
   if (backpackFull(id)) {
-    openInventory({ id, mut: mut || null, fromGround: true, done: () => questAdd('gunsPicked') });
+    openInventory({ id, mut: mut || null, keep, fromGround: true, done: () => questAdd('gunsPicked') });
     return false;
   }
   const def = GUNS[id];
-  const result = weapon.give(id, stats, mut);
+  const result = weapon.give(id, stats, mut, keep);
   if (result === 'new') questAdd('gunsPicked');
   audio.pickup();
   const name = mut ? `${MUTATIONS[mut].name} ${def.name}` : def.name;

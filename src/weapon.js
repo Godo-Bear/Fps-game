@@ -146,12 +146,13 @@ export class Weapon {
   }
 
   // Picks up a gun. Returns 'new', 'mutated' (an owned gun became mutated) or 'ammo'.
-  give(id, stats, mut = null) {
+  // keep: { ammo, reserve } a dropped gun's own ammo (instead of a fresh one)
+  give(id, stats, mut = null, keep = null) {
     const def = GUNS[id];
     const have = this.slots.findIndex((s) => s.def.id === id);
     if (have >= 0) {
       const slot = this.slots[have];
-      if (slot.reserve !== Infinity) slot.reserve += this.magSize(stats, def) * 2;
+      if (slot.reserve !== Infinity) slot.reserve += keep ? keep.ammo + (keep.reserve === Infinity ? this.magSize(stats, def) * 2 : keep.reserve) : this.magSize(stats, def) * 2;
       if (mut && slot.mut !== mut) {
         slot.mut = mut;
         if (have === this.cur) this._show(this.cur);
@@ -160,15 +161,15 @@ export class Weapon {
       }
       return 'ammo';
     }
-    this.slots.push({ def, ammo: this.magSize(stats, def), reserve: def.reserve, mut });
+    this.slots.push(keep ? { def, ammo: keep.ammo, reserve: keep.reserve, mut } : { def, ammo: this.magSize(stats, def), reserve: def.reserve, mut });
     this.equip(this.slots.length - 1);
     return 'new';
   }
 
   // Swaps slot i for a new gun (the backpack was full).
-  replace(i, id, stats, mut = null) {
+  replace(i, id, stats, mut = null, keep = null) {
     const def = GUNS[id];
-    this.slots[i] = { def, ammo: this.magSize(stats, def), reserve: def.reserve, mut };
+    this.slots[i] = keep ? { def, ammo: keep.ammo, reserve: keep.reserve, mut } : { def, ammo: this.magSize(stats, def), reserve: def.reserve, mut };
     if (i === this.cur) {
       this.reloading = 0;
       this._show(i);

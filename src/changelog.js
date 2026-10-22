@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.70', date: '22 Oct 2026', title: 'New inventory look',
+    items: [
+      'The inventory (I) has a new look: a hotbar of rarity-coloured slots, and a big card with the gun\'s picture, rarity, ammo and stats (point at a slot to see it).',
+      'Dropped guns keep their ammo: pick one back up (or someone else does) and it has what was left in it.',
+    ],
+  },
+  {
     v: '5.69', date: '22 Oct 2026', title: 'Drop guns',
     items: ['Drop a gun: press X to drop the one you\'re holding, or tap a gun in 🎒 My guns (I) and press 🗑️ DROP. It lands on the ground (walk away and back to pick it up again). The knife stays with you.'],
   },

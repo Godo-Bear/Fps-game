@@ -4062,85 +4062,211 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
 .xh-pumpkin::before { content: '🎃'; }
 .xh-bat::before { content: '🦇'; }
 
-/* ---------------------------------------------------------------- the backpack (I): your guns, in your order */
+/* ---------------------------------------------------------------- the backpack (I): Fortnite-style, your guns in your order */
+#inventory {
+  background: linear-gradient(180deg, rgba(10, 24, 58, 0.88), rgba(4, 8, 24, 0.95));
+}
 .inv-panel {
-  width: min(760px, 100%);
-  text-align: center;
+  width: min(900px, 100%);
 }
-.inv-panel h2 {
-  margin: 0 0 6px;
+.inv-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.14);
+  padding-bottom: 6px;
 }
-.inv-grid {
+.inv-head h2 {
+  margin: 0;
+  font-size: clamp(26px, 5vw, 44px);
+  letter-spacing: 3px;
+  font-style: italic;
+  color: #fff;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+}
+.inv-count {
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #9fc4ff;
+}
+/* the big card: the gun you're looking at */
+.inv-card {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+  margin: 16px 0 6px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.inv-big {
+  position: relative;
+  flex: none;
+  width: 150px;
+  height: 150px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  place-items: center;
+  border-radius: 8px;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0 10px, transparent 10px 20px),
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--c) 95%, white 5%), color-mix(in srgb, var(--c) 45%, #050a1c) 75%);
+  box-shadow: inset 0 -6px 0 color-mix(in srgb, var(--c) 70%, black), 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.inv-big span {
+  font-size: 76px;
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.5));
+}
+.inv-big em {
+  position: absolute;
+  top: 8px;
+  left: -26px;
+  transform: rotate(-45deg);
+  width: 100px;
+  text-align: center;
+  font-style: normal;
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 1px;
+  background: #ffd34d;
+  color: #2a1a00;
+}
+.inv-about {
+  flex: 1;
+  text-align: left;
+  min-width: 0;
+}
+.inv-rar {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  background: var(--c);
+  color: #0b0f1e;
+}
+.inv-about h3 {
+  margin: 6px 0 4px;
+  font-size: 26px;
+  font-style: italic;
+  text-transform: uppercase;
+  color: #fff;
+}
+.inv-ammo {
+  font-weight: 700;
+  color: #ffd38a;
+  margin-bottom: 8px;
+}
+.inv-stat {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
   gap: 10px;
-  margin: 14px 0 18px;
+  margin: 5px 0;
+  font-size: 13px;
+  color: #c9d6f0;
+}
+.inv-stat i {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.inv-stat b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 70%, white), var(--c));
+}
+.inv-sub {
+  margin: 10px 0 12px;
+  font-size: 14px;
+  color: #b6c4e0;
+}
+/* the hotbar: one square per slot */
+.inv-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 .inv-slot {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 14px 8px 10px;
-  border: 2px solid color-mix(in srgb, var(--c) 55%, transparent);
-  border-radius: 8px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 18%, rgba(0, 0, 0, 0.55)), rgba(0, 0, 0, 0.6));
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
   cursor: grab;
   user-select: none;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0 6px, transparent 6px 12px),
+    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--c) 90%, white 10%), color-mix(in srgb, var(--c) 40%, #050a1c) 80%);
+  box-shadow: inset 0 -4px 0 color-mix(in srgb, var(--c) 65%, black), 0 3px 8px rgba(0, 0, 0, 0.5);
+  border: 2px solid transparent;
   transition: transform 0.1s, border-color 0.1s;
 }
 .inv-slot:hover {
-  transform: translateY(-2px);
-  border-color: var(--c);
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.7);
 }
 .inv-slot.held {
-  box-shadow: 0 0 0 2px #ffd38a inset;
+  border-color: rgba(255, 255, 255, 0.45);
 }
 .inv-slot.picked {
-  border-color: #ffd34d;
-  box-shadow: 0 0 14px rgba(255, 211, 77, 0.7);
-  transform: translateY(-3px);
+  border-color: #fff;
+  transform: translateY(-5px) scale(1.06);
+  box-shadow: inset 0 -4px 0 color-mix(in srgb, var(--c) 65%, black), 0 0 16px rgba(255, 255, 255, 0.6);
 }
 .inv-slot.off {
-  opacity: 0.35;
+  opacity: 0.3;
   cursor: not-allowed;
-}
-.inv-slot.new {
-  width: 170px;
-  margin: 8px auto 0;
-  cursor: default;
-  border-color: var(--c);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--c) 60%, transparent);
+  filter: grayscale(1);
 }
 .inv-k {
   position: absolute;
-  top: 4px;
-  left: 8px;
-  font-size: 14px;
-  opacity: 0.8;
+  top: 2px;
+  left: 5px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
 }
 .inv-ic {
-  font-size: 30px;
-  line-height: 1;
-}
-.inv-n {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--c);
+  font-size: 34px;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
 }
 .inv-a {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
   font-size: 12px;
-  opacity: 0.75;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
 }
 .inv-btns {
   display: flex;
   gap: 10px;
   justify-content: center;
 }
-#inventory {
-  background: radial-gradient(ellipse at center, rgba(20, 14, 9, 0.9), rgba(6, 4, 2, 0.96));
-}
-.inv-panel h2 {
-  font-size: clamp(24px, 5vw, 40px);
+@media (max-width: 560px) {
+  .inv-card {
+    flex-direction: column;
+    align-items: center;
+  }
+  .inv-big {
+    width: 110px;
+    height: 110px;
+  }
+  .inv-big span {
+    font-size: 56px;
+  }
+  .inv-slot {
+    width: 60px;
+    height: 60px;
+  }
 }
