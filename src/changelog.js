@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.71', date: '22 Oct 2026', title: 'Gun pictures',
+    items: ['The inventory shows a picture of each gun\'s real 3D model (with its mutation glow) instead of an emoji.'],
+  },
+  {
     v: '5.70', date: '22 Oct 2026', title: 'New inventory look',
     items: [
       'The inventory (I) has a new look: a hotbar of rarity-coloured slots, and a big card with the gun\'s picture, rarity, ammo and stats (point at a slot to see it).',

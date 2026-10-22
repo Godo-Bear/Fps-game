@@ -19,6 +19,7 @@ import { Structures } from './structures.js';
 import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../shared/structures.js';
 import { Effects } from './effects.js';
 import { GUNS, MUTATIONS, TIER_CSS, loadGunModels, setArmLook, randomMutation, rollGun } from './guns.js';
+import { clearGunIcons, gunIcon } from './gunIcons.js';
 import { Minimap } from './minimap.js';
 import { Avatar, FLAG_BITS, Multiplayer } from './multiplayer.js';
 import { DROP_CHANCE, EVENT_MAX_PLAYERS, PIECE_COUNT, totalPieces } from '../shared/events.js';
@@ -1962,6 +1963,11 @@ function closeInventory() {
 // how a gun looks in the backpack: its rarity colour and name
 const RARITY = { common: 'COMMON', rare: 'RARE', epic: 'EPIC', legendary: 'LEGENDARY' };
 const gunColor = (def, mut) => (mut ? MUTATIONS[mut].css : TIER_CSS[def.tier]);
+// a gun's picture (its 3D model), or its emoji if that can't be drawn
+const gunPic = (def, mut, cls) => {
+  const url = gunIcon(def.id, mut);
+  return url ? `<img class="${cls}" src="${url}" alt="" draggable="false" />` : `<span class="${cls} emoji">${def.icon || '🔫'}</span>`;
+};
 const ammoText = (x) => (x.def.melee ? '' : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`);
 // the big card on top: a gun's picture, rarity and stats (x: a slot, or { def, mut } for one that isn't yours yet)
 function invInfo(x, tag = '') {
@@ -1972,7 +1978,7 @@ function invInfo(x, tag = '') {
     : bar('Damage', (d.damage * (d.pellets || 1)) / 160) + bar('Fire rate', d.fireRate / 16) + bar('Magazine', d.mag / 100) + bar('Reload speed', 1 - (d.reload || 0) / 4.5);
   const name = x.mut ? `${MUTATIONS[x.mut].name} ${d.name}` : d.name;
   return `<div class="inv-card" style="--c: ${gunColor(d, x.mut)}">
-      <div class="inv-big"><span>${d.icon || '🔫'}</span>${tag ? `<em>${tag}</em>` : ''}</div>
+      <div class="inv-big">${gunPic(d, x.mut, 'inv-bigpic')}${tag ? `<em>${tag}</em>` : ''}</div>
       <div class="inv-about"><div class="inv-rar">${x.mut ? MUTATIONS[x.mut].name.toUpperCase() : RARITY[d.tier] || ''}</div><h3>${esc(name)}</h3>
         ${x.ammo !== undefined && !d.melee ? `<div class="inv-ammo">AMMO ${ammoText(x)}</div>` : ''}${stats}</div>
     </div>`;
@@ -1992,7 +1998,7 @@ function renderInventory() {
       const key = i < 9 ? i + 1 : i === 9 ? 0 : '';
       const off = s && x.def.melee; // the knife always stays
       return `<div class="inv-slot ${inv.pick === i ? 'picked' : ''} ${i === weapon.cur ? 'held' : ''} ${off ? 'off' : ''}" draggable="${!s}" data-i="${i}" style="--c: ${gunColor(x.def, x.mut)}" title="${esc(weapon.displayName(x))}">
-        <b class="inv-k">${key}</b><span class="inv-ic">${x.def.icon || '🔫'}</span><span class="inv-a">${x.def.melee ? '' : x.reserve === Infinity ? '∞' : x.ammo + x.reserve}</span></div>`;
+        <b class="inv-k">${key}</b>${gunPic(x.def, x.mut, 'inv-ic')}<span class="inv-a">${x.def.melee ? '' : x.reserve === Infinity ? '∞' : x.ammo + x.reserve}</span></div>`;
     })
     .join('');
   $('inv-cancel').classList.toggle('hidden', !s);
@@ -5833,6 +5839,8 @@ loadZombieModel();
 // the owner's gun models (the MK14 is the LMG): swap them in once loaded
 loadGunModels().then(() => {
   weapon.refreshModels();
+  clearGunIcons(); // the inventory pictures, with the real models now
+  if (invOpen()) renderInventory();
   pickups.refreshModels?.();
 });
 // the tank model (the block tank is used until it has loaded)
