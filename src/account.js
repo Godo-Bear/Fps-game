@@ -611,6 +611,22 @@ export class Account {
     else if (g.items?.[`gun_${gun}`]) g.items.loadout = gun;
     this._saveGuest();
   }
+  // equip (or not) one of your items: every game starts with the equipped ones
+  async setItemEquip(item, on) {
+    if (this.user) {
+      const { user } = await this._api('/shop/loadout', { method: 'POST', body: { item, on: !!on } });
+      this.user = user;
+      this._changed();
+      return;
+    }
+    const g = this.guest;
+    if (!g.items?.[item]) return;
+    const list = new Set(g.items.equip || []);
+    if (on) list.add(item);
+    else list.delete(item);
+    g.items.equip = [...list];
+    this._saveGuest();
+  }
   // your quick chat wheel (8 phrases)
   // the event the admin is hosting (or null): from the server config, then kept fresh with the unread check
   get event() {
@@ -1603,6 +1619,11 @@ export class AccountUI {
       if (def.kind === 'upgrade') {
         status = `<div class="pips">${Array.from({ length: def.max }, (_, i) => `<i class="${i < have ? 'on' : ''}"></i>`).join('')}</div>`;
         button = price === null ? '<span class="maxed">MAX</span>' : `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
+      } else if (def.kind === 'item') {
+        // buy once; equip as many as you like
+        const on = Array.isArray(items.equip) && items.equip.includes(def.id);
+        if (!have) button = `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
+        else button = `<button class="btn small ${on ? '' : 'ghost'}" data-itemequip="${def.id}" data-on="${on ? 0 : 1}">${on ? 'EQUIPPED ✓' : 'EQUIP'}</button>`;
       } else if (def.kind === 'gun') {
         if (!have) button = `<button class="btn small" data-buy="${def.id}" ${a.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`;
         else if (items.loadout === def.gun) button = '<button class="btn small ghost" data-unequip="1">EQUIPPED ✓</button>';
@@ -1638,7 +1659,9 @@ export class AccountUI {
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>`,
       guns: () => `<h4>Starting gun <span class="muted small">(Own it, equip it: you spawn holding it in every mode, with unlimited ammo)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'gun').map(card).join('')}</div>`,
-      items: () => `<h4>Items</h4>
+      items: () => `<h4>Items <span class="muted small">(🪝 buy once, then equip as many as you like: every game starts with them · press T to use one)</span></h4>
+      <div class="shop-grid">${SHOP.filter((s) => s.kind === 'item').map(card).join('')}</div>
+      <h4>Run items <span class="muted small">(used up at the start of your next solo run)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'consumable').map(card).join('')}</div>`,
       pets: () => `<h4>🐺 Pets <span class="muted small">(real money)</span></h4>
       ${this._petPicker({ ...a.profile }, true)}`,
@@ -1759,6 +1782,7 @@ export class AccountUI {
     this._petEvents({ ...a.profile }, msg);
     this.body.querySelectorAll('[data-equip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(b.dataset.equip).catch((e) => msg(e.message))));
     this.body.querySelectorAll('[data-unequip]').forEach((b) => b.addEventListener('click', () => a.setLoadout(null).catch((e) => msg(e.message))));
+    this.body.querySelectorAll('[data-itemequip]').forEach((b) => b.addEventListener('click', () => a.setItemEquip(b.dataset.itemequip, b.dataset.on === '1').catch((e) => msg(e.message))));
   }
 
   _admin() {

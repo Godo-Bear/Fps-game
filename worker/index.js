@@ -970,6 +970,8 @@ export class GameDB extends DurableObject {
       if (price === null) return err("That can't be bought");
       if ((me.coins || 0) < price) return err('Not enough coins');
       items[body.item] = (items[body.item] || 0) + 1;
+      // a new item: equipped straight away
+      if (SHOP.find((d) => d.id === body.item)?.kind === 'item') items.equip = [...new Set([...(Array.isArray(items.equip) ? items.equip : []), body.item])];
       return saveItems(items, me.coins - price);
     }
     // the Halloween shop: cosmetics for candy, only while the event's on (admins any time)
@@ -995,6 +997,16 @@ export class GameDB extends DurableObject {
       if (Array.isArray(body.quick)) {
         // your quick chat wheel
         items.quick = cleanQuick(body.quick);
+        return saveItems(items, me.coins);
+      }
+      if (typeof body.item === 'string') {
+        // the items you start every game with (as many as you own)
+        const def = SHOP.find((d) => d.id === body.item && d.kind === 'item');
+        if (!def || !items[def.id]) return err("You don't own that");
+        const list = new Set(Array.isArray(items.equip) ? items.equip.filter((id) => items[id]) : []);
+        if (body.on) list.add(def.id);
+        else list.delete(def.id);
+        items.equip = [...list];
         return saveItems(items, me.coins);
       }
       if (body.gun === null) delete items.loadout;

@@ -3811,6 +3811,14 @@ function giveLoadout() {
     if (!ownsGear(account.items, gid) || weapon.slots.some((s) => s.def.id === gid)) continue;
     weapon.slots.push({ def: GUNS[gid], ammo: weapon.magSize(stats, GUNS[gid]), reserve: Infinity, mut: null });
   }
+  // the items you equipped in the Shop: in your backpack, full
+  for (const itemId of Array.isArray(account.items.equip) ? account.items.equip : []) {
+    const gear = SHOP.find((d) => d.id === itemId && d.kind === 'item' && account.items[d.id])?.gear;
+    if (!gear || !GUNS[gear]) continue;
+    const have = weapon.slots.find((s) => s.def.id === gear);
+    if (have) have.ammo = Math.max(have.ammo, GUNS[gear].mag);
+    else weapon.slots.push({ def: GUNS[gear], ammo: GUNS[gear].mag, reserve: 0, mut: null });
+  }
   const id = account.items.loadout;
   if (!id || !account.items[`gun_${id}`] || !GUNS[id]) return;
   let i = weapon.slots.findIndex((s) => s.def.id === id);

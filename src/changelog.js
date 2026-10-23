@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.76', date: '23 Oct 2026', title: 'Equip items',
+    items: [
+      'Shop → Items: buy an item once and it\'s yours for good. Equip as many as you like (EQUIP / EQUIPPED ✓): every game starts with them in your backpack, full, in every mode. New ones are equipped straight away.',
+      'Grappler 1500, Med Kit 1200, Launch Pad 1500, Shockwave Grenade 2000, Rift-To-Go 3000 coins. Anyone who bought one before keeps it.',
+    ],
+  },
+  {
     v: '5.75', date: '23 Oct 2026', title: 'Admins: unlimited items',
     items: [
       'Admins: items never run out (∞ uses), and there\'s no limit on how many guns you carry.',
