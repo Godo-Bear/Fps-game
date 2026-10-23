@@ -1823,6 +1823,7 @@ function useItem(def, slot = weapon.slot) {
       break;
     }
   }
+  if (account.admin) slot.ammo = Math.max(slot.ammo, def.mag); // admins: items never run out
 }
 // the Shockwave Grenade going off: you and the zombies near it go flying (no damage to you)
 function shockBlast(at) {
@@ -1940,7 +1941,7 @@ function renderItemBtn() {
   if (!s) return;
   const url = gunIcon(s.def.id, s.mut);
   $('item-pic').innerHTML = url ? `<img src="${url}" alt="" />` : `<span>${s.def.icon}</span>`;
-  $('item-uses').textContent = `${s.def.name} ×${s.ammo}`;
+  $('item-uses').textContent = `${s.def.name} ×${account.admin ? '∞' : s.ammo}`;
   $('item-next').classList.toggle('hidden', itemSlots().length < 2);
   $('item-btn').style.setProperty('--c', TIER_CSS[s.def.tier]);
   $('item-btn').classList.toggle('empty', s.ammo <= 0);
@@ -2187,7 +2188,8 @@ function modeLoadoutBase() {
 const MAX_GUNS = 10;
 const inv = { swap: null, pick: -1, skip: null };
 const gunCount = () => weapon.slots.filter((s) => !s.def.melee).length;
-const backpackFull = (id) => gunCount() >= MAX_GUNS && !GUNS[id]?.melee && !weapon.slots.some((s) => s.def.id === id);
+// admins: no limit
+const backpackFull = (id) => !account.admin && gunCount() >= MAX_GUNS && !GUNS[id]?.melee && !weapon.slots.some((s) => s.def.id === id);
 const invOpen = () => !$('inventory').classList.contains('hidden');
 // swap: { id, mut, done(slot) } a gun that wants in (from the ground, a wall buy or a supply drop)
 function openInventory(swap = null) {
@@ -2221,7 +2223,7 @@ const hudPic = (x) => {
   const url = gunIcon(x.def.id, x.mut);
   return url ? `<img class="slot-pic" src="${url}" alt="" />` : '';
 };
-const ammoText = (x) => (x.def.melee ? '' : x.def.utility ? `${x.ammo} use${x.ammo === 1 ? '' : 's'}` : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`);
+const ammoText = (x) => (x.def.melee ? '' : x.def.utility ? (account.admin ? '∞ uses' : `${x.ammo} use${x.ammo === 1 ? '' : 's'}`) : x.reserve === Infinity ? `${x.ammo} / ∞` : `${x.ammo} / ${x.reserve}`);
 // the big card on top: a gun's picture, rarity and stats (x: a slot, or { def, mut } for one that isn't yours yet)
 function invInfo(x, tag = '') {
   const d = x.def;
@@ -2242,12 +2244,12 @@ function renderInventory() {
   const s = inv.swap;
   const def = s && GUNS[s.id];
   $('inv-title').textContent = s ? 'BACKPACK FULL' : 'INVENTORY';
-  $('inv-count').textContent = `${gunCount()} / ${MAX_GUNS} GUNS`;
+  $('inv-count').textContent = account.admin ? `${gunCount()} GUNS · NO LIMIT` : `${gunCount()} / ${MAX_GUNS} GUNS`;
   const show = inv.pick >= 0 ? inv.pick : weapon.cur;
   $('inv-info').innerHTML = s ? invInfo({ def, mut: s.mut, ...(s.keep || {}) }, 'NEW') : weapon.slots[show] ? invInfo(weapon.slots[show], show === weapon.cur ? 'IN HAND' : '') : '';
   $('inv-sub').innerHTML = s
     ? `Pick a gun to swap out for the <b>${esc(def.name)}</b> (it drops on the ground), or cancel to leave it.`
-    : 'Drag a gun onto another (or tap one, then another) to swap their places: the number keys follow this order. Tap one and press DROP to leave it on the ground (X while playing).';
+    : (account.admin ? 'Admins: no gun limit, and items never run out. ' : '') + 'Drag a gun onto another (or tap one, then another) to swap their places: the number keys follow this order. Tap one and press DROP to leave it on the ground (X while playing).';
   $('inv-grid').innerHTML = weapon.slots
     .map((x, i) => {
       const key = i < 9 ? i + 1 : i === 9 ? 0 : '';

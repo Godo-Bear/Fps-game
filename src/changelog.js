@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.75', date: '23 Oct 2026', title: 'Admins: unlimited items',
+    items: ['Admins: items never run out (∞ uses), and there\'s no limit on how many guns you carry.'],
+  },
+  {
     v: '5.74', date: '23 Oct 2026', title: 'Buy items, keep empty guns, new item keys',
     items: [
       'Buy items in the Shop (Items): Grappler, Med Kit, Launch Pad, Shockwave Grenade and Rift-To-Go. Your next solo or co-op game starts with them in your backpack (they\'re in the 50c Deals too).',
