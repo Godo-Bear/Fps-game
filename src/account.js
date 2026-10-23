@@ -1613,7 +1613,7 @@ export class AccountUI {
       }
       if (def.hidden) button = '<span class="maxed">TAKEN OUT</span>';
       // guns: a picture of the gun itself
-      const pic = def.kind === 'gun' && gunIcon(def.gun);
+      const pic = (def.kind === 'gun' || def.gear) && gunIcon(def.gun || def.gear);
       return `<div class="shop-card ${def.hidden ? 'gone' : ''}">${tools(`shop:${def.id}`, def.hidden)}<div class="si">${pic ? `<img class="shop-gunpic" src="${pic}" alt="" />` : esc(def.icon)}</div><div class="sn">${esc(def.name)}</div><div class="sd">${esc(def.desc)}</div>${status}${button}</div>`;
     };
     const lists = COSMETIC_LISTS;

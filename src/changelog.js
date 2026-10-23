@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.74', date: '23 Oct 2026', title: 'Buy items, keep empty guns, new item keys',
+    items: [
+      'Buy items in the Shop (Items): Grappler, Med Kit, Launch Pad, Shockwave Grenade and Rift-To-Go. Your next solo or co-op game starts with them in your backpack (they\'re in the 50c Deals too).',
+      'Guns and items that run out stay in your backpack until you drop them (X, or DROP in My guns). Pick up more of the same to fill them up again.',
+      'New keys next to WASD: T uses your item, R picks the next item while you\'re holding one (R still reloads guns). Chat is Enter now.',
+    ],
+  },
+  {
     v: '5.73', date: '23 Oct 2026', title: 'Item button',
     items: ['Items have their own button: press U (or tap the item button at the bottom of the screen) to use your grappler, rift, launch pad, shockwave or med kit without switching away from your gun. Y picks the next item.'],
   },

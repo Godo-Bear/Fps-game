@@ -413,7 +413,7 @@ export class Weapon {
           this.cooldown = 0.25;
           this.queued = 0;
           if (s.reserve > 0) this.startReload(stats);
-          else this._dropEmpty();
+          else this.onEmpty?.(def); // (it stays in your backpack until you drop it)
         }
       } else if (wants) {
         const interval = 1 / (def.fireRate * stats.fireRateMul);
@@ -432,10 +432,6 @@ export class Weapon {
       this.flashT = 0.045;
       this.flash.material.rotation = Math.random() * Math.PI;
       if (def.reloadStyle === 'bolt') this.boltT = 1 / (def.fireRate * stats.fireRateMul);
-    }
-    // (not in the frame it fired: the shot still has to happen with this gun, e.g. an item's last use)
-    if (s.ammo === 0 && s.reserve === 0 && def.reserve !== Infinity && this.reloading <= 0 && this.switchT <= 0 && !trigger && shots === 0) {
-      this._dropEmpty();
     }
 
     this._animate(dt, { sprinting, moving, speed, aim }, stats);

@@ -4398,3 +4398,7 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
 #item-next.hidden {
   display: none;
 }
+#item-btn.empty {
+  opacity: 0.55;
+  filter: grayscale(0.8);
+}

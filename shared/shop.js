@@ -29,6 +29,12 @@ export const SHOP = [
   { id: 'tok_speed', kind: 'consumable', name: 'Sprint Boots', icon: '👟', desc: 'Your next solo run starts with legendary Fleet Foot (run faster)', max: 5, price: 1200, powerup: 'speed' },
   { id: 'tok_regen', kind: 'consumable', name: 'Med Patch', icon: '🌿', desc: 'Your next solo run starts with legendary Regeneration (heal over time)', max: 5, price: 1200, powerup: 'regen' },
   { id: 'tok_grenades', kind: 'consumable', name: 'Grenade Crate', icon: '💣', desc: 'Your next solo run starts with a full belt of grenades', max: 5, price: 1000, grenades: true },
+  // the items (grappler, rift...): your next solo or co-op game starts with it in your backpack
+  { id: 'itm_grapple', kind: 'consumable', name: 'Grappler', icon: '🪝', desc: 'Your next solo or co-op game starts with a Grappler (10 hooks) in your backpack', max: 5, price: 300, gear: 'grapple' },
+  { id: 'itm_medkit', kind: 'consumable', name: 'Med Kit', icon: '🩹', desc: 'Your next solo or co-op game starts with a Med Kit (2 full heals) in your backpack', max: 5, price: 250, gear: 'medkit' },
+  { id: 'itm_launchpad', kind: 'consumable', name: 'Launch Pad', icon: '🚀', desc: 'Your next solo or co-op game starts with a Launch Pad in your backpack', max: 5, price: 300, gear: 'launchpad' },
+  { id: 'itm_shockwave', kind: 'consumable', name: 'Shockwave Grenade', icon: '💫', desc: 'Your next solo or co-op game starts with 3 Shockwave Grenades in your backpack', max: 5, price: 400, gear: 'shockwave' },
+  { id: 'itm_rift', kind: 'consumable', name: 'Rift-To-Go', icon: '🌀', desc: 'Your next solo or co-op game starts with a Rift-To-Go in your backpack', max: 5, price: 600, gear: 'rift' },
   { id: 'tok_explosive', kind: 'consumable', name: 'Explosive Ammo', icon: '🧨', desc: 'Your next solo run starts with Explosive Rounds (bullets blow up zombies)', max: 5, price: 3000, powerup: 'explosive' },
 ];
 

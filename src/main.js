@@ -77,7 +77,8 @@ let weather = null;
 
 let stats = baseStats();
 weapon.reset(stats);
-weapon.onDrop = (def) => subBanner(def.utility ? `${def.name} used up` : `${def.name} is out of ammo`, 1.8);
+// out of ammo (or uses): it stays in your backpack until you drop it (X, or DROP in My guns)
+weapon.onEmpty = (def) => subBanner(def.utility ? `${def.name}: no uses left (drop it with X)` : `${def.name} is out of ammo (drop it with X)`, 1.8);
 const projectiles = [];
 const owned = new Map();
 const medkits = [];
@@ -1907,23 +1908,20 @@ function updateItems(dt) {
 let itemCd = 0;
 let itemPick = null; // the id of the item on the button
 const itemSlots = () => weapon.slots.filter((s) => s.def.utility);
+// (the picked one; if it's used up, one that still has uses)
 function buttonItem() {
   const list = itemSlots();
-  return list.find((s) => s.def.id === itemPick) || list[0] || null;
+  const picked = list.find((s) => s.def.id === itemPick);
+  return (picked?.ammo > 0 && picked) || list.find((s) => s.ammo > 0) || picked || list[0] || null;
 }
 function quickItem() {
   if (player.dead || itemCd > 0 || fixedGuns()) return;
   const s = buttonItem();
-  if (!s) return subBanner('No items: find a grappler, rift, launch pad, shockwave or med kit on the map', 1.6);
-  if (s.ammo <= 0) return;
+  if (!s) return subBanner('No items: find a grappler, rift, launch pad, shockwave or med kit on the map, or buy one in the Shop', 1.6);
+  if (s.ammo <= 0) return subBanner(`${s.def.name}: no uses left (drop it with X, or in My guns)`, 1.6);
   itemCd = 0.45;
   s.ammo--;
   useItem(s.def, s);
-  if (s.ammo <= 0) {
-    // used up: out of the backpack
-    weapon.removeAt(weapon.slots.indexOf(s));
-    subBanner(`${s.def.name} used up`, 1.4);
-  }
 }
 function nextItem() {
   const list = itemSlots();
@@ -1945,6 +1943,7 @@ function renderItemBtn() {
   $('item-uses').textContent = `${s.def.name} ×${s.ammo}`;
   $('item-next').classList.toggle('hidden', itemSlots().length < 2);
   $('item-btn').style.setProperty('--c', TIER_CSS[s.def.tier]);
+  $('item-btn').classList.toggle('empty', s.ammo <= 0);
 }
 $('item-btn').addEventListener('click', (e) => {
   if (e.target.closest('#item-next')) return nextItem();
@@ -2839,7 +2838,7 @@ function updateChat() {
   for (const l of chatLines) l.div.classList.toggle('old', now - l.t > 9000);
   const show = (game.mode === 'mp' && !!mp.lobby) || (game.mode === 'solo' && !inMenu());
   $('chat').classList.toggle('hidden', !show);
-  $('chat-hint').textContent = game.mode === 'mp' && !chatOpen() ? 'T or Enter to chat' : '';
+  $('chat-hint').textContent = game.mode === 'mp' && !chatOpen() ? 'Enter to chat' : '';
 }
 
 function banner(text, sub, cls = '', dur = 2) {
@@ -3853,6 +3852,7 @@ function useRunItems() {
       .then(() => {
         if (game.runId !== runId) return;
         if (def.grenades) giveGrenades(99);
+        if (def.gear) weapon.give(def.gear, stats); // an item from the Shop, into the backpack
         const pu = def.powerup && POWERUPS.find((p) => p.id === def.powerup);
         if (pu) {
           const rarity = pu.tiers.legendary !== undefined ? 'legendary' : 'epic';
@@ -4679,7 +4679,7 @@ document.addEventListener(
 );
 document.addEventListener('keydown', (e) => {
   if (e.target.closest?.('input, textarea, select')) return;
-  if ((e.code === 'KeyT' || e.code === 'Enter') && game.mode === 'mp' && ['playing', 'lobby', 'paused', 'mpend'].includes(game.state) && !chatOpen()) {
+  if (e.code === 'Enter' && game.mode === 'mp' && ['playing', 'lobby', 'paused', 'mpend'].includes(game.state) && !chatOpen()) {
     e.preventDefault();
     openChat();
     return;
@@ -4719,7 +4719,11 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyR') build.rot += Math.PI / 2;
     if (e.code === 'KeyR' || /^Digit/.test(e.code)) return;
   }
-  if (e.code === 'KeyR') weapon.startReload(stats);
+  // R: reload (holding an item: the next item instead)
+  if (e.code === 'KeyR') {
+    if (weapon.def.utility) nextItem();
+    else weapon.startReload(stats);
+  }
   if (e.code === 'KeyQ') weapon.equipLast();
   if (e.code === 'KeyV' && !player.dead && weapon.quickMelee()) meleeAttack();
   if (e.code === 'KeyG') throwGrenade();
@@ -4728,7 +4732,8 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP') toggleView();
   if (e.code === 'KeyI') return openInventory();
   if (e.code === 'KeyX') return dropGun();
-  if (e.code === 'KeyU') return quickItem();
+  // T: use your item without switching to it (U too); Y: next item
+  if (e.code === 'KeyT' || e.code === 'KeyU') return quickItem();
   if (e.code === 'KeyY') return nextItem();
   const digit = /^Digit([0-9])$/.exec(e.code);
   if (digit) weapon.equip(digit[1] === '0' ? 9 : Number(digit[1]) - 1);
@@ -5260,9 +5265,9 @@ const ALL_SETTING_ROWS = [...SETTING_ROWS, VIEW_ROW, ...GUN_ROWS, ...MORE_SETTIN
 let showAllSettings = false;
 const CONTROL_LIST = [
   ['WASD / arrows', 'Move'], ['Mouse', 'Look'], ['Left click', 'Shoot'], ['Right click', 'Aim / scope'], ['R', 'Reload'], ['Shift', 'Sprint'],
-  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-9, 0 / wheel', 'Switch gun'], ['I', 'My guns (change their order)'], ['X', 'Drop the gun you\'re holding'], ['U', 'Use your item (without switching to it)'], ['Y', 'Next item'], ['Q', 'Last gun'], ['V', 'Knife stab'],
+  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-9, 0 / wheel', 'Switch gun'], ['I', 'My guns (change their order)'], ['X', 'Drop the gun you\'re holding'], ['T', 'Use your item (without switching to it)'], ['Y', 'Next item (R while holding an item)'], ['Q', 'Last gun'], ['V', 'Knife stab'],
   ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
-  ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
+  ['Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];
 // Settings: how long your paid access has left, and what it costs
 function accessBox() {
