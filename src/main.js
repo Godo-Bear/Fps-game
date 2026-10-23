@@ -1804,9 +1804,13 @@ function useItem(def, slot = weapon.slot) {
       g.add(top);
       g.position.set(x, y + 0.09, z);
       scene.add(g);
+      // one pad at a time: the old one goes
+      const hadOne = move.pads.length > 0;
+      for (const p of move.pads) scene.remove(p.g);
+      move.pads.length = 0;
       move.pads.push({ g, t: 120, cd: 0 });
       audio.click(0.6, 0.3);
-      subBanner('🚀 Launch pad down: step on it', 1.4);
+      subBanner(`🚀 Launch pad down: step on it${hadOne ? ' (your old one is gone)' : ''}`, 1.4);
       break;
     }
     case 'medkit': {

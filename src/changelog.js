@@ -3,7 +3,10 @@
 export const CHANGELOG = [
   {
     v: '5.75', date: '23 Oct 2026', title: 'Admins: unlimited items',
-    items: ['Admins: items never run out (∞ uses), and there\'s no limit on how many guns you carry.'],
+    items: [
+      'Admins: items never run out (∞ uses), and there\'s no limit on how many guns you carry.',
+      'Launch pads: one at a time. Putting a new one down removes your old one.',
+    ],
   },
   {
     v: '5.74', date: '23 Oct 2026', title: 'Buy items, keep empty guns, new item keys',
