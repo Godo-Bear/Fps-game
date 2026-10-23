@@ -850,7 +850,7 @@ const targets = () => (zombieGame() ? zombies.parts : isEvent() ? zombies.parts.
 function fireShot(moving, speed) {
   const def = weapon.def;
   if (def.melee) return meleeAttack();
-  if (def.utility) return useItem(def);
+  if (def.utility) return useItem(def, weapon.slot);
   audio.shot(def.sound, stats.explosive > 0);
   player.addRecoil(def.recoil * (1 - weapon.ads * 0.4) * (player.crouching ? 0.7 : 1));
   camera.updateMatrixWorld();
@@ -1747,8 +1747,9 @@ function aimPoint(reach) {
   }
   return best < reach ? _hook.copy(_origin).addScaledVector(_dir, best) : null;
 }
-function useItem(def) {
-  const refund = () => (weapon.slot.ammo += 1); // (didn't happen: you keep the use)
+// slot: the backpack slot it came from (the one in your hands, or the item button's)
+function useItem(def, slot = weapon.slot) {
+  const refund = () => (slot.ammo += 1); // (didn't happen: you keep the use)
   switch (def.utility) {
     case 'grapple': {
       const at = aimPoint(55);
@@ -1856,6 +1857,8 @@ function shockBlast(at) {
 }
 // every frame: the grapple pulling you, gliding down, and the launch pads
 function updateItems(dt) {
+  itemCd -= dt;
+  renderItemBtn();
   const gr = move.grapple;
   if (gr) {
     gr.t += dt;
@@ -1900,6 +1903,54 @@ function updateItems(dt) {
     }
   }
 }
+// The item button (U): use your item without switching to it. Y picks which one (when you have a few).
+let itemCd = 0;
+let itemPick = null; // the id of the item on the button
+const itemSlots = () => weapon.slots.filter((s) => s.def.utility);
+function buttonItem() {
+  const list = itemSlots();
+  return list.find((s) => s.def.id === itemPick) || list[0] || null;
+}
+function quickItem() {
+  if (player.dead || itemCd > 0 || fixedGuns()) return;
+  const s = buttonItem();
+  if (!s) return subBanner('No items: find a grappler, rift, launch pad, shockwave or med kit on the map', 1.6);
+  if (s.ammo <= 0) return;
+  itemCd = 0.45;
+  s.ammo--;
+  useItem(s.def, s);
+  if (s.ammo <= 0) {
+    // used up: out of the backpack
+    weapon.removeAt(weapon.slots.indexOf(s));
+    subBanner(`${s.def.name} used up`, 1.4);
+  }
+}
+function nextItem() {
+  const list = itemSlots();
+  if (list.length < 2) return;
+  const i = list.indexOf(buttonItem());
+  itemPick = list[(i + 1) % list.length].def.id;
+  audio.click(1.2, 0.15);
+}
+// the button on the screen: the item's picture and how many uses are left
+function renderItemBtn() {
+  const s = buttonItem();
+  const key = s ? `${s.def.id}|${s.mut || ''}|${s.ammo}|${itemSlots().length}` : '';
+  if (last.itemBtn === key) return;
+  last.itemBtn = key;
+  $('item-btn').classList.toggle('hidden', !s);
+  if (!s) return;
+  const url = gunIcon(s.def.id, s.mut);
+  $('item-pic').innerHTML = url ? `<img src="${url}" alt="" />` : `<span>${s.def.icon}</span>`;
+  $('item-uses').textContent = `${s.def.name} ×${s.ammo}`;
+  $('item-next').classList.toggle('hidden', itemSlots().length < 2);
+  $('item-btn').style.setProperty('--c', TIER_CSS[s.def.tier]);
+}
+$('item-btn').addEventListener('click', (e) => {
+  if (e.target.closest('#item-next')) return nextItem();
+  quickItem();
+});
+
 // a new map or match: no items left out
 function clearItems() {
   move.grapple = null;
@@ -4677,6 +4728,8 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP') toggleView();
   if (e.code === 'KeyI') return openInventory();
   if (e.code === 'KeyX') return dropGun();
+  if (e.code === 'KeyU') return quickItem();
+  if (e.code === 'KeyY') return nextItem();
   const digit = /^Digit([0-9])$/.exec(e.code);
   if (digit) weapon.equip(digit[1] === '0' ? 9 : Number(digit[1]) - 1);
 });
@@ -5207,7 +5260,7 @@ const ALL_SETTING_ROWS = [...SETTING_ROWS, VIEW_ROW, ...GUN_ROWS, ...MORE_SETTIN
 let showAllSettings = false;
 const CONTROL_LIST = [
   ['WASD / arrows', 'Move'], ['Mouse', 'Look'], ['Left click', 'Shoot'], ['Right click', 'Aim / scope'], ['R', 'Reload'], ['Shift', 'Sprint'],
-  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-9, 0 / wheel', 'Switch gun'], ['I', 'My guns (change their order)'], ['X', 'Drop the gun you\'re holding'], ['Q', 'Last gun'], ['V', 'Knife stab'],
+  ['C', 'Crouch · slide while sprinting'], ['Space', 'Jump / climb'], ['1-9, 0 / wheel', 'Switch gun'], ['I', 'My guns (change their order)'], ['X', 'Drop the gun you\'re holding'], ['U', 'Use your item (without switching to it)'], ['Y', 'Next item'], ['Q', 'Last gun'], ['V', 'Knife stab'],
   ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
   ['T / Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];

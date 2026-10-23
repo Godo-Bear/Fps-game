@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.73', date: '23 Oct 2026', title: 'Item button',
+    items: ['Items have their own button: press U (or tap the item button at the bottom of the screen) to use your grappler, rift, launch pad, shockwave or med kit without switching away from your gun. Y picks the next item.'],
+  },
+  {
     v: '5.72', date: '22 Oct 2026', title: 'Items: grappler, rift, launch pad and more',
     items: [
       'New items (like Fortnite) turn up on the maps instead of guns now and then. They go in your backpack: pick one and click to use it.',

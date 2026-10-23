@@ -4337,3 +4337,64 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
   font-size: 15px;
   color: #dbe6ff;
 }
+
+/* the item button (U): your grappler / rift / launch pad... without switching to it */
+#item-btn {
+  position: fixed;
+  left: 50%;
+  bottom: 70px; /* (above the health bar on narrow screens) */
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 6px;
+  width: max-content;
+  border-radius: 8px;
+  border: 2px solid var(--c, #3d8bff);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c, #3d8bff) 35%, rgba(0, 0, 0, 0.55)), rgba(0, 0, 0, 0.45));
+  pointer-events: auto;
+  cursor: pointer;
+}
+#item-btn.hidden {
+  display: none;
+}
+#item-pic img {
+  width: 56px;
+  height: 36px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9));
+}
+#item-pic span {
+  font-size: 26px;
+}
+#item-uses {
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+.item-key {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: #fff;
+  color: #10131e;
+  font-size: 14px;
+  font-weight: 900;
+}
+#item-next {
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+#item-next.hidden {
+  display: none;
+}
