@@ -65,7 +65,7 @@ const CHARACTER_MODELS = {
           { below: 0.47, color: '#1d4fb8', legs: true }, // long cricket trousers
           ...(look.cpads !== 'off' ? [{ below: 0.3, color: '#f2f2f2', legs: true }] : []), // batting pads
           ...(look.cgloves !== 'off' ? [{ from: 0.6, to: 0.95, color: '#f4f4f4', xmin: 0.385, xmax: 1 }] : []), // batting gloves (the hands)
-          { from: 0.871, to: 0.897, color: '#2a1d16', face: true }, // the beard
+          { beard: true, color: '#241812' }, // a full beard: jaw, sideburns, moustache, under the chin
         ],
       },
     }),
@@ -358,6 +358,18 @@ function paintBands(mat, geo, bands, span) {
       }
       if (y0 < y1) face = y0 + (y1 - y0) * 0.38;
     }
+    if (b.beard) {
+      // the head: the skin above the neck (its middle and size), so the beard is shaped round it
+      const pos = geo.attributes.position;
+      const box = new THREE.Box3();
+      const v = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        if (v.z > at(0.865) && Math.abs(v.x) < span.half * 0.12) box.expandByPoint(v);
+      }
+      const c = box.getCenter(new THREE.Vector3());
+      return { beard: true, c, r: (box.max.z - box.min.z) / 2 || 1, lo: 0, hi: 0, face: 0, legs: 0, arms: 0, color: new THREE.Color(b.color) };
+    }
     // xmin/xmax: how far out from the middle (fractions of the T-pose width, so along the arms)
     const legs = b.xmax !== undefined ? span.half * b.xmax : b.legs ? span.half * 0.18 : 1e9;
     const arms = b.xmin !== undefined ? span.half * b.xmin : b.arms ? span.half * 0.24 : -1;
@@ -367,6 +379,23 @@ function paintBands(mat, geo, bands, span) {
     let uni = '';
     let paint = '';
     list.forEach((b, i) => {
+      if (b.beard) {
+        sh.uniforms[`uKitB${i}`] = { value: b.c };
+        sh.uniforms[`uKitR${i}`] = { value: b.r };
+        sh.uniforms[`uKitC${i}`] = { value: b.color };
+        uni += `uniform vec3 uKitB${i}; uniform float uKitR${i}; uniform vec3 uKitC${i};\n`;
+        // front of the face is -y. The top edge is low in the middle (the moustache, under the nose) and climbs to the
+        // ears at the sides (sideburns); it wraps under the chin; the mouth stays clear; a little stubbly variation
+        paint += `{ vec3 d = vKitPos - uKitB${i}; float R = uKitR${i}; float ax = abs(d.x);
+          float top = -0.36 * R + 0.26 * R * smoothstep(0.3 * R, 0.78 * R, ax);
+          bool beard = d.y < 0.22 * R && d.z < top && d.z > -1.3 * R;
+          bool mouth = ax < 0.2 * R && d.z < -0.5 * R && d.z > -0.64 * R && d.y < -0.4 * R;
+          if (beard && !mouth) {
+            float n = fract(sin(dot(floor(vKitPos / (R * 0.09)), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+            diffuseColor.rgb = uKitC${i} * (0.75 + 0.5 * n);
+          } }\n`;
+        return;
+      }
       sh.uniforms[`uKitLo${i}`] = { value: b.lo };
       sh.uniforms[`uKitHi${i}`] = { value: b.hi };
       sh.uniforms[`uKitW${i}`] = { value: b.legs };
@@ -379,7 +408,7 @@ function paintBands(mat, geo, bands, span) {
     sh.vertexShader = 'varying vec3 vKitPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvKitPos = position;');
     sh.fragmentShader = 'varying vec3 vKitPos;\n' + uni + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + paint);
   };
-  mat.customProgramCacheKey = () => `kit:${list.map((b) => `${b.lo.toFixed(4)},${b.hi.toFixed(4)},${b.legs.toFixed(4)},${b.arms.toFixed(4)},${b.face.toFixed(5)},${b.color.getHexString()}`).join('|')}`;
+  mat.customProgramCacheKey = () => `kit:${list.map((b) => b.beard ? `beard${b.color.getHexString()}` : `${b.lo.toFixed(4)},${b.hi.toFixed(4)},${b.legs.toFixed(4)},${b.arms.toFixed(4)},${b.face.toFixed(5)},${b.color.getHexString()}`).join('|')}`;
 }
 
 const lum = (c) => c.r * 0.3 + c.g * 0.59 + c.b * 0.11 || 0.01;

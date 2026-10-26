@@ -7,6 +7,7 @@ export const CHANGELOG = [
       'The game is free! Make an account with your email, and an admin unlocks it so you can play. No more paying to get in.',
       'Admins: 🔓 Unlock accounts in the Players tab lists everyone waiting, with an UNLOCK button (they stay unlocked for good).',
       'Admins: 🧍 Give a character (Players tab) gives or takes SWAT, Adventurer, King, the Astronaut, Portugal #7 or India #18 to anyone, yourself too.',
+      '🏏 India #18: a proper full beard (jawline, sideburns, moustache, the mouth showing) instead of a dark block.',
     ],
   },
   {
