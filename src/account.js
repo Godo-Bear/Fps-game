@@ -1,7 +1,7 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
 import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, ADMIN_CHARS, PAID_CHARS, ownsPaidChar, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, ASTRONAUT_PRESETS, FIXED_LOOK, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, RETICLES, COSMETIC_LISTS, crosshairPaint, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, ASTRONAUT_PRESETS, FIXED_LOOK, CRICKET_GEAR, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, RETICLES, COSMETIC_LISTS, crosshairPaint, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { DEAL_ITEMS, SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -1409,6 +1409,11 @@ export class AccountUI {
       : '';
     const gearToggle = L.model === 'adventurer' || L.model === 'king' ? `<div class="pick-row"><button class="pick ${L.hat !== 'none' ? 'on' : ''}" data-look="hat" data-v="helmet">${L.model === 'king' ? 'Crown on' : 'Wearing it'}</button><button class="pick ${L.hat === 'none' ? 'on' : ''}" data-look="hat" data-v="none">${L.model === 'king' ? 'No crown' : 'Off'}</button></div>` : '';
     const note = CHARACTERS_LIVE || !this.account.admin ? 'other players see it online, and your arms match it · 🧩 unlock more in events' : 'ADMIN PREVIEW: players only see it once they find a piece in an event';
+    // the cricketer's batting gear: on or off, each one
+    const gear = () => `<h5>Batting gear</h5><div class="pick-row">${CRICKET_GEAR.map(([k, n]) => {
+      const on = (L[k] || 'on') === 'on' && !(k === 'chelmet' && !L[k]);
+      return `<button class="pick ${on ? 'on' : ''}" data-look="${k}" data-v="${on ? 'off' : 'on'}" title="${on ? 'Take it off' : 'Put it on'}">${n} ${on ? '✓' : ''}</button>`;
+    }).join('')}</div>`;
     // the colour pickers (not for the players with a fixed look)
     const colours = () => `          ${presets}
           <h5>${space ? 'Visor' : 'Skin'}</h5>${swatches('skin', space ? LOOK_CLOTH : LOOK_SKIN)}
@@ -1430,7 +1435,7 @@ export class AccountUI {
               ? `<button class="pick ${L.model === id ? 'on' : ''}" data-look="model" data-v="${id}">${n}</button>`
               : `<button class="pick locked" disabled title="Collect all 4 puzzle pieces in an event to unlock">🔒 ${n} <i>🧩 ${piecesOf(this.account.items, id).length}/4${set ? ` · ${set.rarity}` : ''}</i></button>`;
           }).join('')}</div>
-          ${FIXED_LOOK.includes(L.model) ? '<p class="muted small">This player\'s skin, hair and kit are fixed: they always look like this.</p>' : colours()}
+          ${FIXED_LOOK.includes(L.model) ? `<p class="muted small">This player's skin, hair and kit are fixed: they always look like this.</p>${L.model === 'cricketer' ? gear() : ''}` : colours()}
         </div>
       </div>`;
   }

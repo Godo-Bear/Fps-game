@@ -168,13 +168,15 @@ export const MODEL_COLORS = {
   swat: { skin: '#ba9c79', hairColor: '#2b2926', topColor: '#474a51', pants: '#474a51', hatColor: '#2b2926' },
   king: { skin: '#ba9c79', hairColor: '#afafaf', topColor: '#383f4f', pants: '#433730', hatColor: '#595a59' },
   // the Survivor in kits (PAID_CHARS): red shirt, green shorts, red socks; blue kit, white socks
-  footballer: { skin: '#d9ab84', hairColor: '#1a1410', topColor: '#c8102e', pants: '#046a38', hatColor: '#c8102e' },
-  cricketer: { skin: '#8d5a3b', hairColor: '#100c0a', topColor: '#f4f1e6', pants: '#efeadb', hatColor: '#efeadb' },
+  footballer: { skin: '#d9ab84', hairColor: '#1a1410', topColor: '#b0102a', pants: '#046a38', hatColor: '#b0102a' },
+  cricketer: { skin: '#8d5a3b', hairColor: '#100c0a', topColor: '#2f78e6', pants: '#1d4fb8', hatColor: '#f2f2f2' },
   // admins only. skin: the visor, hairColor: the stripes, topColor: the suit, pants: its dark parts, hatColor: the panels
   astronaut: { skin: '#383838', hairColor: '#93542b', topColor: '#3b4b49', pants: '#2a3538', hatColor: '#a19893' },
 };
 // characters whose colours are fixed (their own skin, hair and kit): the colour pickers don't change them
 export const FIXED_LOOK = ['footballer', 'cricketer'];
+// the cricketer's batting gear the player can put on or take off: [look key, label, on by default]
+export const CRICKET_GEAR = [['cgloves', '🧤 Gloves', 'on'], ['cpads', '🦵 Pads', 'on'], ['chelmet', '⛑️ Helmet', 'off'], ['cbat', '🏏 Bat on the back', 'on']];
 // ready-made colours for the Astronaut (any colour works too)
 export const ASTRONAUT_PRESETS = [
   ['Classic', MODEL_COLORS.astronaut],
@@ -184,7 +186,7 @@ export const ASTRONAUT_PRESETS = [
   ['Stealth', { skin: '#3ab04a', hairColor: '#3ab04a', topColor: '#222222', pants: '#141210', hatColor: '#333333' }],
   ['Galaxy', { skin: '#b04dff', hairColor: '#ff4dd8', topColor: '#2a1a5a', pants: '#140c30', hatColor: '#6a3a8a' }],
 ];
-export const DEFAULT_LOOK = { skin: '#c89a78', hair: 'short', hairColor: '#3a2616', face: 'none', hat: 'helmet', hatColor: '#4a5236', top: 'jacket', topColor: '#3d4234', pants: '#3d4234', model: 'man', ...MODEL_COLORS.man };
+export const DEFAULT_LOOK = { skin: '#c89a78', hair: 'short', hairColor: '#3a2616', face: 'none', hat: 'helmet', hatColor: '#4a5236', top: 'jacket', topColor: '#3d4234', pants: '#3d4234', model: 'man', ...MODEL_COLORS.man, cgloves: 'on', cpads: 'on', chelmet: 'off', cbat: 'on' };
 const HEX = /^#[0-9a-f]{6}$/i;
 // a random look (AI bots)
 export function randomLook() {
@@ -207,6 +209,8 @@ export function cleanLook(input, items = null, admin = false) {
   pick('hat', LOOK_HAT);
   pick('top', LOOK_TOP);
   pick('model', LOOK_MODELS);
+  // the cricketer's batting gear (the player picks it in the Locker)
+  for (const k of CRICKET_GEAR.map(([id]) => id)) pick(k, [['on'], ['off']]);
   if (FIXED_LOOK.includes(out.model)) Object.assign(out, MODEL_COLORS[out.model]); // (their own skin, hair and kit)
   return out;
 }

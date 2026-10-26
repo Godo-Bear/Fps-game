@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.78', date: '26 Oct 2026', title: 'Better #7 and #18 kits, batting gear',
+    items: [
+      '⚽ #7: long-sleeved red home shirt with a dark collar, a crest, the 7 on the front and back, and a dark captain\'s armband.',
+      '🏏 #18: blue one-day kit with INDIA across the chest, a crest, a full beard, darker blue trousers, white gloves and pads.',
+      'Pick the cricketer\'s batting gear in Locker → Character: gloves, pads, helmet (with a grille) and the bat on the back, each on or off.',
+    ],
+  },
+  {
     v: '5.77', date: '26 Oct 2026', title: 'Footballer #7 and cricketer #18',
     items: [
       'New characters in the Shop (🧍 Characters, $10 each, paid to the owner): ⚽ Portugal #7 (red shirt with a green stripe and collar, green shorts, long red socks, captain\'s armband, gold-edged 7) and 🏏 India #18 (cream Test kit with long trousers, navy collar and 18, a cricket bat across the back).',

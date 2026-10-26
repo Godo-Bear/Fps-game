@@ -37,11 +37,16 @@ const CHARACTER_MODELS = {
     clips: { idle: 'Man_Idle', run: 'Man_Run', walk: 'Man_Walk', die: 'Man_Death' },
     // paint: bands by height up the body (0 feet, 1 head) on each material; legs: only near the middle (not the hands)
     kit: {
-      number: '7', color: '#ffffff', edge: '#d4a72c', armband: true,
+      // like the home shirt: long red sleeves, a dark V-neck, the 7 on the front too, a dark captain's armband
+      number: '7', color: '#ffffff', edge: '#7a0010', frontNumber: true, armband: '#1a1a1e', badge: 'portugal',
       paint: {
-        Shirt: [{ from: 0.655, to: 0.695, color: '#046a38' }, { from: 0.825, to: 0.86, color: '#046a38' }],
+        Shirt: [{ from: 0.825, to: 0.86, color: '#4a4248' }],
         Pants: [{ hem: 0.025, color: '#ffffff' }],
-        Skin: [{ below: 0.29, color: '#c8102e', legs: true }, { from: 0.255, to: 0.29, color: '#046a38', legs: true }],
+        Skin: [
+          { from: 0.6, to: 0.95, color: '#b0102a', xmin: 0.1, xmax: 0.385 }, // long sleeves, out to the wrists (hands stay bare)
+          { below: 0.29, color: '#b0102a', legs: true }, // long socks, green tops
+          { from: 0.255, to: 0.29, color: '#046a38', legs: true },
+        ],
       },
     },
   },
@@ -50,13 +55,20 @@ const CHARACTER_MODELS = {
     colorsOf: 'man',
     slots: { Skin: 'skin', Hair: 'hairColor', Shirt: 'topColor', Pants: 'pants', Socks: 'hatColor' },
     clips: { idle: 'Man_Idle', run: 'Man_Run', walk: 'Man_Walk', die: 'Man_Death' },
-    kit: {
-      number: '18', color: '#14306e', edge: '#f4f1e6', bat: true,
+    // like the one-day kit: bright blue, INDIA across the chest in orange, darker trousers, a full beard. The batting
+    // gear is the player's choice (Locker): pads, gloves, helmet, bat (look.cpads / cgloves / chelmet / cbat)
+    kit: (look) => ({
+      number: '18', color: '#ff8a1a', edge: '#0b1f4a', bat: look.cbat !== 'off', helmet: look.chelmet === 'on', badge: 'india', chestText: 'INDIA',
       paint: {
         Shirt: [{ from: 0.825, to: 0.86, color: '#14306e' }],
-        Skin: [{ below: 0.47, color: '#efeadb', legs: true }], // long cricket trousers
+        Skin: [
+          { below: 0.47, color: '#1d4fb8', legs: true }, // long cricket trousers
+          ...(look.cpads !== 'off' ? [{ below: 0.3, color: '#f2f2f2', legs: true }] : []), // batting pads
+          ...(look.cgloves !== 'off' ? [{ from: 0.6, to: 0.95, color: '#f4f4f4', xmin: 0.385, xmax: 1 }] : []), // batting gloves (the hands)
+          { from: 0.871, to: 0.897, color: '#2a1d16', face: true }, // the beard
+        ],
       },
-    },
+    }),
   },
   // admins only (ADMIN_CHARS)
   astronaut: {
@@ -126,6 +138,99 @@ function numberTexture(text, color, edge) {
   kitParts[key] = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
   return kitParts[key];
 }
+// a word across the chest (INDIA)
+function textMaterial(text, color, edge) {
+  const key = `txt|${text}|${color}`;
+  if (kitParts[key]) return kitParts[key];
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 76;
+  const g = c.getContext('2d');
+  g.font = 'italic 900 58px Impact, "Arial Black", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineWidth = 6;
+  g.strokeStyle = edge;
+  g.strokeText(text, 128, 40);
+  g.fillStyle = color;
+  g.fillText(text, 128, 40);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  kitParts[key] = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  return kitParts[key];
+}
+// The chest badges: our own crests (not the real federations' ones) in each team's colours.
+function badgeMaterial(kind) {
+  if (kitParts[kind]) return kitParts[kind];
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 150;
+  const g = c.getContext('2d');
+  const shield = (fill, edge) => {
+    g.beginPath();
+    g.moveTo(10, 8);
+    g.lineTo(118, 8);
+    g.lineTo(118, 78);
+    g.quadraticCurveTo(118, 128, 64, 144);
+    g.quadraticCurveTo(10, 128, 10, 78);
+    g.closePath();
+    g.fillStyle = fill;
+    g.fill();
+    g.lineWidth = 8;
+    g.strokeStyle = edge;
+    g.stroke();
+  };
+  const star = (x, y, r, fill) => {
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rr = i % 2 ? r * 0.45 : r;
+      g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    g.closePath();
+    g.fillStyle = fill;
+    g.fill();
+  };
+  if (kind === 'portugal') {
+    shield('#c8102e', '#d4a72c');
+    g.fillStyle = '#046a38';
+    g.fillRect(14, 12, 40, 66);
+    g.beginPath();
+    g.arc(64, 74, 26, 0, Math.PI * 2);
+    g.fillStyle = '#d4a72c';
+    g.fill();
+    star(64, 74, 16, '#c8102e');
+  } else if (kind === 'india') {
+    shield('#0b1f4a', '#ff8a1a');
+    star(38, 46, 13, '#ffd34d');
+    star(64, 38, 13, '#ffd34d');
+    star(90, 46, 13, '#ffd34d');
+    g.beginPath();
+    g.arc(64, 92, 22, 0, Math.PI * 2);
+    g.fillStyle = '#ffffff';
+    g.fill();
+    g.strokeStyle = '#d42a1f';
+    g.lineWidth = 4;
+    g.beginPath();
+    g.arc(64, 92, 16, -0.9, 0.9);
+    g.stroke();
+  } else {
+    // the maker mark: a little swoosh-free chevron in gold or white
+    g.clearRect(0, 0, 128, 150);
+    g.strokeStyle = kind.startsWith('india') ? '#ffffff' : '#d4a72c';
+    g.lineWidth = 18;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(20, 60);
+    g.lineTo(64, 100);
+    g.lineTo(108, 60);
+    g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  kitParts[kind] = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  return kitParts[kind];
+}
 function addKit(model, kit) {
   model.updateMatrixWorld(true);
   let torso = null;
@@ -148,13 +253,68 @@ function addKit(model, kit) {
   num.rotation.y = Math.PI;
   num.renderOrder = 2;
   torso.attach(num);
+  if (kit.badge) {
+    // the crest on the left of the chest (our own design), and a small maker mark on the right
+    const front = new THREE.Raycaster(new THREE.Vector3(tp.x + 0.07, chestY + 0.07, tp.z + 3), new THREE.Vector3(0, 0, -1), 0, 6).intersectObject(model, true).find((h) => h.object.isMesh);
+    const fz = front ? front.point.z : tp.z + 0.14;
+    const crest = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.1), badgeMaterial(kit.badge));
+    crest.position.set(tp.x + 0.07, chestY + 0.07, fz + 0.01);
+    crest.renderOrder = 2;
+    torso.attach(crest);
+    const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.03), badgeMaterial(`${kit.badge}-mark`));
+    mark.position.set(tp.x - 0.07, chestY + 0.075, fz + 0.01);
+    mark.renderOrder = 2;
+    torso.attach(mark);
+    if (kit.frontNumber) {
+      const n2 = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.11), numberTexture(kit.number, kit.color, kit.edge));
+      n2.position.set(tp.x - 0.01, chestY - 0.03, fz + 0.012);
+      n2.renderOrder = 2;
+      torso.attach(n2);
+    }
+    if (kit.chestText) {
+      const txt = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.06), textMaterial(kit.chestText, kit.color, kit.edge));
+      txt.position.set(tp.x, chestY - 0.005, fz + 0.012);
+      txt.renderOrder = 2;
+      torso.attach(txt);
+    }
+  }
+  if (kit.helmet) {
+    // a navy batting helmet with a grille, on the head bone
+    let head = null;
+    model.traverse((o) => o.isBone && o.name === 'Head' && (head = o));
+    if (head) {
+      const hp = new THREE.Vector3().setFromMatrixPosition(head.matrixWorld);
+      const top = new THREE.Box3().setFromObject(model, true).max.y;
+      const r = (top - hp.y) * 0.62;
+      const helmet = new THREE.Group();
+      const navy = new THREE.MeshStandardMaterial({ color: 0x14306e, roughness: 0.4 });
+      const steel = new THREE.MeshStandardMaterial({ color: 0xcfd4da, roughness: 0.3, metalness: 0.6 });
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.58), navy);
+      helmet.add(dome);
+      const peak = new THREE.Mesh(new THREE.BoxGeometry(r * 1.5, r * 0.08, r * 0.5), navy);
+      peak.position.set(0, r * 0.05, r * 0.95);
+      helmet.add(peak);
+      for (let i = 0; i < 3; i++) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(r * 1.4, r * 0.05, r * 0.05), steel);
+        bar.position.set(0, -r * (0.25 + i * 0.28), r * 1.02);
+        helmet.add(bar);
+      }
+      for (const sx of [-1, 1]) {
+        const side = new THREE.Mesh(new THREE.BoxGeometry(r * 0.05, r * 0.85, r * 0.05), steel);
+        side.position.set(sx * r * 0.68, -r * 0.5, r * 0.85);
+        helmet.add(side);
+      }
+      helmet.position.set(hp.x, hp.y + (top - hp.y) * 0.42, hp.z);
+      head.attach(helmet);
+    }
+  }
   if (kit.armband && armL) {
     // round the top of the left arm, whichever way the arm points in this pose
     let lower = null;
     armL.traverse((o) => o !== armL && o.isBone && !lower && (lower = o));
     const ap = new THREE.Vector3().setFromMatrixPosition(armL.matrixWorld);
     const dir = lower ? new THREE.Vector3().setFromMatrixPosition(lower.matrixWorld).sub(ap) : new THREE.Vector3(0, -1, 0);
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.05, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd34d, side: THREE.DoubleSide }));
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.056, 0.055, 12, 1, true), new THREE.MeshBasicMaterial({ color: typeof kit.armband === 'string' ? kit.armband : 0xffd34d, side: THREE.DoubleSide }));
     band.position.copy(ap).addScaledVector(dir, 0.4);
     band.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
     armL.attach(band);
@@ -183,7 +343,25 @@ function paintBands(mat, geo, bands, span) {
   const list = bands.map((b) => {
     const lo = b.hem !== undefined ? -1e9 : b.below !== undefined ? -1e9 : at(b.from);
     const hi = b.hem !== undefined ? geo.boundingBox.min.z + b.hem * h : b.below !== undefined ? at(b.below) : at(b.to);
-    return { lo, hi, legs: b.legs ? span.half * 0.18 : 1e9, color: new THREE.Color(b.color) };
+    // legs: only near the middle (not the hands); arms: only out to the sides (the sleeves, not the chest);
+    // face: only the front half of the head at that height (the beard)
+    let face = 1e9;
+    if (b.face) {
+      const pos = geo.attributes.position;
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        const z = pos.getZ(i);
+        if (z < lo || z > hi || Math.abs(pos.getX(i)) > span.half * 0.1) continue;
+        y0 = Math.min(y0, pos.getY(i));
+        y1 = Math.max(y1, pos.getY(i));
+      }
+      if (y0 < y1) face = y0 + (y1 - y0) * 0.38;
+    }
+    // xmin/xmax: how far out from the middle (fractions of the T-pose width, so along the arms)
+    const legs = b.xmax !== undefined ? span.half * b.xmax : b.legs ? span.half * 0.18 : 1e9;
+    const arms = b.xmin !== undefined ? span.half * b.xmin : b.arms ? span.half * 0.24 : -1;
+    return { lo, hi, face, legs, arms, color: new THREE.Color(b.color) };
   });
   mat.onBeforeCompile = (sh) => {
     let uni = '';
@@ -192,14 +370,16 @@ function paintBands(mat, geo, bands, span) {
       sh.uniforms[`uKitLo${i}`] = { value: b.lo };
       sh.uniforms[`uKitHi${i}`] = { value: b.hi };
       sh.uniforms[`uKitW${i}`] = { value: b.legs };
+      sh.uniforms[`uKitA${i}`] = { value: b.arms };
+      sh.uniforms[`uKitF${i}`] = { value: b.face };
       sh.uniforms[`uKitC${i}`] = { value: b.color };
-      uni += `uniform float uKitLo${i}; uniform float uKitHi${i}; uniform float uKitW${i}; uniform vec3 uKitC${i};\n`;
-      paint += `if (vKitPos.z > uKitLo${i} && vKitPos.z < uKitHi${i} && abs(vKitPos.x) < uKitW${i}) diffuseColor.rgb = uKitC${i};\n`;
+      uni += `uniform float uKitLo${i}; uniform float uKitHi${i}; uniform float uKitW${i}; uniform float uKitA${i}; uniform float uKitF${i}; uniform vec3 uKitC${i};\n`;
+      paint += `if (vKitPos.z > uKitLo${i} && vKitPos.z < uKitHi${i} && abs(vKitPos.x) < uKitW${i} && abs(vKitPos.x) > uKitA${i} && vKitPos.y < uKitF${i}) diffuseColor.rgb = uKitC${i};\n`;
     });
     sh.vertexShader = 'varying vec3 vKitPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvKitPos = position;');
     sh.fragmentShader = 'varying vec3 vKitPos;\n' + uni + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + paint);
   };
-  mat.customProgramCacheKey = () => `kit:${list.map((b) => `${b.lo.toFixed(4)},${b.hi.toFixed(4)},${b.legs.toFixed(4)},${b.color.getHexString()}`).join('|')}`;
+  mat.customProgramCacheKey = () => `kit:${list.map((b) => `${b.lo.toFixed(4)},${b.hi.toFixed(4)},${b.legs.toFixed(4)},${b.arms.toFixed(4)},${b.face.toFixed(5)},${b.color.getHexString()}`).join('|')}`;
 }
 
 const lum = (c) => c.r * 0.3 + c.g * 0.59 + c.b * 0.11 || 0.01;
@@ -216,6 +396,7 @@ export function buildModelCharacter(lookIn) {
   root.add(model);
   const mats = [];
   const base = MODEL_COLORS[def.colorsOf || look.model];
+  const kit = typeof def.kit === 'function' ? def.kit(look) : def.kit; // (some depend on the gear the player picked)
   // the body's height (for the kits painted on by height)
   const span = { min: Infinity, max: -Infinity, half: 0 };
   model.traverse((o) => {
@@ -242,7 +423,7 @@ export function buildModelCharacter(lookIn) {
         const ratio = lum(m0.color) / lum(new THREE.Color(base[slot]));
         m.color.copy(want).multiplyScalar(Math.min(1.6, ratio));
       }
-      const bands = def.kit?.paint?.[m0.name];
+      const bands = kit?.paint?.[m0.name];
       if (bands) paintBands(m, o.geometry, bands, span);
       return m;
     });
@@ -280,7 +461,7 @@ export function buildModelCharacter(lookIn) {
     if (playing) playing.crossFadeTo(a, fade, false);
     playing = a;
   };
-  if (def.kit) addKit(model, def.kit);
+  if (kit) addKit(model, kit);
   play('idle', 0);
   return { root, model, mixer, actions, play, mats, hand: bones.handR, bones, look, scale: t.scale };
 }

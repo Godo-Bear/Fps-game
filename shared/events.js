@@ -14,8 +14,8 @@ export const piecesOf = (items, char) => [0, 1, 2, 3].filter((n) => items?.[piec
 export const ADMIN_CHARS = ['astronaut'];
 // characters bought with real money (paid to the owner; an admin gives them out): items[`skin_<id>`]
 export const PAID_CHARS = {
-  footballer: { name: 'Portugal #7', icon: '⚽', price: '$10', desc: 'The footballer: red and green kit with the number 7 on the back and a captain\'s armband' },
-  cricketer: { name: 'India #18', icon: '🏏', price: '$10', desc: 'The cricketer: blue kit with the number 18 on the back and a cricket bat across the back' },
+  footballer: { name: 'Portugal #7', icon: '⚽', price: '$10', desc: 'The footballer: long-sleeved red home shirt with a crest and the 7 front and back, green shorts, long red socks and a captain\'s armband' },
+  cricketer: { name: 'India #18', icon: '🏏', price: '$10', desc: 'The cricketer: blue one-day kit with INDIA across the chest, a crest, the number 18, white pads and gloves, and a cricket bat' },
 };
 export const ownsPaidChar = (items) => Object.keys(PAID_CHARS).some((id) => items?.[`skin_${id}`]);
 // The Survivor is everyone's; the others once all four pieces are found (admins have them all).
