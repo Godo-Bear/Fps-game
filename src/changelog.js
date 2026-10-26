@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.77', date: '26 Oct 2026', title: 'Footballer #7 and cricketer #18',
+    items: [
+      'New characters in the Shop (🧍 Characters, $10 each, paid to the owner): ⚽ Portugal #7 (red shirt with a green stripe and collar, green shorts, long red socks, captain\'s armband, gold-edged 7) and 🏏 India #18 (cream Test kit with long trousers, navy collar and 18, a cricket bat across the back).',
+      'Their skin, hair and kit are fixed. Wear them from Locker → Character once you have them; other players see them online.',
+      'Admins: give or take them in Admin → 💵 Shop → 🎁 Someone paid you (to anyone, yourself too).',
+    ],
+  },
+  {
     v: '5.76', date: '23 Oct 2026', title: 'Equip items',
     items: [
       'Shop → Items: buy an item once and it\'s yours for good. Equip as many as you like (EQUIP / EQUIPPED ✓): every game starts with them in your backpack, full, in every mode. New ones are equipped straight away.',

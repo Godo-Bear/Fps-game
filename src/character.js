@@ -29,6 +29,35 @@ const CHARACTER_MODELS = {
     gear: ['King_Head_4'], // the crown
     clips: { idle: 'Idle_Gun', run: 'Run', back: 'Run_Back', left: 'Run_Left', right: 'Run_Right', walk: 'Walk', die: 'Death' },
   },
+  // the Survivor in a football kit (#7) and a cricket kit (#18, bat on the back): $10 each in the Shop (PAID_CHARS)
+  footballer: {
+    url: '/models/Man by Quaternius - HMnuH5geEG.glb',
+    colorsOf: 'man', // (its materials are the Survivor's: recoloured from those)
+    slots: { Skin: 'skin', Hair: 'hairColor', Shirt: 'topColor', Pants: 'pants', Socks: 'hatColor' },
+    clips: { idle: 'Man_Idle', run: 'Man_Run', walk: 'Man_Walk', die: 'Man_Death' },
+    // paint: bands by height up the body (0 feet, 1 head) on each material; legs: only near the middle (not the hands)
+    kit: {
+      number: '7', color: '#ffffff', edge: '#d4a72c', armband: true,
+      paint: {
+        Shirt: [{ from: 0.655, to: 0.695, color: '#046a38' }, { from: 0.825, to: 0.86, color: '#046a38' }],
+        Pants: [{ hem: 0.025, color: '#ffffff' }],
+        Skin: [{ below: 0.29, color: '#c8102e', legs: true }, { from: 0.255, to: 0.29, color: '#046a38', legs: true }],
+      },
+    },
+  },
+  cricketer: {
+    url: '/models/Man by Quaternius - HMnuH5geEG.glb',
+    colorsOf: 'man',
+    slots: { Skin: 'skin', Hair: 'hairColor', Shirt: 'topColor', Pants: 'pants', Socks: 'hatColor' },
+    clips: { idle: 'Man_Idle', run: 'Man_Run', walk: 'Man_Walk', die: 'Man_Death' },
+    kit: {
+      number: '18', color: '#14306e', edge: '#f4f1e6', bat: true,
+      paint: {
+        Shirt: [{ from: 0.825, to: 0.86, color: '#14306e' }],
+        Skin: [{ below: 0.47, color: '#efeadb', legs: true }], // long cricket trousers
+      },
+    },
+  },
   // admins only (ADMIN_CHARS)
   astronaut: {
     url: '/models/Astronaut by Quaternius - 3hC2i0CTuO.glb',
@@ -75,6 +104,104 @@ export function loadCharacterModel(id) {
 export const loadAllCharacterModels = () => Promise.all(Object.keys(CHARACTER_MODELS).map(loadCharacterModel));
 export const characterModelReady = (id) => !!templates[id];
 
+// The kit extras: the shirt number on the back, a captain's armband, a cricket bat across the back. Fitted while the
+// character stands in its first pose, then stuck to the bones so they move with it.
+const kitParts = {};
+function numberTexture(text, color, edge) {
+  const key = `${text}|${color}|${edge}`;
+  if (kitParts[key]) return kitParts[key];
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.font = '900 92px Impact, "Arial Black", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineWidth = 10;
+  g.strokeStyle = edge;
+  g.strokeText(text, 64, 68);
+  g.fillStyle = color;
+  g.fillText(text, 64, 68);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  kitParts[key] = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  return kitParts[key];
+}
+function addKit(model, kit) {
+  model.updateMatrixWorld(true);
+  let torso = null;
+  let armL = null;
+  model.traverse((o) => {
+    if (!o.isBone) return;
+    if (o.name === 'Torso') torso = o;
+    if (o.name === 'UpperArmL') armL = o;
+  });
+  if (!torso) return;
+  // where the back of the shirt is: a ray from behind at chest height (or a guess if it misses)
+  const tp = new THREE.Vector3().setFromMatrixPosition(torso.matrixWorld);
+  const chestY = tp.y + 0.06;
+  const ray = new THREE.Raycaster(new THREE.Vector3(tp.x, chestY, tp.z - 3), new THREE.Vector3(0, 0, 1), 0, 6);
+  const hit = ray.intersectObject(model, true).find((h) => h.object.isMesh);
+  const backZ = hit ? hit.point.z : tp.z - 0.16;
+  // the number, just off the back, facing backwards
+  const num = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.24), numberTexture(kit.number, kit.color, kit.edge));
+  num.position.set(tp.x, chestY, backZ - 0.012);
+  num.rotation.y = Math.PI;
+  num.renderOrder = 2;
+  torso.attach(num);
+  if (kit.armband && armL) {
+    // round the top of the left arm, whichever way the arm points in this pose
+    let lower = null;
+    armL.traverse((o) => o !== armL && o.isBone && !lower && (lower = o));
+    const ap = new THREE.Vector3().setFromMatrixPosition(armL.matrixWorld);
+    const dir = lower ? new THREE.Vector3().setFromMatrixPosition(lower.matrixWorld).sub(ap) : new THREE.Vector3(0, -1, 0);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.05, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd34d, side: THREE.DoubleSide }));
+    band.position.copy(ap).addScaledVector(dir, 0.4);
+    band.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    armL.attach(band);
+  }
+  if (kit.bat) {
+    // a cricket bat slung across the back, handle up by the right shoulder
+    const bat = new THREE.Group();
+    const willow = new THREE.MeshStandardMaterial({ color: 0xe6c88c, roughness: 0.7 });
+    const grip = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.56, 0.035), willow);
+    blade.position.y = -0.14;
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.26, 8), grip);
+    handle.position.y = 0.27;
+    bat.add(blade, handle);
+    // on the right side of the back, so the number shows
+    bat.position.set(tp.x - 0.15, tp.y - 0.02, backZ - 0.05);
+    bat.rotation.z = -0.22;
+    torso.attach(bat);
+  }
+}
+
+// Paints stripes, collars, socks and trousers onto a material by height up the body (the model stands along z).
+function paintBands(mat, geo, bands, span) {
+  const h = span.max - span.min || 1;
+  const at = (f) => span.min + f * h;
+  const list = bands.map((b) => {
+    const lo = b.hem !== undefined ? -1e9 : b.below !== undefined ? -1e9 : at(b.from);
+    const hi = b.hem !== undefined ? geo.boundingBox.min.z + b.hem * h : b.below !== undefined ? at(b.below) : at(b.to);
+    return { lo, hi, legs: b.legs ? span.half * 0.18 : 1e9, color: new THREE.Color(b.color) };
+  });
+  mat.onBeforeCompile = (sh) => {
+    let uni = '';
+    let paint = '';
+    list.forEach((b, i) => {
+      sh.uniforms[`uKitLo${i}`] = { value: b.lo };
+      sh.uniforms[`uKitHi${i}`] = { value: b.hi };
+      sh.uniforms[`uKitW${i}`] = { value: b.legs };
+      sh.uniforms[`uKitC${i}`] = { value: b.color };
+      uni += `uniform float uKitLo${i}; uniform float uKitHi${i}; uniform float uKitW${i}; uniform vec3 uKitC${i};\n`;
+      paint += `if (vKitPos.z > uKitLo${i} && vKitPos.z < uKitHi${i} && abs(vKitPos.x) < uKitW${i}) diffuseColor.rgb = uKitC${i};\n`;
+    });
+    sh.vertexShader = 'varying vec3 vKitPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvKitPos = position;');
+    sh.fragmentShader = 'varying vec3 vKitPos;\n' + uni + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + paint);
+  };
+  mat.customProgramCacheKey = () => `kit:${list.map((b) => `${b.lo.toFixed(4)},${b.hi.toFixed(4)},${b.legs.toFixed(4)},${b.color.getHexString()}`).join('|')}`;
+}
+
 const lum = (c) => c.r * 0.3 + c.g * 0.59 + c.b * 0.11 || 0.01;
 // A copy of a 3D character in the look's colours, with its animations. Faces +z, feet at 0.
 // Returns null if that character hasn't loaded yet.
@@ -88,7 +215,17 @@ export function buildModelCharacter(lookIn) {
   const root = new THREE.Group();
   root.add(model);
   const mats = [];
-  const base = MODEL_COLORS[look.model];
+  const base = MODEL_COLORS[def.colorsOf || look.model];
+  // the body's height (for the kits painted on by height)
+  const span = { min: Infinity, max: -Infinity, half: 0 };
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    o.geometry.computeBoundingBox();
+    const b = o.geometry.boundingBox;
+    span.min = Math.min(span.min, b.min.z);
+    span.max = Math.max(span.max, b.max.z);
+    span.half = Math.max(span.half, b.max.x - b.min.x);
+  });
   model.traverse((o) => {
     if (!o.isMesh) return;
     const part = (def.gear || []).find((g) => o.name.startsWith(g));
@@ -105,6 +242,8 @@ export function buildModelCharacter(lookIn) {
         const ratio = lum(m0.color) / lum(new THREE.Color(base[slot]));
         m.color.copy(want).multiplyScalar(Math.min(1.6, ratio));
       }
+      const bands = def.kit?.paint?.[m0.name];
+      if (bands) paintBands(m, o.geometry, bands, span);
       return m;
     });
     if (o.material.length === 1) o.material = o.material[0];
@@ -141,6 +280,7 @@ export function buildModelCharacter(lookIn) {
     if (playing) playing.crossFadeTo(a, fade, false);
     playing = a;
   };
+  if (def.kit) addKit(model, def.kit);
   play('idle', 0);
   return { root, model, mixer, actions, play, mats, hand: bones.handR, bones, look, scale: t.scale };
 }

@@ -22,7 +22,7 @@ import { GUNS, MUTATIONS, TIER_CSS, buildGun, loadGunModels, setArmLook, randomM
 import { clearGunIcons, gunIcon } from './gunIcons.js';
 import { Minimap } from './minimap.js';
 import { Avatar, FLAG_BITS, Multiplayer } from './multiplayer.js';
-import { DROP_CHANCE, EVENT_MAX_PLAYERS, PIECE_COUNT, totalPieces } from '../shared/events.js';
+import { DROP_CHANCE, EVENT_MAX_PLAYERS, PIECE_COUNT, ownsPaidChar, totalPieces } from '../shared/events.js';
 import { TANK_ARMOUR, ownsGear } from '../shared/gear.js';
 import { buildTank, loadTankModel, tankModelReady } from './tank.js';
 import { showPiece } from './puzzle.js';
@@ -3099,7 +3099,7 @@ function lock() {
 
 function applyProfile() {
   const p = account.profile;
-  if (CHARACTERS_LIVE || account.admin) setArmLook(p.look);
+  if (CHARACTERS_LIVE || account.admin || ownsPaidChar(account.items)) setArmLook(p.look);
   const paint = crosshairPaint(p.crosshair); // a colour, or a gradient (and one colour of it for outlines)
   document.documentElement.style.setProperty('--xh', paint.fill);
   document.documentElement.style.setProperty('--xh-solid', paint.solid);
@@ -3370,7 +3370,7 @@ function tpCamera() {
 function updateMyAvatar(dt) {
   const show = (isEvent() || wantThird()) && ['playing', 'paused', 'choosing'].includes(game.state);
   // the 3D characters: in events, or once they're out (admins see the preview); otherwise the block one
-  const look = isEvent() || CHARACTERS_LIVE || account.admin ? account.profile.look : null;
+  const look = isEvent() || CHARACTERS_LIVE || account.admin || ownsPaidChar(account.items) ? account.profile.look : null;
   const team = game.mode === 'mp' && mp.inMatch ? mp.myTeam : null;
   const key = show ? `${team}|${JSON.stringify(look)}` : '';
   if (ev.myAvatar && ev.avatarKey !== key) {

@@ -1,7 +1,7 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
-import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, ADMIN_CHARS, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
-import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, ASTRONAUT_PRESETS, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, RETICLES, COSMETIC_LISTS, crosshairPaint, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
+import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, ADMIN_CHARS, PAID_CHARS, ownsPaidChar, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
+import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, ASTRONAUT_PRESETS, FIXED_LOOK, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, RETICLES, COSMETIC_LISTS, crosshairPaint, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { DEAL_ITEMS, SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
 import { addProgress, claimQuest as claimQuestState, questView } from '../shared/quests.js';
@@ -38,7 +38,7 @@ function cosShow(kind, id, label, color, glow, myColour) {
   if (kind === 'color') return `<span class="swatch" style="background:${id}"></span>${esc(label)}`;
   return `<span class="swatch${glow ? ' glow' : ''}" style="background:${color};${glow ? `--glow:${glow}` : ''}"></span>${esc(label)}${glow ? ' <span class="glow-tag">✨ GLOWS</span>' : ''}`;
 }
-const SECTION_NAMES = { halloween: '🎃 Halloween shop', paid: '💵 Specials (your items)', deals: '💵 50c Deals', upgrades: 'Upgrades', guns: 'Starting gun', items: 'Items', pets: '🐺 Pets', cosmetics: 'Cosmetics' };
+const SECTION_NAMES = { halloween: '🎃 Halloween shop', paid: '💵 Specials (your items)', characters: '🧍 Characters ($10)', deals: '💵 50c Deals', upgrades: 'Upgrades', guns: 'Starting gun', items: 'Items', pets: '🐺 Pets', cosmetics: 'Cosmetics' };
 function paidGives(i) {
   if (i.give === 'coins' || i.give === 'candy') return `${i.amount} ${i.give === 'coins' ? '🪙 coins' : '🍬 candy'}`;
   if (i.give === 'nametag') return `🏷️ Name tag: ${i.what}`;
@@ -659,7 +659,7 @@ export class Account {
   }
   // the order of the Shop's sections (an admin can change it)
   get shopOrder() {
-    const all = ['halloween', 'paid', 'deals', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
+    const all = ['halloween', 'paid', 'characters', 'deals', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
     const out = [...new Set((this.cfg?.shopOrder || []).filter((x) => all.includes(x)))];
     // a section newer than the saved order goes in after the one it follows by default
     all.forEach((id, n) => {
@@ -1394,14 +1394,14 @@ export class AccountUI {
   _lookPicker(p) {
     // picks still being saved win over the last saved copy (quick clicks don't undo each other)
     // before the big launch: admins, and anyone who's found a piece in an event
-    if (!CHARACTERS_LIVE && !this.account.admin && !anyPieces(this.account.items)) return '';
+    if (!CHARACTERS_LIVE && !this.account.admin && !anyPieces(this.account.items) && !ownsPaidChar(this.account.items)) return '';
     if (this.lookDraft) p.look = this.lookDraft;
     const L = p.look;
     const swatches = (key, list) =>
       `<div class="pick-row look-sw">${list.map((c) => `<button class="pick sw ${L[key] === c ? 'on' : ''}" data-look="${key}" data-v="${c}" style="background:${c}" title="${c}"></button>`).join('')}
         <label class="pick pet-custom" title="Any colour"><input type="color" value="${esc(L[key])}" data-lookc="${key}" /> Custom</label></div>`;
     // what each character's gear is, and whether it can come off
-    const gearName = { man: 'Socks', adventurer: 'Backpack', swat: 'Kit', king: 'Armour and crown', astronaut: 'Light panels' }[L.model] || 'Gear';
+    const gearName = { man: 'Socks', footballer: 'Socks', cricketer: 'Socks', adventurer: 'Backpack', swat: 'Kit', king: 'Armour and crown', astronaut: 'Light panels' }[L.model] || 'Gear';
     const space = L.model === 'astronaut';
     // the Astronaut's ready-made colours
     const presets = space
@@ -1409,6 +1409,14 @@ export class AccountUI {
       : '';
     const gearToggle = L.model === 'adventurer' || L.model === 'king' ? `<div class="pick-row"><button class="pick ${L.hat !== 'none' ? 'on' : ''}" data-look="hat" data-v="helmet">${L.model === 'king' ? 'Crown on' : 'Wearing it'}</button><button class="pick ${L.hat === 'none' ? 'on' : ''}" data-look="hat" data-v="none">${L.model === 'king' ? 'No crown' : 'Off'}</button></div>` : '';
     const note = CHARACTERS_LIVE || !this.account.admin ? 'other players see it online, and your arms match it · 🧩 unlock more in events' : 'ADMIN PREVIEW: players only see it once they find a piece in an event';
+    // the colour pickers (not for the players with a fixed look)
+    const colours = () => `          ${presets}
+          <h5>${space ? 'Visor' : 'Skin'}</h5>${swatches('skin', space ? LOOK_CLOTH : LOOK_SKIN)}
+          ${L.model === 'swat' ? '' : `<h5>${space ? 'Stripes' : 'Hair'}</h5>${swatches('hairColor', space ? LOOK_CLOTH : LOOK_HAIR_COLORS)}`}
+          <h5>${space ? 'Suit' : 'Top'}</h5>${swatches('topColor', LOOK_CLOTH)}
+          <h5>${space ? 'Suit (dark parts)' : 'Trousers'}</h5>${swatches('pants', LOOK_CLOTH)}
+          <h5>${gearName}</h5>${gearToggle}${L.hat === 'none' && gearToggle ? '' : swatches('hatColor', LOOK_CLOTH)}
+          <p class="muted small">Back to its own colours: pick the character again.</p>`;
     return `<h4>🧍 Character <span class="muted small">(${note})</span></h4>
       <div class="look-box">
         <div class="look-wrap"><canvas id="look-preview" class="look-preview"></canvas><div id="look-loading" class="look-loading hidden">Loading…</div><div class="look-hint">↔ drag to turn</div></div>
@@ -1417,17 +1425,12 @@ export class AccountUI {
             // locked ones: how many of their 4 puzzle pieces you have (they come from events)
             const open = charUnlocked(this.account.items, id, this.account.admin);
             const set = PIECE_SETS.find((s) => s.char === id);
+            if (!open && PAID_CHARS[id]) return `<button class="pick locked" disabled title="In the Shop's Characters">🔒 ${n} <i>💵 ${PAID_CHARS[id].price} in the Shop</i></button>`;
             return open
               ? `<button class="pick ${L.model === id ? 'on' : ''}" data-look="model" data-v="${id}">${n}</button>`
               : `<button class="pick locked" disabled title="Collect all 4 puzzle pieces in an event to unlock">🔒 ${n} <i>🧩 ${piecesOf(this.account.items, id).length}/4${set ? ` · ${set.rarity}` : ''}</i></button>`;
           }).join('')}</div>
-          ${presets}
-          <h5>${space ? 'Visor' : 'Skin'}</h5>${swatches('skin', space ? LOOK_CLOTH : LOOK_SKIN)}
-          ${L.model === 'swat' ? '' : `<h5>${space ? 'Stripes' : 'Hair'}</h5>${swatches('hairColor', space ? LOOK_CLOTH : LOOK_HAIR_COLORS)}`}
-          <h5>${space ? 'Suit' : 'Top'}</h5>${swatches('topColor', LOOK_CLOTH)}
-          <h5>${space ? 'Suit (dark parts)' : 'Trousers'}</h5>${swatches('pants', LOOK_CLOTH)}
-          <h5>${gearName}</h5>${gearToggle}${L.hat === 'none' && gearToggle ? '' : swatches('hatColor', LOOK_CLOTH)}
-          <p class="muted small">Back to its own colours: pick the character again.</p>
+          ${FIXED_LOOK.includes(L.model) ? '<p class="muted small">This player\'s skin, hair and kit are fixed: they always look like this.</p>' : colours()}
         </div>
       </div>`;
   }
@@ -1572,6 +1575,20 @@ export class AccountUI {
       ${money ? `<p class="small">${a.loggedIn ? `To buy a 💵 one: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and what you're buying. They give it to you, then it shows up on your account.` : 'Log in first: it goes on your account.'}</p>` : ''}
       <div class="shop-grid">${list.map(card).join('')}</div>`;
   }
+  // the characters bought with real money (PAID_CHARS): paid to the owner, who gives them out
+  _charShop() {
+    const a = this.account;
+    const note = esc(a.cfg?.payNote || 'paid cash in hand to the site owner');
+    const cards = Object.entries(PAID_CHARS).map(([id, c]) => {
+      const have = a.items[`skin_${id}`] || a.admin;
+      return `<div class="shop-card char-card"><canvas class="char-prev" data-charprev="${id}" width="180" height="230"></canvas>
+        <div class="sn">${c.icon} ${esc(c.name)}</div><div class="sd">${esc(c.desc)}</div>
+        ${have ? '<div class="owned-count">Yours ✓ · wear it in Locker → Character</div>' : `<span class="pet-price">💵 ${esc(c.price)}</span>`}</div>`;
+    });
+    return `<h4>🧍 Characters <span class="muted small">(real money, ${note})</span></h4>
+      <p class="small">${a.loggedIn ? `To buy one: pay the owner and tell them your player name, <b>${esc(a.name)}</b>, and which character. They give it to you, then you wear it from Locker → Character.` : 'Log in first: it goes on your account.'}</p>
+      <div class="shop-grid">${cards.join('')}</div>`;
+  }
   // 50c Deals: the run items (also with coins next to the Revive Token) and cosmetics you can't unlock, each for
   // 50c of real money (paid to the owner, who gives it out) or for coins
   _deals() {
@@ -1654,6 +1671,7 @@ export class AccountUI {
     const sections = {
       halloween: () => (isHalloween() ? this._candyShop() : ''),
       paid: () => this._paidShop(edit, editForm, tools),
+      characters: () => this._charShop(),
       deals: () => this._deals(),
       upgrades: () => `<h4>Upgrades <span class="muted small">(solo runs; the flashlight in every mode)</span></h4>
       <div class="shop-grid">${SHOP.filter((s) => s.kind === 'upgrade').map(card).join('')}</div>`,
@@ -1749,6 +1767,14 @@ export class AccountUI {
         );
       }),
     );
+    // the characters for sale: spinning so you see the number on the back
+    this.body.querySelectorAll('[data-charprev]').forEach((cv) => {
+      try {
+        new CharacterPreview(cv).show({ model: cv.dataset.charprev, ...MODEL_COLORS[cv.dataset.charprev], hat: 'helmet' });
+      } catch {
+        cv.remove(); // (no WebGL for it)
+      }
+    });
     this.body.querySelectorAll('[data-custom]').forEach((b) =>
       b.addEventListener('click', async () => {
         try {
@@ -2025,6 +2051,7 @@ export class AccountUI {
           <select name="what">
             <optgroup label="🐺 Wolf companion (${esc(a.wolfPrice)}, a level ${esc(a.wolfLevelPrice)})"><option value="wolf">🐺 The wolf</option><option value="wolflvl">⏫ 1 wolf level</option></optgroup>
             <optgroup label="💵 Specials (your items)" id="admin-give-specials"></optgroup>
+            <optgroup label="🧍 Characters">${Object.entries(PAID_CHARS).map(([id, c]) => `<option value="skin:${id}">${c.icon} ${esc(c.name)} (${esc(c.price)})</option>`).join('')}</optgroup>
             <optgroup label="💵 ${DEAL_PRICE} Deals">${DEAL_ITEMS.map((id) => SHOP.find((d) => d.id === id)).map((d) => `<option value="item:${d.id}">${d.icon} Run item: ${esc(d.name)} (+1)</option>`).join('')}${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${KIND_NAMES[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</optgroup>
           </select>
           <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE BACK</button></form>
@@ -2329,6 +2356,7 @@ export class AccountUI {
           what === 'wolf' ? await a.adminPlayer(u, 'wolf', { on: giveOn })
           : what === 'wolflvl' ? await a.adminPlayer(u, 'wolflevel', { levels: giveOn ? 1 : -1 })
           : what.startsWith('paid:') ? await a.adminPlayer(u, 'paid', { id: what.slice(5), on: giveOn })
+          : what.startsWith('skin:') ? await a.adminPlayer(u, 'skin', { id: what.slice(5), on: giveOn })
           : what.startsWith('item:') ? await a.adminPlayer(u, 'consumable', { item: what.slice(5), n: giveOn ? 1 : -1 })
           : await a.adminPlayer(u, 'cosmetic', { item: what, on: giveOn });
         msg(r.note);

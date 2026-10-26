@@ -12,10 +12,17 @@ export const pieceId = (char, n) => `piece_${char}_${n}`;
 export const piecesOf = (items, char) => [0, 1, 2, 3].filter((n) => items?.[pieceId(char, n)]);
 // characters only admins can wear (no pieces for them)
 export const ADMIN_CHARS = ['astronaut'];
+// characters bought with real money (paid to the owner; an admin gives them out): items[`skin_<id>`]
+export const PAID_CHARS = {
+  footballer: { name: 'Portugal #7', icon: '⚽', price: '$10', desc: 'The footballer: red and green kit with the number 7 on the back and a captain\'s armband' },
+  cricketer: { name: 'India #18', icon: '🏏', price: '$10', desc: 'The cricketer: blue kit with the number 18 on the back and a cricket bat across the back' },
+};
+export const ownsPaidChar = (items) => Object.keys(PAID_CHARS).some((id) => items?.[`skin_${id}`]);
 // The Survivor is everyone's; the others once all four pieces are found (admins have them all).
 export function charUnlocked(items, char, admin = false) {
   if (char === 'man' || admin) return true;
   if (ADMIN_CHARS.includes(char)) return false;
+  if (PAID_CHARS[char]) return !!items?.[`skin_${char}`];
   return piecesOf(items, char).length === 4;
 }
 export const anyPieces = (items) => PIECE_SETS.some((s) => piecesOf(items, s.char).length > 0);

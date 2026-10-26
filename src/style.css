@@ -4402,3 +4402,13 @@ body.seeker #game::after { content: ''; position: fixed; inset: 0; pointer-event
   opacity: 0.55;
   filter: grayscale(0.8);
 }
+
+/* the characters in the Shop (Portugal #7, India #18) */
+.char-prev {
+  width: 180px;
+  height: 230px;
+  display: block;
+  margin: 0 auto;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 211, 77, 0.14), rgba(0, 0, 0, 0.3));
+}

@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, COSMETIC_RE, cleanProfile, unlocked, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun, CANDY_EVENT_MAX, CANDY_RATE, candyPrice } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { SPECIAL_GEAR, TANK_ARMOUR, TANK_FLAG } from '../shared/gear.js';
-import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_PRESETS, EVENT_THEMES, SCHEDULE_MINUTES, halloweenEnd, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, pieceId, rollPiece, totalPieces } from '../shared/events.js';
+import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_PRESETS, EVENT_THEMES, SCHEDULE_MINUTES, halloweenEnd, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, PAID_CHARS, ownsPaidChar, pieceId, rollPiece, totalPieces } from '../shared/events.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
@@ -60,7 +60,7 @@ const LIVE_MS = 45000;
 const HALLOWEEN_2026_END = Date.UTC(2026, 10, 8);
 const PAID_GIVES = ['none', 'coins', 'candy', 'gun', 'gear', 'cosmetic', 'wolf', 'namecolor', 'nametag'];
 // the Shop's sections, in the order an admin can change (admin: ✏️ EDIT in the Shop)
-const SHOP_SECTIONS = ['halloween', 'paid', 'deals', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
+const SHOP_SECTIONS = ['halloween', 'paid', 'characters', 'deals', 'upgrades', 'guns', 'items', 'pets', 'cosmetics'];
 
 // paid access: a paid_until date means "until the end of that day" (UTC); empty = no end
 const accessEnded = (paidUntil) => {
@@ -1172,7 +1172,7 @@ export class GameDB extends DurableObject {
       const u = typeof body.username === 'string' ? this._byName(body.username) : null;
       if (!u) return err('No player with that name', 404);
       const action = String(body.action);
-      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces', 'gear', 'candy', 'cosmetic', 'paid', 'consumable'].includes(action)) return err("You can't do that to yourself");
+      if (u.id === me.id && !['give', 'wolf', 'wolflevel', 'resetlook', 'pieces', 'gear', 'candy', 'cosmetic', 'paid', 'consumable', 'skin'].includes(action)) return err("You can't do that to yourself");
       if (u.admin && ['kick', 'timeout', 'ban'].includes(action)) return err("Admins can't be kicked, timed out or banned");
       let note = '';
       if (action === 'kick') {
@@ -1277,6 +1277,15 @@ export class GameDB extends DurableObject {
         else delete items[id];
         this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
         note = body.on ? `${u.username} has it now (they wear it from the Locker).` : `Took it from ${u.username}.`;
+      } else if (action === 'skin') {
+        // a character bought with real money (PAID_CHARS): given, or taken back
+        const def = PAID_CHARS[body.id];
+        if (!def) return err('Unknown character');
+        const items = this._items(u);
+        if (body.on) items[`skin_${body.id}`] = 1;
+        else delete items[`skin_${body.id}`];
+        this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
+        note = body.on ? `${u.username} has the ${def.icon} ${def.name} character now: they wear it from Locker → Character.` : `Took the ${def.name} character back from ${u.username}.`;
       } else if (action === 'consumable') {
         // a run item (they bought it from the 50c Deals): one more, or one fewer with a minus number
         const def = SHOP.find((d) => d.id === body.item && d.kind === 'consumable');
@@ -2148,7 +2157,7 @@ export class Room extends DurableObject {
     this._report();
     return {
       t: 'lobby', code: this.code, mode: this.mode, map: this.map, phase: this.phase, host: this.hostId, settings: this._set, open: !!this.open, bots: this.botFill,
-      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, look: CHARACTERS_LIVE || MODES[this.mode]?.event || p.admin ? p.look || null : null, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
+      players: [...this.players.values()].filter((p) => p.joined).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color, pet: p.pet || null, petSpot: p.petSpot, look: CHARACTERS_LIVE || MODES[this.mode]?.event || p.admin || ownsPaidChar(p.items) ? p.look || null : null, petLvl: p.petLvl, team: p.team, account: p.account, admin: !!p.admin, bot: !!p.bot })),
     };
   }
 
