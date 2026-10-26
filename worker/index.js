@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { PET_ITEM, PET_MAX_LEVEL, addPetXp, CHARACTERS_LIVE, COSMETIC_RE, cleanProfile, unlocked, petLevel, randomLook, levelFromXp, xpForLevel, xpForRun, CANDY_EVENT_MAX, CANDY_RATE, candyPrice } from '../shared/cosmetics.js';
 import { SHOP, coinsForRun, priceOf } from '../shared/shop.js';
 import { SPECIAL_GEAR, TANK_ARMOUR, TANK_FLAG } from '../shared/gear.js';
-import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_PRESETS, EVENT_THEMES, SCHEDULE_MINUTES, halloweenEnd, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, PAID_CHARS, ownsPaidChar, pieceId, rollPiece, totalPieces } from '../shared/events.js';
+import { DEFAULT_EVENT_NAME, DROP_BOOSTS, EVENT_PRESETS, EVENT_THEMES, SCHEDULE_MINUTES, halloweenEnd, EVENT_MAX_PLAYERS, DUPLICATE_COINS, EVENT_POINTS, PIECE_COOLDOWN, PIECE_MAX, PIECE_SETS, GIFT_CHARS, ownsPaidChar, pieceId, rollPiece, totalPieces } from '../shared/events.js';
 import { MAX_SAVES, cleanSaveName } from '../shared/saves.js';
 import { addProgress, claimQuest, dailyQuests, dayNumber, questView } from '../shared/quests.js';
 import { BUILD_REACH, MAX_STRUCTURES, STRUCTURES } from '../shared/structures.js';
@@ -1278,14 +1278,19 @@ export class GameDB extends DurableObject {
         this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
         note = body.on ? `${u.username} has it now (they wear it from the Locker).` : `Took it from ${u.username}.`;
       } else if (action === 'skin') {
-        // a character bought with real money (PAID_CHARS): given, or taken back
-        const def = PAID_CHARS[body.id];
-        if (!def) return err('Unknown character');
+        // any character: the event ones (all four pieces), the Astronaut, the $10 ones. Given, or taken back
+        const name = GIFT_CHARS.find(([id]) => id === body.id)?.[1];
+        if (!name) return err('Unknown character');
         const items = this._items(u);
-        if (body.on) items[`skin_${body.id}`] = 1;
+        if (PIECE_SETS.some((s) => s.char === body.id)) {
+          for (let n = 0; n < 4; n++) {
+            if (body.on) items[pieceId(body.id, n)] = 1;
+            else delete items[pieceId(body.id, n)];
+          }
+        } else if (body.on) items[`skin_${body.id}`] = 1;
         else delete items[`skin_${body.id}`];
         this.sql.exec('UPDATE users SET items = ? WHERE id = ?', JSON.stringify(items), u.id);
-        note = body.on ? `${u.username} has the ${def.icon} ${def.name} character now: they wear it from Locker → Character.` : `Took the ${def.name} character back from ${u.username}.`;
+        note = body.on ? `${u.username} has the ${name} character now: they wear it from Locker → Character.` : `Took the ${name} character back from ${u.username}.`;
       } else if (action === 'consumable') {
         // a run item (they bought it from the 50c Deals): one more, or one fewer with a minus number
         const def = SHOP.find((d) => d.id === body.item && d.kind === 'consumable');
@@ -1542,6 +1547,46 @@ export class GameDB extends DurableObject {
     }
     // admin: give a player a new password (they forgot it, maybe with a made-up email). By player name or email.
     // With Supabase logins it needs SUPABASE_SERVICE_ROLE_KEY on the Worker (a secret: never sent to anyone).
+    // admin: the email accounts waiting to be let in (the game is free: an admin just unlocks them), and unlocking.
+    // Needs SUPABASE_SERVICE_ROLE_KEY (the same secret as Set a password).
+    if (path === '/admin/pending' && method === 'GET') {
+      if (!me.admin) return err('Admins only', 403);
+      const key = this.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!this.paywall) return json({ off: true, pending: [] });
+      if (!key) return err('One-time setup first: add the SUPABASE_SERVICE_ROLE_KEY secret in Cloudflare (ask Claude for the steps)');
+      const base = String(this.env.SUPABASE_URL).replace(/\/+$/, '');
+      const headers = { apikey: key, authorization: `Bearer ${key}` };
+      const pr = await fetch(`${base}/rest/v1/profiles?select=id,has_paid,paid_until`, { headers });
+      if (!pr.ok) return err(pr.status === 401 || pr.status === 403 ? 'Supabase said no: check the SUPABASE_SERVICE_ROLE_KEY secret' : "Couldn't reach Supabase", 502);
+      const open = new Set((await pr.json()).filter((p) => p.has_paid && !accessEnded(p.paid_until)).map((p) => p.id));
+      const pending = [];
+      for (let page = 1; page <= 10; page++) {
+        const r = await fetch(`${base}/auth/v1/admin/users?page=${page}&per_page=1000`, { headers });
+        if (!r.ok) break;
+        const users = (await r.json()).users || [];
+        for (const x of users) if (!open.has(x.id)) pending.push({ id: x.id, email: x.email || '?', created: x.created_at || null });
+        if (users.length < 1000) break;
+      }
+      pending.sort((a, b) => String(b.created).localeCompare(String(a.created)));
+      return json({ pending: pending.slice(0, 200) });
+    }
+    if (path === '/admin/unlock' && method === 'POST') {
+      if (!me.admin) return err('Admins only', 403);
+      const key = this.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!this.paywall || !key) return err('One-time setup first: add the SUPABASE_SERVICE_ROLE_KEY secret in Cloudflare (ask Claude for the steps)');
+      const id = String(body.id || '');
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return err('Unknown account');
+      const base = String(this.env.SUPABASE_URL).replace(/\/+$/, '');
+      // unlocked for good (no end date); or locked again
+      const r = await fetch(`${base}/rest/v1/profiles`, {
+        method: 'POST',
+        headers: { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ id, has_paid: body.on !== false, paid_until: null }),
+      });
+      if (!r.ok) return err(`Supabase couldn't change it (${r.status})`, 502);
+      if (body.on === false) this.sql.exec('UPDATE users SET paid = 0 WHERE sb_id = ?', id);
+      return json({ note: body.on === false ? 'Locked again.' : 'Unlocked: they can play now (they press "Check again", or reopen the game).' });
+    }
     if (path === '/admin/set-password' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);
       const who = String(body.who || '').trim();

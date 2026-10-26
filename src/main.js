@@ -5283,10 +5283,10 @@ const CONTROL_LIST = [
   ['G', 'Throw grenade'], ['B', 'Build (1 barricade, 2 turret, R turn)'], ['E', 'Revive a squadmate (hold)'], ['Z', 'Quick chat wheel'],
   ['Enter', 'Chat (online)'], ['Tab', 'Scores (online)'], ['M', 'Mute'], ['Esc', 'Pause'], ['F2', 'Admin panel (admins)'],
 ];
-// Settings: how long your paid access has left, and what it costs
+// Settings: how long your paid access has left, and what it costs (not shown: the game is free now)
 function accessBox() {
   const c = account.cfg || {};
-  if (!account.paywall) return '';
+  if (!account.paywall || account.free !== false) return '';
   const price = esc(c.price || '$2');
   const months = c.months === undefined ? 6 : Number(c.months) || 0;
   const fee = months ? `${price} for every ${months} months` : `${price} once, yours forever`;
@@ -5326,7 +5326,7 @@ function openSettings() {
       <div class="s-controls">${[...CONTROL_LIST, ...(canSwitchView() ? [['P', 'First / third person']] : [])].map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>
       <p class="muted small">Controller and touch controls are in How to Play.</p>
     </div>
-    <details class="pay-terms settings-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(account.cfg?.price || '$2', account.cfg?.payNote || 'paid cash in hand to the site owner', account.cfg?.months === undefined ? 6 : Number(account.cfg.months) || 0)}</details>`;
+    ${account.free === false ? `<details class="pay-terms settings-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(account.cfg?.price || '$2', account.cfg?.payNote || 'paid cash in hand to the site owner', account.cfg?.months === undefined ? 6 : Number(account.cfg.months) || 0)}</details>` : ''}`;
   $('settings-all').addEventListener('click', () => {
     showAllSettings = !showAllSettings;
     openSettings();

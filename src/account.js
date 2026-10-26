@@ -1,6 +1,6 @@
 import { CharacterPreview, loadAllCharacterModels } from './character.js';
 import { SPECIAL_GEAR } from '../shared/gear.js';
-import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, ADMIN_CHARS, PAID_CHARS, ownsPaidChar, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
+import { DROP_BOOSTS, EVENT_DURATIONS, EVENT_MAX_PLAYERS, EVENT_PRESETS, EVENT_POINTS, SCHEDULE_MINUTES, halloweenEnd, PIECE_COUNT, PIECE_SETS, ADMIN_CHARS, PAID_CHARS, GIFT_CHARS, ownsPaidChar, anyPieces, charUnlocked, piecesOf, totalPieces } from '../shared/events.js';
 import { AVATARS, CROSSHAIRS, DEFAULT_PROFILE, FINISHES, NAME_COLORS, PET_COLORS, PET_MASTERIES, PET_MAX_LEVEL, PET_SPOTS, TITLES, CHARACTERS_LIVE, LOOK_MODELS, MODEL_COLORS, LOOK_CLOTH, LOOK_HAIR_COLORS, LOOK_SKIN, CANDY_SHOP, ASTRONAUT_PRESETS, FIXED_LOOK, CRICKET_GEAR, DEALS, DEAL_COINS, DEAL_PRICE, EVENT_LEVEL, RETICLES, COSMETIC_LISTS, crosshairPaint, isDeal, cleanProfile, levelFromXp, ownsWolf, petLevel, petXpNeeded, xpForLevel, xpForRun } from '../shared/cosmetics.js';
 import { DEAL_ITEMS, SHOP, coinsForRun, cosmeticItemId, cosmeticPrice, priceOf, shopDef } from '../shared/shop.js';
 import { DEFAULT_QUICK, QUICK_LEN, QUICK_MAX, cleanQuick, refundOldEmotes } from '../shared/modes.js';
@@ -9,7 +9,6 @@ import { MASTERY_GUNS, MASTERY_TIERS, addMasteryKills, chooseSkin, cleanMastery,
 import { GUNS, HALLOWEEN_GUNS } from './guns.js';
 import { gunIcon } from './gunIcons.js';
 import { ACHIEVEMENTS } from '../shared/achievements.js';
-import { priceTag, termsHtml } from '../shared/terms.js';
 import { isHalloween } from './halloween.js';
 
 // what an admin's real-money shop item can give: [value for the form, label]. value is give or give:what
@@ -921,6 +920,13 @@ export class Account {
   adminDropinStatus(username) {
     return this._api(`/admin/dropin?u=${encodeURIComponent(username)}`);
   }
+  // the email accounts waiting for an admin to let them in, and letting one in (or locking it again)
+  adminPending() {
+    return this._api('/admin/pending');
+  }
+  adminUnlock(id, on = true) {
+    return this._api('/admin/unlock', { method: 'POST', body: { id, on } });
+  }
   liveEnd() {
     if (this.user) this._api('/live', { method: 'POST', body: { end: true } }).catch(() => {});
   }
@@ -1130,16 +1136,10 @@ export class AccountUI {
       .join('');
   }
 
-  // the paid-access screens: email sign up / log in, pick a player name, and "Almost there"
+  // the account screens: email sign up / log in, pick a player name, and waiting for an admin to unlock you (it's free)
   _paywall() {
     const a = this.account;
-    const c = a.cfg || {};
     const g = a.gate;
-    const price = esc(c.price || '$2');
-    const months = c.months === undefined ? 6 : Number(c.months) || 0;
-    // what you pay: every few months (or once and forever, if the owner sets PAY_MONTHS to 0)
-    const deal = months ? `${price} for every ${months} months` : `a one-time ${price}, yours forever`;
-    const terms = `<details class="pay-terms"><summary>Terms &amp; Conditions (no refunds)</summary>${termsHtml(price, esc(c.payNote || 'paid cash in hand to the site owner'), months)}<p class="muted small">You can read these any time in Settings.</p></details>`;
     const done = () => {
       if (this.mustLogin && a.loggedIn) {
         this.mustLogin = false;
@@ -1163,12 +1163,13 @@ export class AccountUI {
       });
     };
     if (g?.kind === 'unpaid') {
+      // the game is free: a new account just waits for an admin to unlock it
       this.body.innerHTML = `<div class="paygate">
-        <h2>${g.expired ? 'Access ended' : 'Almost there'}</h2>
-        ${priceTag(price, months)}
-        <p>Your account (<b>${esc(g.email)}</b>) ${g.expired ? `ran out${g.paidUntil ? ` on ${esc(g.paidUntil)}` : ''}` : "isn't active yet"}. Access is <b>${deal}, ${esc(c.payNote || 'paid cash in hand to the site owner')}</b>. The owner unlocks accounts by hand, so it may take a while after you've paid. Once it's unlocked, check again.</p>
-        ${terms}
-        <form id="pay-check"><button class="btn pay-main">I've paid — check again</button></form>
+        <h2>${g.expired ? 'Account locked' : 'Waiting for an admin'}</h2>
+        <p class="wait-icon">⏳</p>
+        <p>Your account (<b>${esc(g.email)}</b>) ${g.expired ? 'has been locked' : 'is waiting for an admin to unlock it'}. It's free: an admin lets new players in by hand, so it may take a little while.</p>
+        <p class="muted small">Once it's unlocked, press Check again (or come back later).</p>
+        <form id="pay-check"><button class="btn pay-main">🔄 CHECK AGAIN</button></form>
         <button class="btn ghost" id="pay-out">Log out</button>
         <div class="msg pay-msg"></div></div>`;
       wire('pay-check', () => a.supaSync());
@@ -1192,15 +1193,13 @@ export class AccountUI {
     this.body.innerHTML = `<div class="paygate">
       ${g?.kind === 'confirm' ? `<p class="must-login">📧 We sent a link to <b>${esc(g.email)}</b>. Click it to confirm your email, then log in here.</p>` : ''}
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make an account (or log in) to start playing.</b></p>' : ''}
-      <h2>Get War Grounds</h2>
-      ${priceTag(price, months)}
-      <p class="muted">${months ? `${price} for every ${months} months` : `One payment of ${price}, yours forever`}, ${esc(c.payNote || 'paid cash in hand to the site owner')}. No refunds. Make your account first, then pay the owner to have it switched on.</p>
+      <h2>Play War Grounds</h2>
+      <p class="muted">It's free! Make an account with your email, then an admin unlocks it so you can play.</p>
       <form id="pay-auth" class="auth">
         <input name="email" type="email" placeholder="Email" autocomplete="email" required />
         <input name="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required />
         <div class="row"><button class="btn" value="in">LOG IN</button><button class="btn ghost" value="up">SIGN UP</button></div>
       </form>
-      ${terms}
       <div class="msg pay-msg"></div></div>`;
     wire('pay-auth', (f, which) => (which === 'up' ? a.supaSignUp(String(f.get('email')).trim(), String(f.get('password'))) : a.supaSignIn(String(f.get('email')).trim(), String(f.get('password')))));
   }
@@ -1426,7 +1425,7 @@ export class AccountUI {
       <div class="look-box">
         <div class="look-wrap"><canvas id="look-preview" class="look-preview"></canvas><div id="look-loading" class="look-loading hidden">Loading…</div><div class="look-hint">↔ drag to turn</div></div>
         <div class="look-opts">
-          <h5>Character</h5><div class="pick-row">${LOOK_MODELS.filter(([id]) => this.account.admin || !ADMIN_CHARS.includes(id)).map(([id, n]) => {
+          <h5>Character</h5><div class="pick-row">${LOOK_MODELS.filter(([id]) => this.account.admin || !ADMIN_CHARS.includes(id) || charUnlocked(this.account.items, id)).map(([id, n]) => {
             // locked ones: how many of their 4 puzzle pieces you have (they come from events)
             const open = charUnlocked(this.account.items, id, this.account.admin);
             const set = PIECE_SETS.find((s) => s.char === id);
@@ -1861,6 +1860,13 @@ export class AccountUI {
       <div id="admin-players" class="admin-players muted">Loading…</div>
       <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="40" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
       </div>
+      <div class="acard"><h4>🔓 Unlock accounts <span class="muted small">(the game is free: new players wait here until you let them in)</span> <a href="#" id="admin-pending-refresh" class="small">refresh</a></h4>
+        <div id="admin-pending" class="admin-players"><p class="muted small">Loading…</p></div>
+        <p class="muted small">Unlocked accounts stay unlocked (no end date). This needs the SUPABASE_SERVICE_ROLE_KEY secret, the same one as Set a password.</p></div>
+      <div class="acard"><h4>🧍 Give a character <span class="muted small">(to anyone, yourself too: they wear it from Locker → Character)</span></h4>
+        <form class="auth inline admin-row" id="admin-give-char"><input name="u" maxlength="40" placeholder="Player name" required />
+          <select name="c">${GIFT_CHARS.map(([id, n]) => `<option value="${id}">${esc(n)}</option>`).join('')}</select>
+          <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE BACK</button></form></div>
       <div class="acard"><h4>🔑 Set a password <span class="muted small">(a player forgot theirs: give them a new one, then tell them it)</span></h4>
       <form class="auth inline admin-row" id="admin-setpw"><input name="who" maxlength="120" placeholder="Player name or email" required autocomplete="off" /><input name="pw" maxlength="72" placeholder="New password (6+ characters)" required autocomplete="off" /><button class="btn small">🔑 SET PASSWORD</button></form>
       <p class="muted small">Works even with a made-up email. It also tells you the email they log in with.</p>
@@ -1882,7 +1888,7 @@ export class AccountUI {
       <div class="acard"><h4>🛡️ Special gear <span class="muted small">(admins only: nobody else has it unless you give it to them, with MANAGE in the Players tab)</span></h4>
         <div class="admin-grid">${SPECIAL_GEAR.map((g) => (a.items[g.item] ? `<button class="btn small ghost" data-mygear="${g.id}" data-on="0">${g.icon} ${g.name.toUpperCase()} ✓ (REMOVE)</button>` : `<button class="btn small" data-mygear="${g.id}" data-on="1">${g.icon} GET THE ${g.name.toUpperCase()}</button>`)).join('')}</div>
         <p class="muted small">The flamethrower and bazooka come into every game you start (unlimited ammo). Press <b>H</b> in a game to get in or out of the tank: WASD to drive, click to fire the cannon; you take a quarter of the damage inside.</p></div>
-      <div class="acard"><h4>🧑‍🚀 Astronaut skin <span class="muted small">(admins only: nobody else can wear it; other players see you in it online)</span></h4>
+      <div class="acard"><h4>🧑‍🚀 Astronaut skin <span class="muted small">(admins, and anyone you give it to with 🧍 Give a character in the Players tab; other players see it online)</span></h4>
         <div class="admin-grid">${a.profile.look?.model === 'astronaut' ? '<button class="btn small ghost" id="admin-astro-off">TAKE IT OFF</button>' : '<button class="btn small" data-astro="0">🧑‍🚀 WEAR IT</button>'}
         ${ASTRONAUT_PRESETS.map(([n, c], i) => `<button class="btn small ghost" data-astro="${i}"><span class="swatch" style="background:${c.topColor}"></span>${n.toUpperCase()}</button>`).join('')}</div>
         <p class="muted small">Pick any colour for the visor, stripes, suit and panels in <b>Locker → Character</b>.</p></div>
@@ -2056,7 +2062,7 @@ export class AccountUI {
           <select name="what">
             <optgroup label="🐺 Wolf companion (${esc(a.wolfPrice)}, a level ${esc(a.wolfLevelPrice)})"><option value="wolf">🐺 The wolf</option><option value="wolflvl">⏫ 1 wolf level</option></optgroup>
             <optgroup label="💵 Specials (your items)" id="admin-give-specials"></optgroup>
-            <optgroup label="🧍 Characters">${Object.entries(PAID_CHARS).map(([id, c]) => `<option value="skin:${id}">${c.icon} ${esc(c.name)} (${esc(c.price)})</option>`).join('')}</optgroup>
+            <optgroup label="🧍 Characters">${GIFT_CHARS.map(([id, n]) => `<option value="skin:${id}">${esc(n)}${PAID_CHARS[id] ? ` (${esc(PAID_CHARS[id].price)})` : ''}</option>`).join('')}</optgroup>
             <optgroup label="💵 ${DEAL_PRICE} Deals">${DEAL_ITEMS.map((id) => SHOP.find((d) => d.id === id)).map((d) => `<option value="item:${d.id}">${d.icon} Run item: ${esc(d.name)} (+1)</option>`).join('')}${DEALS.map(([kind, id, label]) => `<option value="${cosmeticItemId(kind, id)}">${KIND_NAMES[kind]}: ${esc(kind === 'avatar' ? `${id} ${label}` : label)}</option>`).join('')}</optgroup>
           </select>
           <button class="btn small" data-on="1">🎁 GIVE</button><button class="btn small ghost" data-on="0">TAKE BACK</button></form>
@@ -2331,6 +2337,50 @@ export class AccountUI {
         e.target.reset();
         paidFields();
         paidList();
+      } catch (err) {
+        msg(err.message);
+      }
+    });
+    // accounts waiting to be unlocked
+    const pendingList = async () => {
+      const el = document.getElementById('admin-pending');
+      if (!el) return;
+      try {
+        const r = await a.adminPending();
+        if (r.off) return (el.innerHTML = '<p class="muted small">Email accounts are off on this server: everyone can play straight away.</p>');
+        el.innerHTML = r.pending.length
+          ? r.pending.map((p) => `<div class="friend admin-player"><b>${esc(p.email)}</b><span class="muted">${p.created ? `signed up ${esc(new Date(p.created).toLocaleDateString())}` : ''}</span><span class="actions"><button class="btn small" data-unlock="${esc(p.id)}">🔓 UNLOCK</button></span></div>`).join('')
+          : '<p class="muted small">Nobody is waiting.</p>';
+        el.querySelectorAll('[data-unlock]').forEach((b) =>
+          b.addEventListener('click', async () => {
+            b.disabled = true;
+            try {
+              msg((await a.adminUnlock(b.dataset.unlock)).note);
+              pendingList();
+            } catch (err) {
+              msg(err.message);
+              b.disabled = false;
+            }
+          }),
+        );
+      } catch (err) {
+        el.innerHTML = `<p class="muted small">${esc(err.message)}</p>`;
+      }
+    };
+    pendingList();
+    document.getElementById('admin-pending-refresh')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      pendingList();
+    });
+    // give (or take back) a character
+    const charForm = document.getElementById('admin-give-char');
+    let charOn = true;
+    charForm?.querySelectorAll('[data-on]').forEach((b) => (b.onclick = () => (charOn = b.dataset.on === '1')));
+    charForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(charForm);
+      try {
+        msg((await a.adminPlayer(String(f.get('u')).trim(), 'skin', { id: f.get('c'), on: charOn })).note);
       } catch (err) {
         msg(err.message);
       }

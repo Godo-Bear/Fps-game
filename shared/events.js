@@ -17,12 +17,15 @@ export const PAID_CHARS = {
   footballer: { name: 'Portugal #7', icon: '⚽', price: '$10', desc: 'The footballer: long-sleeved red home shirt with a crest and the 7 front and back, green shorts, long red socks and a captain\'s armband' },
   cricketer: { name: 'India #18', icon: '🏏', price: '$10', desc: 'The cricketer: blue one-day kit with INDIA across the chest, a crest, the number 18, white pads and gloves, and a cricket bat' },
 };
-export const ownsPaidChar = (items) => Object.keys(PAID_CHARS).some((id) => items?.[`skin_${id}`]);
+// they have a character an admin gave them (the $10 ones or the Astronaut)
+export const ownsPaidChar = (items) => Object.keys(items || {}).some((k) => k.startsWith('skin_') && items[k]);
+// every character an admin can give: [id, name]. The event ones are all four of their pieces.
+export const GIFT_CHARS = [['swat', '🪖 SWAT'], ['adventurer', '🎒 Adventurer'], ['king', '👑 King'], ['astronaut', '🧑‍🚀 Astronaut'], ['footballer', '⚽ Portugal #7'], ['cricketer', '🏏 India #18']];
 // The Survivor is everyone's; the others once all four pieces are found (admins have them all).
 export function charUnlocked(items, char, admin = false) {
   if (char === 'man' || admin) return true;
-  if (ADMIN_CHARS.includes(char)) return false;
-  if (PAID_CHARS[char]) return !!items?.[`skin_${char}`];
+  // the Astronaut and the $10 ones: given by an admin (items[`skin_<id>`])
+  if (ADMIN_CHARS.includes(char) || PAID_CHARS[char]) return !!items?.[`skin_${char}`];
   return piecesOf(items, char).length === 4;
 }
 export const anyPieces = (items) => PIECE_SETS.some((s) => piecesOf(items, s.char).length > 0);

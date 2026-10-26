@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.79', date: '26 Oct 2026', title: 'War Grounds is free',
+    items: [
+      'The game is free! Make an account with your email, and an admin unlocks it so you can play. No more paying to get in.',
+      'Admins: 🔓 Unlock accounts in the Players tab lists everyone waiting, with an UNLOCK button (they stay unlocked for good).',
+      'Admins: 🧍 Give a character (Players tab) gives or takes SWAT, Adventurer, King, the Astronaut, Portugal #7 or India #18 to anyone, yourself too.',
+    ],
+  },
+  {
     v: '5.78', date: '26 Oct 2026', title: 'Better #7 and #18 kits, batting gear',
     items: [
       '⚽ #7: long-sleeved red home shirt with a dark collar, a crest, the 7 on the front and back, and a dark captain\'s armband.',
