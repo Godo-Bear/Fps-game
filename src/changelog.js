@@ -2,6 +2,13 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.80', date: '3 Nov 2026', title: 'No paywall',
+    items: [
+      'No paywall and no waiting: make an account with your email and start playing straight away. Everyone who already has an account can play.',
+      'A new thumbnail for the game, shown when someone shares its link.',
+    ],
+  },
+  {
     v: '5.79', date: '26 Oct 2026', title: 'War Grounds is free',
     items: [
       'The game is free! Make an account with your email, and an admin unlocks it so you can play. No more paying to get in.',

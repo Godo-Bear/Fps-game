@@ -492,14 +492,7 @@ export class GameDB extends DurableObject {
     const row = this.sql
       .exec('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires > ?', await sha256(m[1]), Date.now())
       .toArray()[0];
-    // with paid access on, a game session only counts for a Supabase login the owner has marked as paid
-    if (row && this.paywall && !(row.sb_id && row.paid)) return null;
-    // their paid time ran out: switched off straight away (and thrown out of any match)
-    if (row && this.paywall && accessEnded(row.paid_until)) {
-      this.sql.exec('UPDATE users SET paid = 0 WHERE id = ?', row.id);
-      this._kickFromRoom(row, 'Your access has ended. Pay again to keep playing.').catch(() => {});
-      return null;
-    }
+    // (the game is free: every logged-in account can play, nothing to pay or wait for)
     if (row) this.sql.exec('UPDATE users SET last_seen = ? WHERE id = ?', Date.now(), row.id);
     if (row && /"emote/.test(row.items || '')) {
       // emotes left the shop: give the coins back (once)
@@ -723,13 +716,12 @@ export class GameDB extends DurableObject {
       });
     }
 
-    // Supabase login -> game session. Unpaid accounts get 402 and the "Almost there" screen.
+    // Supabase (email) login -> game session. The game is free: no paywall, no waiting to be unlocked.
     if (path === '/auth/supabase' && method === 'POST') {
       if (!this.paywall) return err('Paid access is not set up', 404);
       if (typeof body.access_token !== 'string' || body.access_token.length > 4000) return err('Log in again', 401);
       const sb = await this._supabaseCheck(body.access_token);
       if (!sb) return err('Your login has expired, log in again', 401);
-      if (!sb.paid) return json({ unpaid: true, email: sb.email, expired: sb.expired, paidUntil: sb.paidUntil, noProfile: !sb.profile }, 402);
       let user = this.sql.exec('SELECT * FROM users WHERE sb_id = ?', sb.id).toArray()[0];
       if (!user) {
         if (body.link && typeof body.link.username === 'string' && typeof body.link.password === 'string') {
@@ -750,10 +742,10 @@ export class GameDB extends DurableObject {
         user = this.sql.exec('SELECT * FROM users WHERE sb_id = ?', sb.id).toArray()[0];
       }
       if (user.banned) return json({ error: 'This account has been banned', banned: true }, 403);
-      this.sql.exec('UPDATE users SET paid = 1, paid_until = ?, last_seen = ?, last_ip = ?, email = ? WHERE id = ?', sb.paidUntil, Date.now(), ip, sb.email || null, user.id);
+      this.sql.exec('UPDATE users SET paid = 1, paid_until = NULL, last_seen = ?, last_ip = ?, email = ? WHERE id = ?', Date.now(), ip, sb.email || null, user.id);
       user = this.sql.exec('SELECT * FROM users WHERE id = ?', user.id).toArray()[0];
       await this._supabaseName(body.access_token, user.username);
-      return json({ token: await this._session(user), user: { ...this._publicUser(user, true), email: sb.email, paidUntil: sb.paidUntil } });
+      return json({ token: await this._session(user), user: { ...this._publicUser(user, true), email: sb.email, paidUntil: null } });
     }
 
     if (path === '/register' && method === 'POST') {
@@ -1547,46 +1539,6 @@ export class GameDB extends DurableObject {
     }
     // admin: give a player a new password (they forgot it, maybe with a made-up email). By player name or email.
     // With Supabase logins it needs SUPABASE_SERVICE_ROLE_KEY on the Worker (a secret: never sent to anyone).
-    // admin: the email accounts waiting to be let in (the game is free: an admin just unlocks them), and unlocking.
-    // Needs SUPABASE_SERVICE_ROLE_KEY (the same secret as Set a password).
-    if (path === '/admin/pending' && method === 'GET') {
-      if (!me.admin) return err('Admins only', 403);
-      const key = this.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!this.paywall) return json({ off: true, pending: [] });
-      if (!key) return err('One-time setup first: add the SUPABASE_SERVICE_ROLE_KEY secret in Cloudflare (ask Claude for the steps)');
-      const base = String(this.env.SUPABASE_URL).replace(/\/+$/, '');
-      const headers = { apikey: key, authorization: `Bearer ${key}` };
-      const pr = await fetch(`${base}/rest/v1/profiles?select=id,has_paid,paid_until`, { headers });
-      if (!pr.ok) return err(pr.status === 401 || pr.status === 403 ? 'Supabase said no: check the SUPABASE_SERVICE_ROLE_KEY secret' : "Couldn't reach Supabase", 502);
-      const open = new Set((await pr.json()).filter((p) => p.has_paid && !accessEnded(p.paid_until)).map((p) => p.id));
-      const pending = [];
-      for (let page = 1; page <= 10; page++) {
-        const r = await fetch(`${base}/auth/v1/admin/users?page=${page}&per_page=1000`, { headers });
-        if (!r.ok) break;
-        const users = (await r.json()).users || [];
-        for (const x of users) if (!open.has(x.id)) pending.push({ id: x.id, email: x.email || '?', created: x.created_at || null });
-        if (users.length < 1000) break;
-      }
-      pending.sort((a, b) => String(b.created).localeCompare(String(a.created)));
-      return json({ pending: pending.slice(0, 200) });
-    }
-    if (path === '/admin/unlock' && method === 'POST') {
-      if (!me.admin) return err('Admins only', 403);
-      const key = this.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!this.paywall || !key) return err('One-time setup first: add the SUPABASE_SERVICE_ROLE_KEY secret in Cloudflare (ask Claude for the steps)');
-      const id = String(body.id || '');
-      if (!/^[0-9a-f-]{36}$/i.test(id)) return err('Unknown account');
-      const base = String(this.env.SUPABASE_URL).replace(/\/+$/, '');
-      // unlocked for good (no end date); or locked again
-      const r = await fetch(`${base}/rest/v1/profiles`, {
-        method: 'POST',
-        headers: { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ id, has_paid: body.on !== false, paid_until: null }),
-      });
-      if (!r.ok) return err(`Supabase couldn't change it (${r.status})`, 502);
-      if (body.on === false) this.sql.exec('UPDATE users SET paid = 0 WHERE sb_id = ?', id);
-      return json({ note: body.on === false ? 'Locked again.' : 'Unlocked: they can play now (they press "Check again", or reopen the game).' });
-    }
     if (path === '/admin/set-password' && method === 'POST') {
       if (!me.admin) return err('Admins only', 403);
       const who = String(body.who || '').trim();

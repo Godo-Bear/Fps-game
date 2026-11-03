@@ -920,13 +920,6 @@ export class Account {
   adminDropinStatus(username) {
     return this._api(`/admin/dropin?u=${encodeURIComponent(username)}`);
   }
-  // the email accounts waiting for an admin to let them in, and letting one in (or locking it again)
-  adminPending() {
-    return this._api('/admin/pending');
-  }
-  adminUnlock(id, on = true) {
-    return this._api('/admin/unlock', { method: 'POST', body: { id, on } });
-  }
   liveEnd() {
     if (this.user) this._api('/live', { method: 'POST', body: { end: true } }).catch(() => {});
   }
@@ -1194,7 +1187,7 @@ export class AccountUI {
       ${g?.kind === 'confirm' ? `<p class="must-login">📧 We sent a link to <b>${esc(g.email)}</b>. Click it to confirm your email, then log in here.</p>` : ''}
       ${this.mustLogin ? '<p class="must-login">🔒 <b>Make an account (or log in) to start playing.</b></p>' : ''}
       <h2>Play War Grounds</h2>
-      <p class="muted">It's free! Make an account with your email, then an admin unlocks it so you can play.</p>
+      <p class="muted">It's free! Make an account with your email and start playing.</p>
       <form id="pay-auth" class="auth">
         <input name="email" type="email" placeholder="Email" autocomplete="email" required />
         <input name="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required />
@@ -1860,9 +1853,6 @@ export class AccountUI {
       <div id="admin-players" class="admin-players muted">Loading…</div>
       <form class="auth inline admin-row" id="admin-give"><input name="u" maxlength="40" placeholder="Player name" required /><input name="c" type="number" placeholder="Coins (minus takes away)" required /><button class="btn small">🪙 GIVE COINS</button></form>
       </div>
-      <div class="acard"><h4>🔓 Unlock accounts <span class="muted small">(the game is free: new players wait here until you let them in)</span> <a href="#" id="admin-pending-refresh" class="small">refresh</a></h4>
-        <div id="admin-pending" class="admin-players"><p class="muted small">Loading…</p></div>
-        <p class="muted small">Unlocked accounts stay unlocked (no end date). This needs the SUPABASE_SERVICE_ROLE_KEY secret, the same one as Set a password.</p></div>
       <div class="acard"><h4>🧍 Give a character <span class="muted small">(to anyone, yourself too: they wear it from Locker → Character)</span></h4>
         <form class="auth inline admin-row" id="admin-give-char"><input name="u" maxlength="40" placeholder="Player name" required />
           <select name="c">${GIFT_CHARS.map(([id, n]) => `<option value="${id}">${esc(n)}</option>`).join('')}</select>
@@ -2340,37 +2330,6 @@ export class AccountUI {
       } catch (err) {
         msg(err.message);
       }
-    });
-    // accounts waiting to be unlocked
-    const pendingList = async () => {
-      const el = document.getElementById('admin-pending');
-      if (!el) return;
-      try {
-        const r = await a.adminPending();
-        if (r.off) return (el.innerHTML = '<p class="muted small">Email accounts are off on this server: everyone can play straight away.</p>');
-        el.innerHTML = r.pending.length
-          ? r.pending.map((p) => `<div class="friend admin-player"><b>${esc(p.email)}</b><span class="muted">${p.created ? `signed up ${esc(new Date(p.created).toLocaleDateString())}` : ''}</span><span class="actions"><button class="btn small" data-unlock="${esc(p.id)}">🔓 UNLOCK</button></span></div>`).join('')
-          : '<p class="muted small">Nobody is waiting.</p>';
-        el.querySelectorAll('[data-unlock]').forEach((b) =>
-          b.addEventListener('click', async () => {
-            b.disabled = true;
-            try {
-              msg((await a.adminUnlock(b.dataset.unlock)).note);
-              pendingList();
-            } catch (err) {
-              msg(err.message);
-              b.disabled = false;
-            }
-          }),
-        );
-      } catch (err) {
-        el.innerHTML = `<p class="muted small">${esc(err.message)}</p>`;
-      }
-    };
-    pendingList();
-    document.getElementById('admin-pending-refresh')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      pendingList();
     });
     // give (or take back) a character
     const charForm = document.getElementById('admin-give-char');
