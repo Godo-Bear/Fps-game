@@ -6,6 +6,7 @@ export const CHANGELOG = [
     items: [
       'No paywall and no waiting: make an account with your email and start playing straight away. Everyone who already has an account can play.',
       'A new thumbnail for the game, shown when someone shares its link.',
+      'A War Grounds logo: the WG badge, also the icon in your browser tab and on your phone\'s home screen.',
     ],
   },
   {
