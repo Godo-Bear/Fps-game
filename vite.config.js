@@ -18,6 +18,10 @@ export default defineConfig(({ command }) => ({
       },
     },
   ],
+  // the room code also runs in the browser for StudySmartly rooms (the host's game is the server there)
+  resolve: {
+    alias: { 'cloudflare:workers': new URL('./src/ss/durableObjectStub.js', import.meta.url).pathname },
+  },
   build: {
     outDir: 'dist',
     chunkSizeWarningLimit: 1500,

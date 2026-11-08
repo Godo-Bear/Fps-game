@@ -20,6 +20,7 @@ import { BUILD_REACH, SCRAP_PER_PVP_KILL, START_SCRAP, STRUCTURES } from '../sha
 import { Effects } from './effects.js';
 import { GUNS, MUTATIONS, TIER_CSS, buildGun, loadGunModels, setArmLook, randomMutation, rollGun } from './guns.js';
 import { clearGunIcons, gunIcon } from './gunIcons.js';
+import { startStudySmartly } from './studysmartly.js';
 import { Minimap } from './minimap.js';
 import { Avatar, FLAG_BITS, Multiplayer } from './multiplayer.js';
 import { DROP_CHANCE, EVENT_MAX_PLAYERS, PIECE_COUNT, ownsPaidChar, totalPieces } from '../shared/events.js';
@@ -4488,7 +4489,8 @@ document.querySelectorAll('[data-mode-pick]').forEach((b) =>
 );
 // You need an account to play: PLAY (and every other way into a game) asks you to sign up or log in first.
 function needAccount() {
-  if (account.loggedIn) return false;
+  // (in a StudySmartly room everyone plays as their StudySmartly name: no account needed)
+  if (account.loggedIn || studySmartly?.inRoom()) return false;
   accountUI.mustLogin = true;
   accountUI.open('login');
   return true;
@@ -5476,6 +5478,8 @@ accountUI.adminActions = {
     return n ? `${n} bots will play in this room${mp.inMatch ? '' : ' when the match starts'}.` : 'No more bots in this room.';
   },
   // admin: join any room by its code (private ones too)
+  // admin: is this game in a StudySmartly room (and running it)?
+  studySmartly: () => (studySmartly?.inRoom() ? { code: studySmartly.code(), host: studySmartly.isHost() } : null),
   async joinRoom(code) {
     const err = await mp.join(code);
     return err || `Joined room ${code}.`;
@@ -6138,6 +6142,23 @@ loadWolfModel().then(() => {
 });
 // no guests: straight to sign up / log in when you open the site without an account
 account.init().then(() => needAccount());
+// StudySmartly: its room bar (above the game) puts players in a room; the StudySmartly host's game runs it
+const studySmartly = startStudySmartly({
+  mp,
+  onRoom: () => {
+    // straight into the room's lobby (the login box isn't needed here)
+    accountUI.mustLogin = false;
+    accountUI.close();
+  },
+  onLeft: () => {
+    // left the StudySmartly room: back to single player
+    if (game.state !== 'menu') toMenu();
+  },
+  notify: (text) => {
+    $('mp-error').textContent = text;
+    addChat(null, text);
+  },
+});
 requestAnimationFrame(frame);
 
 if (import.meta.env.DEV) {

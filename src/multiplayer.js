@@ -410,13 +410,19 @@ export class Multiplayer {
   }
 
   // Resolves with null on success or an error message.
+  // StudySmartly rooms (src/studysmartly.js): the room runs in the host's game, and this is its connection
+  useSocket(factory, name = null) {
+    this.ssSocket = factory;
+    this.ssName = name;
+  }
+
   _connect(code, create, event = false) {
     this.leave(true);
     return new Promise((resolve) => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       let ws;
       try {
-        ws = new WebSocket(`${proto}://${location.host}/api/room/${code}/ws${create ? `?create=1${event ? '&event=1' : ''}` : ''}`);
+        ws = this.ssSocket ? this.ssSocket() : new WebSocket(`${proto}://${location.host}/api/room/${code}/ws${create ? `?create=1${event ? '&event=1' : ''}` : ''}`);
       } catch {
         resolve("Can't connect to the server");
         return;
@@ -433,7 +439,7 @@ export class Multiplayer {
       ws.onopen = () => {
         const a = this.ctx.account;
         // dropin: our solo game is becoming a co-op room for an admin to join (map: the one we were on)
-        ws.send(JSON.stringify({ t: 'join', name: a.loggedIn ? a.name : this._guestName(), token: a.token, guest: a.loggedIn ? null : a.guestId, avatar: a.profile.avatar, color: a.profile.color, dropin: create && this.dropinMap ? 1 : 0, map: this.dropinMap || undefined }));
+        ws.send(JSON.stringify({ t: 'join', name: this.ssSocket && this.ssName ? this.ssName : a.loggedIn ? a.name : this._guestName(), token: a.token, guest: a.loggedIn ? null : a.guestId, avatar: a.profile.avatar, color: a.profile.color, dropin: create && this.dropinMap ? 1 : 0, map: this.dropinMap || undefined }));
       };
       ws.onmessage = (e) => {
         let m;

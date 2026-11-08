@@ -2,6 +2,14 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.81', date: '8 Nov 2026', title: 'Play together on StudySmartly',
+    items: [
+      'On StudySmartly: use its room bar above the game (Create room, Join code or the invite link) to play War Grounds together, up to 4 players. No login needed: everyone plays as their StudySmartly name.',
+      'The host runs the game (zombies, waves, health, scores, starting a round); everyone else sends their moves. Join mid-game and you drop straight into the match; if the host leaves, someone else takes over with a new room.',
+      'Outside StudySmartly nothing changes: single player and our own online rooms work as before.',
+    ],
+  },
+  {
     v: '5.80', date: '3 Nov 2026', title: 'No paywall',
     items: [
       'No paywall and no waiting: make an account with your email and start playing straight away. Everyone who already has an account can play.',
