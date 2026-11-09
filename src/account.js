@@ -1961,11 +1961,6 @@ export class AccountUI {
     </section>
     <section class="asec" data-sec="mp">
       ${mp ? '' : '<p class="muted small">Join or create a room to use these.</p>'}
-      <div class="acard"><h4>🎓 StudySmartly <span class="muted small">(inside StudySmartly, its room bar above the game puts players together: the host's game runs the room)</span></h4>
-        <p class="small">${(() => {
-          const s = act?.studySmartly?.();
-          return s ? `In StudySmartly room <b>${esc(s.code || '?')}</b>, ${s.host ? '<b>running it</b> (you\'re the host)' : 'playing in the host\'s room'}.` : 'Not in a StudySmartly room (outside StudySmartly the game plays as normal).';
-        })()}</p></div>
       <div class="acard"><h4>📦 Supply drop</h4>
       <div class="admin-grid"><button class="btn small" id="admin-drop">📦 SUPPLY DROP ON ME (solo or any mode)</button></div>
       </div>

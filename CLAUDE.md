@@ -35,11 +35,3 @@ Before your next push after an upload: `git fetch origin main` and merge it so t
   in third person (host runs zombies, server keeps HP via `zhurt`/`zkill`). Kills drop puzzle pieces (src/puzzle.js);
   4 pieces unlock SWAT/Adventurer/King. Players see the Locker Character section once they own a piece.
   Never start an event yourself: the owner hosts them.
-
-## StudySmartly multiplayer
-- index.html loads StudySmartly's mp.js; src/studysmartly.js uses it. Inside StudySmartly its room bar puts players in a room
-  (max 4, no login: they play as their StudySmartly names). The StudySmartly host's game runs the real Room class from
-  worker/index.js in the browser ('cloudflare:workers' is aliased to src/ss/durableObjectStub.js in vite.config.js), and
-  multiplayer.js talks to it through a stand-in socket (mp.useSocket). Messages are bundled ~15 times a second (StudySmartly
-  allows ~30 messages a second, 16 KB each). Outside StudySmartly ("offline") nothing changes.
-- Room code changes in worker/index.js apply to StudySmartly rooms too, so keep Room free of Cloudflare-only APIs outside fetch().
