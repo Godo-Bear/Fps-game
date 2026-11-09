@@ -2,6 +2,10 @@
 // Add new updates at the top (and bump the version) so players see the NEW badge.
 export const CHANGELOG = [
   {
+    v: '5.82', date: '9 Nov 2026', title: 'StudySmartly multiplayer removed',
+    items: ['Playing together through StudySmartly has been taken out. Online play works through the game\'s own rooms as before.'],
+  },
+  {
     v: '5.80', date: '3 Nov 2026', title: 'No paywall',
     items: [
       'No paywall and no waiting: make an account with your email and start playing straight away. Everyone who already has an account can play.',
